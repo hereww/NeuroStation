@@ -1,0 +1,90 @@
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import tempfile
+import time
+import unittest
+
+from apps.workstation_ui.gateway import CaptureConfig, CaptureMode, Phase
+from eeg_tools.workstation.acquisition_worker import main as worker_main
+from eeg_tools.workstation.process_gateway import AcquisitionProcessGateway
+
+
+ROOT = Path(__file__).resolve().parents[1]
+PROTOCOL = ROOT / "configs" / "protocols" / "ssvep_four_target_v2.json"
+CHANNELS = ROOT / "configs" / "channel_config_v1_template.json"
+
+
+class AcquisitionWorkerTests(unittest.TestCase):
+    def test_synthetic_headless_persists_raw_data_in_chinese_path(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "中文数据集"
+            exit_code = worker_main(
+                [
+                    "--protocol", str(PROTOCOL),
+                    "--output-root", str(output),
+                    "--participant", "验收P001",
+                    "--session-name", "合成板验收",
+                    "--board", "synthetic",
+                    "--headless",
+                    "--repetitions", "1",
+                    "--stimulus-seconds", "0.05",
+                    "--rest-seconds", "0.01",
+                    "--countdown-seconds", "0.01",
+                ]
+            )
+            self.assertEqual(0, exit_code)
+            sessions = list(output.glob("session_*"))
+            self.assertEqual(1, len(sessions))
+            session_dir = sessions[0]
+            session = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
+            self.assertEqual("completed", session["status"])
+            self.assertTrue(session["simulated"])
+            self.assertEqual(4, session["completed_trials"])
+            self.assertEqual(10, session["event_count"])
+            self.assertGreater(session["recorded_samples_per_channel"], 0)
+            self.assertGreater((session_dir / "raw_brainflow.tsv").stat().st_size, 0)
+            self.assertTrue((session_dir / "manifest.csv").is_file())
+            quality = json.loads((session_dir / "quality.json").read_text(encoding="utf-8"))
+            self.assertEqual("ok", quality["status"])
+            self.assertEqual(session["channel_count"], quality["channel_count"])
+            self.assertEqual(session["recorded_samples_per_channel"], quality["samples_per_channel"])
+            self.assertTrue((session_dir / "ssvep_config.json").is_file())
+
+    def test_process_gateway_cancel_preserves_aborted_session(self) -> None:
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "中止数据"
+            gateway = AcquisitionProcessGateway(
+                protocol_path=PROTOCOL,
+                channel_config_path=CHANNELS,
+            )
+            config = CaptureConfig(
+                participant="P-CANCEL",
+                name="cancel-test",
+                repetitions=1,
+                stimulus_seconds=1,
+                rest_seconds=0,
+                save_directory=root,
+                mode=CaptureMode.SYNTHETIC,
+                acknowledge_flicker_risk=True,
+            )
+            self.assertEqual(Phase.COUNTDOWN, gateway.start_ssvep(config, 1).phase)
+            deadline = time.monotonic() + 5
+            while gateway.snapshot.phase == Phase.COUNTDOWN and time.monotonic() < deadline:
+                gateway.tick()
+                if gateway._status_file and gateway._status_file.exists():
+                    break
+                time.sleep(0.02)
+            cancelled = gateway.cancel()
+            self.assertEqual(Phase.CANCELLED, cancelled.phase)
+            self.assertIsNotNone(cancelled.result)
+            self.assertEqual("aborted", cancelled.result.status)
+            self.assertTrue(cancelled.result.path.is_dir())
+            self.assertTrue((cancelled.result.path / "session.json").is_file())
+
+
+if __name__ == "__main__":
+    unittest.main()

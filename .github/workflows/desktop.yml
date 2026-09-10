@@ -1,0 +1,61 @@
+name: Desktop acceptance
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test-and-package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04, macos-14]
+    runs-on: ${{ matrix.os }}
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install desktop dependencies
+        run: python -m pip install -r requirements.txt "Nuitka>=4.2,<5"
+      - name: Sync OpenBCI GUI locked source (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          .\scripts\sync_openbci_gui.ps1 -Action sync
+          .\scripts\sync_openbci_gui.ps1 -Action overlay
+          .\scripts\build_openbci_gui.ps1 -Python python
+      - name: Sync OpenBCI GUI locked source (Linux/macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          bash scripts/sync_openbci_gui.sh sync
+          bash scripts/sync_openbci_gui.sh overlay
+          PYTHON=python bash scripts/build_openbci_gui.sh
+      - name: Synthetic worker acceptance
+        run: python run_ssvep_session.py --synthetic --headless --participant CI --session-name synthetic-acceptance --output-root .acceptance-data --repetitions 1 --stimulus-seconds 0.05 --rest-seconds 0.01 --countdown-seconds 0.01
+      - name: Core and integration tests
+        run: python -m unittest discover -s tests -v
+      - name: Independent UI tests
+        run: python -m unittest discover -s apps/workstation_ui/tests -v
+      - name: Syntax check
+        run: python -m compileall -q apps eeg_tools tests scripts workstation.py check_cyton_live.py run_ssvep_session.py neurostation_contract.py
+      - name: Build standalone application (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\scripts\build_desktop.ps1 -Python python
+      - name: Build standalone application (Linux/macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: PYTHON=python bash scripts/build_desktop.sh
+      - name: Packaged application smoke test
+        run: python scripts/smoke_packaged.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NeuroStation-${{ runner.os }}-${{ runner.arch }}
+          path: dist/**
+          if-no-files-found: error

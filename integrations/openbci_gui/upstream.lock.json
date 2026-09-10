@@ -1,0 +1,9 @@
+{
+  "name": "OpenBCI_GUI",
+  "repository": "https://github.com/OpenBCI/OpenBCI_GUI.git",
+  "branch": "master",
+  "revision": "e23869e7b5cc621e733d8fa0d81f05d477264306",
+  "source_directory": ".vendor/OpenBCI_GUI",
+  "locked_at": "2026-09-10",
+  "license": "MIT"
+}

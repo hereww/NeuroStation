@@ -1,0 +1,42 @@
+{
+  "config_version": "CHANNEL-V1-DRAFT",
+  "board": "OpenBCI Cyton",
+  "serial_port": "COM5",
+  "sampling_rate_hz": 250,
+  "channel_order": [
+    "CH1",
+    "CH2",
+    "CH3",
+    "CH4",
+    "CH5",
+    "CH6",
+    "CH7",
+    "CH8"
+  ],
+  "channels": [
+    {"name": "CH1", "gui_index": 0, "board_input": "N1P", "electrode_position": null},
+    {"name": "CH2", "gui_index": 1, "board_input": "N2P", "electrode_position": null},
+    {"name": "CH3", "gui_index": 2, "board_input": "N3P", "electrode_position": null},
+    {"name": "CH4", "gui_index": 3, "board_input": "N4P", "electrode_position": null},
+    {"name": "CH5", "gui_index": 4, "board_input": "N5P", "electrode_position": null},
+    {"name": "CH6", "gui_index": 5, "board_input": "N6P", "electrode_position": null},
+    {"name": "CH7", "gui_index": 6, "board_input": "N7P", "electrode_position": null},
+    {"name": "CH8", "gui_index": 7, "board_input": "N8P", "electrode_position": null}
+  ],
+  "reference": {
+    "label": "SRB",
+    "position": "ear_clip",
+    "hardware_connection": "SRB ear clip"
+  },
+  "bias": {
+    "label": "BIAS",
+    "position": "ear_clip",
+    "hardware_connection": "BIAS ear clip"
+  },
+  "ground": {
+    "label": "AGND",
+    "position": null,
+    "hardware_connection": "AGND on acquisition board"
+  },
+  "notes": "必须根据实际佩戴位置和接线逐项填写后，才能作为正式会话配置。"
+}

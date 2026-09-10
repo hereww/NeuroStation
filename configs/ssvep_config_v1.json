@@ -1,0 +1,58 @@
+{
+  "config_version": "SSVEP-V1-DRAFT",
+  "status": "draft_for_technical_validation",
+  "display": {
+    "refresh_rate_hz": 60,
+    "pygame_desktop_resolution": "2560x1440",
+    "video_controller_resolution": "3840x2160",
+    "note": "运行刺激程序时必须确认窗口显示在实际采集用显示器上，并再次检查刷新率。"
+  },
+  "frequencies_hz": [10, 12, 15, 20],
+  "frames_per_cycle": {
+    "10": 6,
+    "12": 5,
+    "15": 4,
+    "20": 3
+  },
+  "layout": {
+    "target_count": 4,
+    "positions": [
+      "top_left",
+      "top_right",
+      "bottom_left",
+      "bottom_right"
+    ],
+    "background_rgb": [0, 0, 0],
+    "target_rgb": [255, 255, 255],
+    "target_size_fraction_of_short_side": 0.18
+  },
+  "trial_protocol": {
+    "pre_session_rest_s": 10,
+    "pre_trial_rest_s": 2,
+    "stimulus_s": 5,
+    "post_trial_rest_s": 2,
+    "repetitions_per_frequency": 10,
+    "order": "randomized_with_fixed_seed",
+    "random_seed": 20260907
+  },
+  "event_names": [
+    "session_start",
+    "trial_start",
+    "stimulus_onset",
+    "stimulus_offset",
+    "trial_end",
+    "session_end",
+    "abort"
+  ],
+  "hardware": {
+    "board": "OpenBCI Cyton",
+    "serial_port": "COM5",
+    "channels": 8,
+    "sampling_rate_hz": 250
+  },
+  "safety": {
+    "stop_on_dizziness_or_visual_discomfort": true,
+    "stop_on_device_or_display_error": true,
+    "no_medical_or_health_claims": true
+  }
+}

@@ -1,0 +1,380 @@
+"""Composition adapter between the independent desktop UI and workstation core."""
+
+from __future__ import annotations
+
+import math
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Callable
+from uuid import uuid4
+
+from neurostation_contract import (
+    CaptureConfig,
+    CaptureMode,
+    Dataset,
+    DeviceInfo,
+    OpenBCIWorkspaceStatus,
+    Phase,
+    TaskSnapshot,
+)
+
+from .dataset import DatasetRecord, DatasetRepository
+from .gateway import WorkstationGateway
+from .openbci_workspace import OpenBCIWorkspaceError, OpenBCIWorkspaceManager
+from .process_gateway import AcquisitionProcessGateway
+from .task import TaskPhase
+
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+class MetadataSimulationGateway:
+    """Run the reviewed SSVEP flow and persist non-EEG acceptance metadata.
+
+    This adapter deliberately remains a simulation: it never opens a serial port
+    and never labels expected sample counts as recorded EEG. It does, however,
+    create the session directory shown by the result page.
+    """
+
+    def __init__(
+        self,
+        *,
+        protocol_path: Path,
+        dataset_root: Path | None = None,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.protocol_path = protocol_path.resolve()
+        self._clock = clock
+        self.device = DeviceInfo()
+        self.config = CaptureConfig(
+            save_directory=(dataset_root or DatasetRepository.default_root()).resolve()
+        )
+        self._snapshot = TaskSnapshot()
+        self._service: WorkstationGateway | None = None
+        self._manual_markers = 0
+        self._datasets: list[Dataset] = []
+        self._task_started_at = 0.0
+        self._last_result_id: str | None = None
+        self._openbci = OpenBCIWorkspaceManager(ROOT)
+        self._load_existing(Path(self.config.save_directory))
+
+    @property
+    def snapshot(self) -> TaskSnapshot:
+        return self._snapshot
+
+    @property
+    def datasets(self) -> tuple[Dataset, ...]:
+        return tuple(self._datasets)
+
+    @property
+    def openbci_status(self) -> OpenBCIWorkspaceStatus:
+        state = self._openbci.status()
+        return OpenBCIWorkspaceStatus(
+            source_ready=state.source_ready,
+            overlay_ready=state.overlay_ready,
+            executable_ready=state.executable_ready,
+            revision=state.revision,
+        )
+
+    def launch_openbci_workspace(self, locale: str) -> int:
+        self._ensure_available()
+        try:
+            return self._openbci.launch(
+                locale=locale,
+                dataset_root=Path(self.config.save_directory),
+            )
+        except OpenBCIWorkspaceError as error:
+            raise RuntimeError(str(error)) from error
+
+    def _ensure_available(self) -> None:
+        if self.snapshot.active:
+            raise RuntimeError("validation.busy")
+
+    def start_ssvep(self, config: CaptureConfig, speed: float = 8) -> TaskSnapshot:
+        self._ensure_available()
+        config.validate()
+        if not math.isfinite(speed) or not 1 <= speed <= 32:
+            raise ValueError("validation.speed")
+        root = Path(config.save_directory).expanduser().resolve()
+        self._load_existing(root)
+        self.config = config
+        self._manual_markers = 0
+        self._service = WorkstationGateway(
+            protocol_path=self.protocol_path,
+            dataset_root=root,
+            clock=self._clock,
+        )
+        core = self._service.start_ssvep(
+            participant_id=config.participant,
+            session_name=config.name,
+            repetitions=config.repetitions,
+            stimulus_s=config.stimulus_seconds,
+            rest_s=config.rest_seconds,
+            simulation_speed=speed,
+        )
+        self._task_started_at = self._clock()
+        self._last_result_id = None
+        self._snapshot = self._map_snapshot(core, speed)
+        return self._snapshot
+
+    def start_manual(self, config: CaptureConfig) -> TaskSnapshot:
+        self._ensure_available()
+        config.validate()
+        self._service = None
+        self.config = config
+        self._manual_markers = 0
+        self._task_started_at = self._clock()
+        self._snapshot = TaskSnapshot(
+            phase=Phase.RUNNING,
+            protocol="manual",
+            speed=1,
+            event_count=1,
+        )
+        return self._snapshot
+
+    def stop_manual(self) -> Dataset:
+        if self._snapshot.phase != Phase.RUNNING or self._snapshot.protocol != "manual":
+            raise RuntimeError("validation.manual_stop")
+        current = self.tick()
+        now = datetime.now(timezone.utc)
+        identifier = f"manual-{now:%Y%m%d-%H%M%S}-{uuid4().hex[:6]}"
+        result = Dataset(
+            id=identifier,
+            name=self.config.name,
+            participant=self.config.participant,
+            protocol="manual",
+            recording_seconds=current.elapsed,
+            preparation_seconds=0,
+            demo_seconds=current.elapsed,
+            trials=0,
+            samples_per_channel=int(current.elapsed * 250),
+            event_count=self._manual_markers + 2,
+            path=Path(self.config.save_directory).expanduser().resolve() / identifier,
+            created_at=now.isoformat(),
+            simulated=True,
+            persisted=False,
+            source=CaptureMode.DEMO,
+        )
+        self._remember(result)
+        self._snapshot = TaskSnapshot(
+            phase=Phase.COMPLETED,
+            protocol="manual",
+            elapsed=current.elapsed,
+            event_count=result.event_count,
+            result=result,
+            speed=1,
+        )
+        return result
+
+    def add_marker(self) -> int:
+        if self._snapshot.phase != Phase.RUNNING or self._snapshot.protocol != "manual":
+            raise RuntimeError("validation.manual_marker")
+        self._manual_markers += 1
+        return self.tick().event_count
+
+    def cancel(self) -> TaskSnapshot:
+        if self._snapshot.phase == Phase.RUNNING and self._snapshot.protocol == "manual":
+            self._snapshot = TaskSnapshot(phase=Phase.CANCELLED, protocol="manual")
+            return self._snapshot
+        if self._service is not None and self._snapshot.active:
+            core = self._service.abort_task()
+            if core.result is not None:
+                self._remember(self._dataset_from_record(core.result))
+            self._snapshot = TaskSnapshot(phase=Phase.CANCELLED)
+        return self._snapshot
+
+    def tick(self) -> TaskSnapshot:
+        if self._snapshot.phase == Phase.RUNNING and self._snapshot.protocol == "manual":
+            elapsed = max(0.0, self._clock() - self._task_started_at)
+            self._snapshot = TaskSnapshot(
+                phase=Phase.RUNNING,
+                protocol="manual",
+                elapsed=elapsed,
+                demo_elapsed=elapsed,
+                speed=1,
+                event_count=1 + self._manual_markers,
+            )
+            return self._snapshot
+        if self._service is None or not self._snapshot.active:
+            return self._snapshot
+        core = self._service.poll_task()
+        speed = self._snapshot.speed
+        self._snapshot = self._map_snapshot(core, speed)
+        if self._snapshot.result is not None:
+            self._remember(self._snapshot.result)
+        return self._snapshot
+
+    def _map_snapshot(self, core, speed: float) -> TaskSnapshot:
+        phase = {
+            TaskPhase.READY: Phase.IDLE,
+            TaskPhase.COUNTDOWN: Phase.COUNTDOWN,
+            TaskPhase.RUNNING: Phase.RUNNING,
+            TaskPhase.COMPLETED: Phase.COMPLETED,
+            TaskPhase.ABORTED: Phase.CANCELLED,
+        }[core.phase]
+        protocol = self._service.active_protocol if self._service else None
+        trial_count = protocol.trial_count if protocol else self.config.trials
+        trial_index = core.current_trial_index
+        within = 0.0
+        resting = False
+        if protocol and trial_index is not None:
+            within = max(
+                0.0,
+                core.recording_elapsed_s
+                - protocol.pre_session_rest_s
+                - trial_index * protocol.seconds_per_trial,
+            )
+            resting = within >= protocol.pre_trial_rest_s + protocol.stimulus_s
+        event_count = 0
+        if phase is Phase.RUNNING and trial_index is not None:
+            event_count = 2 + trial_index * 2 + int(resting)
+        elif phase is Phase.COMPLETED and protocol:
+            event_count = protocol.expected_event_count
+        result = None
+        if core.result is not None:
+            result = self._dataset_from_record(
+                core.result,
+                demo_seconds=max(0.0, self._clock() - self._task_started_at),
+            )
+        target_number = 0
+        if protocol and core.current_target_id:
+            ids = [target_id for target_id, _ in protocol.targets]
+            target_number = ids.index(core.current_target_id) + 1
+        return TaskSnapshot(
+            phase=phase,
+            protocol="ssvep",
+            countdown=max(0, math.ceil(core.countdown_remaining_s)),
+            elapsed=core.recording_elapsed_s,
+            remaining=core.recording_remaining_s,
+            demo_elapsed=max(0.0, self._clock() - self._task_started_at),
+            progress=core.progress * 100,
+            trial=0 if trial_index is None else trial_index + 1,
+            trial_count=trial_count,
+            target=target_number,
+            frequency=core.current_frequency_hz or 0,
+            resting=resting,
+            event_count=event_count,
+            speed=speed,
+            result=result,
+        )
+
+    def _load_existing(self, root: Path) -> None:
+        for record in reversed(DatasetRepository(root).list_records()):
+            self._remember(self._dataset_from_record(record))
+
+    def _remember(self, dataset: Dataset) -> None:
+        if any(existing.id == dataset.id for existing in self._datasets):
+            return
+        self._datasets.append(dataset)
+        self._last_result_id = dataset.id
+
+    @staticmethod
+    def _dataset_from_record(
+        record: DatasetRecord, *, demo_seconds: float = 0.0
+    ) -> Dataset:
+        source = CaptureMode(record.source)
+        return Dataset(
+            id=record.session_id,
+            name=record.session_name,
+            participant=record.participant_id,
+            protocol="ssvep",
+            recording_seconds=record.duration_s,
+            preparation_seconds=5,
+            demo_seconds=demo_seconds,
+            trials=record.completed_trials,
+            samples_per_channel=(
+                record.expected_samples_per_channel
+                if source == CaptureMode.DEMO
+                else record.recorded_samples_per_channel
+            ),
+            event_count=record.event_count,
+            path=record.output_dir.resolve(),
+            created_at=record.session_id,
+            simulated=record.simulated,
+            persisted=True,
+            source=source,
+            status=record.status,
+        )
+
+
+class DesktopGateway:
+    """One desktop facade for demo, synthetic BrainFlow, and Cyton modes."""
+
+    def __init__(
+        self,
+        *,
+        protocol_path: Path,
+        channel_config_path: Path,
+        dataset_root: Path | None = None,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._simulation = MetadataSimulationGateway(
+            protocol_path=protocol_path,
+            dataset_root=dataset_root,
+            clock=clock,
+        )
+        self._acquisition = AcquisitionProcessGateway(
+            protocol_path=protocol_path,
+            channel_config_path=channel_config_path,
+        )
+        self._active = self._simulation
+
+    @property
+    def snapshot(self) -> TaskSnapshot:
+        return self._active.snapshot
+
+    @property
+    def config(self) -> CaptureConfig:
+        return self._active.config
+
+    @property
+    def device(self) -> DeviceInfo:
+        return self._active.device
+
+    @property
+    def datasets(self) -> tuple[Dataset, ...]:
+        combined: list[Dataset] = []
+        seen: set[str] = set()
+        for dataset in (*self._simulation.datasets, *self._acquisition.datasets):
+            if dataset.id not in seen:
+                combined.append(dataset)
+                seen.add(dataset.id)
+        return tuple(combined)
+
+    @property
+    def openbci_status(self) -> OpenBCIWorkspaceStatus:
+        return self._simulation.openbci_status
+
+    def start_ssvep(self, config: CaptureConfig, speed: float = 8) -> TaskSnapshot:
+        self._ensure_available()
+        if CaptureMode(config.mode) == CaptureMode.DEMO:
+            self._active = self._simulation
+            return self._simulation.start_ssvep(config, speed)
+        self._active = self._acquisition
+        return self._acquisition.start_ssvep(config, speed)
+
+    def start_manual(self, config: CaptureConfig) -> TaskSnapshot:
+        self._ensure_available()
+        self._active = self._simulation
+        return self._simulation.start_manual(config)
+
+    def stop_manual(self) -> Dataset:
+        return self._simulation.stop_manual()
+
+    def add_marker(self) -> int:
+        return self._simulation.add_marker()
+
+    def cancel(self) -> TaskSnapshot:
+        return self._active.cancel()
+
+    def tick(self) -> TaskSnapshot:
+        return self._active.tick()
+
+    def launch_openbci_workspace(self, locale: str) -> int:
+        self._ensure_available()
+        return self._simulation.launch_openbci_workspace(locale)
+
+    def _ensure_available(self) -> None:
+        if self.snapshot.active:
+            raise RuntimeError("validation.busy")

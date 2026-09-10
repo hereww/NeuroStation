@@ -1,0 +1,26 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+.vendor/
+.tools/
+.tmp_acceptance/
+integrations/openbci_gui/runtime/
+build/
+dist/
+deployment/
+*.build/
+*.dist/
+*.onefile-build/
+.pysidedeploy.local.spec
+nuitka-crash-report.xml
+
+# Local acquisition output can be large and may contain participant data.
+recordings/
+session_*/
+
+# Local, filled-in channel maps should not be committed by default.
+configs/channel_config_v1.json

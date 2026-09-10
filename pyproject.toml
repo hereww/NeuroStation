@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neurostation-eeg-workstation"
+version = "0.1.0"
+description = "Cross-platform OpenBCI EEG acquisition workstation"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["PySide6>=6.7", "brainflow>=5.22", "numpy>=2.0"]
+
+[tool.pyside6-project]
+files = [
+  "workstation.py",
+  "neurostation_contract.py",
+  "apps/workstation_ui/__init__.py",
+  "apps/workstation_ui/app.py",
+  "apps/workstation_ui/components.py",
+  "apps/workstation_ui/gateway.py",
+  "apps/workstation_ui/i18n.py",
+  "apps/workstation_ui/main.py",
+  "apps/workstation_ui/pages.py",
+  "eeg_tools/__init__.py",
+  "eeg_tools/session_files.py",
+  "eeg_tools/workstation/__init__.py",
+  "eeg_tools/workstation/acquisition_worker.py",
+  "eeg_tools/workstation/dataset.py",
+  "eeg_tools/workstation/desktop_gateway.py",
+  "eeg_tools/workstation/gateway.py",
+  "eeg_tools/workstation/openbci_workspace.py",
+  "eeg_tools/workstation/process_gateway.py",
+  "eeg_tools/workstation/ssvep.py",
+  "eeg_tools/workstation/task.py",
+]

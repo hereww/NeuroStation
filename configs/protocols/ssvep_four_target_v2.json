@@ -1,0 +1,41 @@
+{
+  "schema_version": 2,
+  "protocol_id": "ssvep_four_target",
+  "name": {
+    "zh-CN": "SSVEP 屏幕闪烁采集",
+    "en-US": "SSVEP visual flicker acquisition"
+  },
+  "countdown_s": 5,
+  "display": {
+    "refresh_rate_hz": 60,
+    "fullscreen": true,
+    "photodiode_patch": true
+  },
+  "hardware": {
+    "board": "OpenBCI Cyton",
+    "sampling_rate_hz": 250,
+    "channel_count": 8
+  },
+  "targets": [
+    {"id": "top_left", "frequency_hz": 10},
+    {"id": "top_right", "frequency_hz": 12},
+    {"id": "bottom_left", "frequency_hz": 15},
+    {"id": "bottom_right", "frequency_hz": 20}
+  ],
+  "trial": {
+    "pre_session_rest_s": 0,
+    "pre_trial_rest_s": 0,
+    "stimulus_s": 5,
+    "post_trial_rest_s": 3,
+    "repetitions": 3,
+    "random_seed": 20260910
+  },
+  "events": {
+    "session_start": 1,
+    "session_end": 2,
+    "abort": 99,
+    "stimulus_onset_base": 100,
+    "stimulus_offset_base": 200
+  },
+  "status": "draft_for_workstation_mvp"
+}
