@@ -2,7 +2,7 @@
 
 本项目现包含一个可运行的中文桌面工作站、OpenBCI GUI 源码集成流程，以及两个真实硬件命令行工具：
 
-- `workstation.py`：PySide6 工作站入口，提供采集应用图标、SSVEP 参数、真实 5 秒倒计时、任务状态、结果路径和数据集导航。默认启动为**演示模式**（只保存元数据）；采集页还提供 BrainFlow Synthetic（会保存合成原始数据）和 OpenBCI Cyton（连接真实硬件）模式，三种模式会在界面和会话元数据中明确区分。
+- `workstation.py`：PySide6 工作站入口，提供采集应用图标、SSVEP 参数、全屏 5 秒倒计时、任务状态、结果路径和数据集导航。默认启动为**全屏视觉预览**（不连接硬件、不生成 EEG 样本，但保存会话元数据）；采集页还提供流程演示、BrainFlow Synthetic（会保存合成原始数据）和 OpenBCI Cyton（连接真实硬件）模式，所有模式都会在界面和会话元数据中明确区分。
 - `apps/workstation_ui/`：由 GPT-6 独立实现的 UI 层；页面只通过网关调用采集能力。
 
 - `check_cyton_live.py`：短时连接 Cyton，输出采样率、时间戳间隔和各通道信号统计，用于正式采集前的连通性检查。
@@ -26,6 +26,8 @@ OpenBCI GUI 官方源码的拉取、上游同步和中文版重构约定见 [`in
 ├── run_ssvep_session.py         # SSVEP 采集入口
 ├── configs/
 │   ├── ssvep_config_v1.json     # 刺激与试次参数（草稿）
+│   ├── protocols/ssvep_four_target_v2.json
+│   ├── channel_config_v1_auto.json # Cyton CH1–CH8 自动板卡映射
 │   └── channel_config_v1_template.json
 ├── eeg_tools/                   # 配置校验和会话文件写入
 ├── tests/                       # 不需要硬件的基础测试
@@ -48,7 +50,7 @@ python -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe workstation.py
 ```
 
-默认显示中文。英文界面使用 `--language en-US`；验收时可用 `--dataset-root` 指定独立数据目录。SSVEP 默认参数为 10/12/15/20 Hz、12 个试次、93 秒采集时间和 5 秒准备倒计时。为了安全，当前桌面演示只显示静态目标；完成后会实际创建 `session.json`、`protocol.json`、`events.tsv` 和 `manifest.csv`，并在结果页显示该绝对路径。`session.json` 中的 `recorded_samples_per_channel` 为 `0`，明确表示没有伪造硬件脑电数据。
+默认显示中文。英文界面使用 `--language en-US`；验收时可用 `--dataset-root` 指定独立数据目录。SSVEP 默认参数为 10/12/15/20 Hz、12 个试次、93 秒采集时间和 5 秒准备倒计时。默认的全屏视觉预览会在独立 worker 中显示黑白倒计时和整屏黑白刺激，必须先确认光敏风险；它不连接设备、不生成 EEG 样本，但会创建 `session.json`、`protocol.json`、`events.tsv`、`frame_timing.tsv`、`quality.json` 和 `manifest.csv`，并在结果页显示绝对保存路径。
 
 在连接设备前，可运行不会打开串口的预检。它会报告 Windows/Linux/macOS 运行环境、Qt/BrainFlow、协议与通道表状态，以及 OpenBCI GUI 源码/中文 overlay/runtime 是否就绪：
 
@@ -58,11 +60,15 @@ python -m pip install -r requirements.txt
 
 其中 `configuration.status: "draft"` 表示当前使用的仍是模板或草稿配置；这与“发现到 Cyton 设备”是两回事。只有 `check_cyton_live.py` 才会实际尝试打开 USB dongle 对应的串口；若串口不可用，命令会返回结构化 JSON 和退出码 3，便于设备向导或 CI 识别。
 
-仅查看 GPT-6 UI（不落盘）的独立 mock 入口：
+独立 UI 入口现在默认启动真实 worker 驱动的全屏视觉预览（不连接硬件）：
 
 ```powershell
 .\.venv\Scripts\python.exe -m apps.workstation_ui.main
 ```
+
+如只需要不创建文件的纯 UI mock，请在测试中注入 `MockGateway`；生产入口不要把预览结果解释为真实 EEG。预览支持 `--dataset-root` 指定会话目录。
+
+Cyton 模式默认使用 `configs/channel_config_v1_auto.json`，自动匹配板卡 CH1–CH8 到 N1P–N8P 的输入顺序，不要求普通用户填写 JSON。该映射不知道实际电极佩戴位置；正式实验前仍需审核电极位置、参考、BIAS 和接线。只有勾选 SSVEP 参数页的“高级：手动指定通道配置文件”后，才会启用 JSON 路径选择。
 
 先确认 Cyton USB dongle 对应的串口（示例使用 `COM5`），并确保没有其他程序占用该串口。
 

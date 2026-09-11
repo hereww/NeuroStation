@@ -17,8 +17,10 @@ CHANNEL_COUNT = 8
 
 class CaptureMode(str, Enum):
     DEMO = "demo"
+    VISUAL_PREVIEW = "preview"
     SYNTHETIC = "synthetic"
     CYTON = "cyton"
+    IMPORTED_OPENBCI = "imported_openbci"
 
 
 def default_save_directory() -> Path:
@@ -142,6 +144,11 @@ class Dataset:
     status: str = "completed"
     channel_count: int = CHANNEL_COUNT
     error: str = ""
+    sampling_rate_hz: int = SAMPLE_RATE
+    files: tuple[str, ...] = ()
+    source_path: str = ""
+    imported: bool = False
+    origin: str = "acquired"
 
     @property
     def sample_values(self) -> int:
@@ -172,6 +179,16 @@ class TaskSnapshot:
         return self.phase in (Phase.COUNTDOWN, Phase.RUNNING)
 
 
+@dataclass(frozen=True)
+class OpenBCIImportReport:
+    """Outcome of one immutable OpenBCI GUI recording import attempt."""
+
+    imported_count: int = 0
+    skipped_count: int = 0
+    failed_count: int = 0
+    failures: tuple[str, ...] = ()
+
+
 class CaptureGateway(Protocol):
     device: DeviceInfo
     config: CaptureConfig
@@ -192,3 +209,5 @@ class CaptureGateway(Protocol):
     def cancel(self) -> TaskSnapshot: ...
     def tick(self) -> TaskSnapshot: ...
     def launch_openbci_workspace(self, locale: str) -> int: ...
+    def import_openbci_recordings(self, source_root: Path) -> OpenBCIImportReport: ...
+    def refresh_datasets(self) -> None: ...

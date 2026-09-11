@@ -48,8 +48,13 @@ def build_diagnostics() -> dict[str, Any]:
     protocol_path = ROOT / "configs" / "protocols" / "ssvep_four_target_v2.json"
     stimulus_path = ROOT / "configs" / "ssvep_config_v1.json"
     final_channel_path = ROOT / "configs" / "channel_config_v1.json"
+    auto_channel_path = ROOT / "configs" / "channel_config_v1_auto.json"
     template_channel_path = ROOT / "configs" / "channel_config_v1_template.json"
-    channel_path = final_channel_path if final_channel_path.is_file() else template_channel_path
+    channel_path = (
+        final_channel_path
+        if final_channel_path.is_file()
+        else (auto_channel_path if auto_channel_path.is_file() else template_channel_path)
+    )
 
     config_report: dict[str, Any] = {
         "protocol_path": str(protocol_path),
@@ -135,6 +140,8 @@ def main() -> int:
 
     channel_config = ROOT / "configs" / "channel_config_v1.json"
     if not channel_config.is_file():
+        channel_config = ROOT / "configs" / "channel_config_v1_auto.json"
+    if not channel_config.is_file():
         channel_config = ROOT / "configs" / "channel_config_v1_template.json"
     gateway = DesktopGateway(
         protocol_path=ROOT / "configs" / "protocols" / "ssvep_four_target_v2.json",
@@ -168,6 +175,7 @@ def main() -> int:
         locale=arguments.language,
         persist_settings=True,
         save_directory_override=arguments.dataset_root,
+        preview_mode=True,
     )
     window.show()
     if arguments.smoke_test:

@@ -18,6 +18,35 @@ CHANNELS = ROOT / "configs" / "channel_config_v1_template.json"
 
 
 class AcquisitionWorkerTests(unittest.TestCase):
+    def test_demo_headless_persists_visual_preview_metadata_without_samples(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "视觉预览"
+            exit_code = worker_main(
+                [
+                    "--protocol", str(PROTOCOL),
+                    "--channel-config", str(ROOT / "configs" / "channel_config_v1_auto.json"),
+                    "--output-root", str(output),
+                    "--participant", "P-PREVIEW",
+                    "--session-name", "全屏预览验收",
+                    "--board", "demo",
+                    "--headless",
+                    "--repetitions", "1",
+                    "--stimulus-seconds", "0.01",
+                    "--rest-seconds", "0",
+                    "--countdown-seconds", "0.01",
+                ]
+            )
+            self.assertEqual(0, exit_code)
+            session_dir = next(output.glob("session_*"))
+            session = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
+            self.assertEqual("demo", session["board"])
+            self.assertTrue(session["simulated"])
+            self.assertEqual(0, session["channel_count"])
+            self.assertEqual(0, session["recorded_samples_per_channel"])
+            self.assertEqual(10, session["event_count"])
+            self.assertTrue((session_dir / "quality.json").is_file())
+            self.assertTrue((session_dir / "manifest.csv").is_file())
+
     def test_synthetic_headless_persists_raw_data_in_chinese_path(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "中文数据集"
@@ -84,6 +113,24 @@ class AcquisitionWorkerTests(unittest.TestCase):
             self.assertEqual("aborted", cancelled.result.status)
             self.assertTrue(cancelled.result.path.is_dir())
             self.assertTrue((cancelled.result.path / "session.json").is_file())
+
+    def test_preview_mode_maps_to_demo_worker(self) -> None:
+        gateway = AcquisitionProcessGateway(
+            protocol_path=PROTOCOL,
+            channel_config_path=ROOT / "configs" / "channel_config_v1_auto.json",
+        )
+        gateway._runtime_dir = Path(tempfile.gettempdir()) / "neurostation-command-test"
+        gateway._status_file = gateway._runtime_dir / "status.json"
+        gateway._cancel_file = gateway._runtime_dir / "cancel.request"
+        command = gateway._command(
+            CaptureConfig(
+                mode=CaptureMode.VISUAL_PREVIEW,
+                acknowledge_flicker_risk=True,
+            )
+        )
+        board_index = command.index("--board")
+        self.assertEqual("--board", command[board_index])
+        self.assertEqual("demo", command[board_index + 1])
 
 
 if __name__ == "__main__":

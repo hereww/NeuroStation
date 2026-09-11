@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QTimer, Qt
+from PySide6.QtCore import QObject, QSettings, QThread, QTimer, Qt, Signal, Slot
 from PySide6.QtGui import QIcon, QPalette
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QListWidget,
@@ -17,7 +17,24 @@ from .i18n import Translator
 from .pages import (
     HomePage, DevicesPage, LivePage, AppsPage, SSVEPPage, TaskPage,
     ResultPage, DatasetsPage, InfoPage,
+    DatasetSummaryPage,
 )
+class _ImportWorker(QObject):
+    finished = Signal(object)
+
+    def __init__(self, gateway: CaptureGateway, source_root: Path):
+        super().__init__()
+        self.gateway = gateway
+        self.source_root = source_root
+
+    @Slot()
+    def run(self):
+        try:
+            report = self.gateway.import_openbci_recordings(self.source_root)
+        except Exception as error:  # forwarded to the GUI thread for display
+            self.finished.emit(error)
+            return
+        self.finished.emit(report)
 
 
 NAVIGATION = ("home", "devices", "live", "apps", "datasets", "openbci", "integrations")
@@ -73,6 +90,7 @@ class MainWindow(QMainWindow):
         persist_settings: bool = False,
         save_directory_override: Path | None = None,
         settings: QSettings | None = None,
+        preview_mode: bool = False,
     ):
         super().__init__()
         self.gateway = gateway or MockGateway()
@@ -88,6 +106,14 @@ class MainWindow(QMainWindow):
         self.timer.timeout.connect(self.poll)
         self.current_page = "apps"
         self.draft_config = self.gateway.config
+        # The desktop preview is an actual worker-driven full-screen visual
+        # task. Keep it opt-in here so MockGateway consumers retain the
+        # metadata-only demo default.
+        if preview_mode:
+            self.draft_config = replace(
+                self.draft_config,
+                mode=CaptureMode.VISUAL_PREVIEW,
+            )
         if save_directory_override is not None:
             self.draft_config = replace(
                 self.draft_config,
@@ -102,6 +128,9 @@ class MainWindow(QMainWindow):
                 )
         self.result: Dataset | None = None
         self.latest_dataset: str | None = None
+        self.import_thread: QThread | None = None
+        self.import_worker: _ImportWorker | None = None
+        self.import_status = ""
         self.pages: dict[str, QWidget] = {}
         self.screens: dict[str, QScrollArea] = {}
         self.sidebar: QWidget | None = None
@@ -113,6 +142,8 @@ class MainWindow(QMainWindow):
         if icon_path.is_file():
             self.setWindowIcon(QIcon(str(icon_path)))
         self._build_shell()
+        if getattr(self.gateway, "auto_import_default", False):
+            QTimer.singleShot(0, self._auto_import_default)
         if persist_settings:
             geometry = self.settings.value("window/geometry")
             if geometry is not None:
@@ -264,13 +295,24 @@ class MainWindow(QMainWindow):
         if key == "ssvep" and self.gateway.snapshot.active and self.gateway.snapshot.protocol == "ssvep":
             key = "task"
         if key == "datasets":
-            self._replace_page(key, DatasetsPage(self.tr, self.gateway.datasets, self.latest_dataset,
-                                                 self.show_result, self.navigate))
+            page = DatasetsPage(
+                self.tr,
+                self.gateway.datasets,
+                self.latest_dataset,
+                self.show_result,
+                self.navigate,
+                import_busy=self.import_thread is not None,
+                import_status=self.import_status,
+                import_directory=self._last_import_directory(),
+            )
+            page.import_requested.connect(self._start_import)
+            self._replace_page(key, page)
         elif key == "result":
             if self.result is None:
                 key = "apps"
             else:
-                self._replace_page(key, ResultPage(self.tr, self.result, self.navigate))
+                page = DatasetSummaryPage if self.result.imported else ResultPage
+                self._replace_page(key, page(self.tr, self.result, self.navigate))
         self.current_page = key
         self.stack.setCurrentWidget(self.screens[key])
         nav_key = "apps" if key in ("ssvep", "task", "result") else key
@@ -386,7 +428,11 @@ class MainWindow(QMainWindow):
 
     def _update_controls(self):
         snapshot = self.gateway.snapshot
-        mode = CaptureMode(self.gateway.config.mode)
+        # Before a task starts the selected form mode is meaningful; after a
+        # task starts the gateway configuration becomes the source of truth.
+        mode = CaptureMode(
+            self.gateway.config.mode if snapshot.active else self.draft_config.mode
+        )
         self.mode_banner_label.setText(self.tr("mode.banner", mode=self.tr("mode." + mode.value)))
         device = self.gateway.device
         self.device_summary.setText(
@@ -399,6 +445,9 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self.timer.stop()
+        if self.import_thread is not None:
+            self.import_thread.quit()
+            self.import_thread.wait(2000)
         self.gateway.cancel()
         if self.persist_settings:
             self.settings.setValue("window/geometry", self.saveGeometry())
@@ -407,3 +456,55 @@ class MainWindow(QMainWindow):
                 self.settings.setValue("capture/save_directory", page.save.text())
             self.settings.sync()
         event.accept()
+
+    def _last_import_directory(self) -> str:
+        saved = str(self.settings.value("datasets/openbci_directory", ""))
+        if saved and Path(saved).expanduser().is_dir():
+            return saved
+        return str(Path.home() / "Documents" / "OpenBCI_GUI" / "Recordings")
+
+    def _auto_import_default(self):
+        source = Path.home() / "Documents" / "OpenBCI_GUI" / "Recordings"
+        if source.is_dir():
+            self._start_import(source, automatic=True)
+
+    def _start_import(self, source_root: Path | str, automatic: bool = False):
+        if self.import_thread is not None:
+            return
+        source = Path(source_root).expanduser().resolve()
+        if self.persist_settings:
+            self.settings.setValue("datasets/openbci_directory", str(source))
+        self.import_thread = QThread(self)
+        self.import_worker = _ImportWorker(self.gateway, source)
+        self.import_worker.moveToThread(self.import_thread)
+        self.import_thread.started.connect(self.import_worker.run)
+        self.import_worker.finished.connect(self._import_finished)
+        self.import_worker.finished.connect(self.import_thread.quit)
+        self.import_worker.finished.connect(self.import_worker.deleteLater)
+        self.import_thread.finished.connect(self.import_thread.deleteLater)
+        self.import_thread.finished.connect(self._import_thread_finished)
+        self.import_thread.start()
+        if self.current_page == "datasets":
+            self.navigate("datasets")
+
+    def _import_thread_finished(self):
+        self.import_thread = None
+        self.import_worker = None
+        if self.current_page == "datasets":
+            self.navigate("datasets")
+
+    def _import_finished(self, result):
+        if isinstance(result, Exception):
+            self.import_status = self.tr("datasets.import_failed", reason=str(result))
+        else:
+            self.import_status = self.tr(
+                "datasets.import_status",
+                imported=result.imported_count,
+                skipped=result.skipped_count,
+                failed=result.failed_count,
+            )
+            if result.failed_count:
+                self.import_status += " " + "; ".join(result.failures)
+        self.gateway.refresh_datasets()
+        if self.current_page == "datasets":
+            self.navigate("datasets")

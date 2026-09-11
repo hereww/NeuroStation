@@ -25,7 +25,7 @@ plugins =
 [nuitka]
 macos.permissions =
 mode = standalone
-extra_args = --quiet --assume-yes-for-downloads --include-package=brainflow --include-package-data=brainflow --include-data-file=configs/protocols/ssvep_four_target_v2.json=configs/protocols/ssvep_four_target_v2.json --include-data-file=configs/ssvep_config_v1.json=configs/ssvep_config_v1.json --include-data-file=configs/channel_config_v1_template.json=configs/channel_config_v1_template.json --include-data-file=integrations/openbci_gui/upstream.lock.json=integrations/openbci_gui/upstream.lock.json --include-data-dir=assets=assets --include-data-dir=apps/workstation_ui/locales=apps/workstation_ui/locales
+extra_args = --quiet --assume-yes-for-downloads --include-package=brainflow --include-package-data=brainflow --include-data-file=configs/protocols/ssvep_four_target_v2.json=configs/protocols/ssvep_four_target_v2.json --include-data-file=configs/ssvep_config_v1.json=configs/ssvep_config_v1.json --include-data-file=configs/channel_config_v1_auto.json=configs/channel_config_v1_auto.json --include-data-file=configs/channel_config_v1_template.json=configs/channel_config_v1_template.json --include-data-file=integrations/openbci_gui/upstream.lock.json=integrations/openbci_gui/upstream.lock.json --include-data-dir=assets=assets --include-data-dir=apps/workstation_ui/locales=apps/workstation_ui/locales
 
 [buildozer]
 mode = debug

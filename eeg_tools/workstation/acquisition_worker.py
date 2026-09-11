@@ -21,7 +21,7 @@ from .ssvep import SSVEPProtocol, SSVEPProtocolError
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_PROTOCOL = ROOT / "configs" / "protocols" / "ssvep_four_target_v2.json"
-DEFAULT_CHANNELS = ROOT / "configs" / "channel_config_v1_template.json"
+DEFAULT_CHANNELS = ROOT / "configs" / "channel_config_v1_auto.json"
 
 
 class UserAbort(Exception):
@@ -94,7 +94,7 @@ def _session_directory(root: Path) -> tuple[str, Path]:
     raise RuntimeError("Unable to allocate a unique session directory")
 
 
-def _create_stimulus_window(screen_index: int):
+def _create_stimulus_window(screen_index: int, *, fullscreen_flicker: bool = False):
     from PySide6.QtCore import Qt, QRect
     from PySide6.QtGui import QColor, QFont, QKeyEvent, QPainter, QPaintEvent
     from PySide6.QtWidgets import QApplication, QWidget
@@ -107,7 +107,9 @@ def _create_stimulus_window(screen_index: int):
             self.abort_requested = False
             self.target_index: int | None = None
             self.lit = False
+            self.fullscreen_flicker = fullscreen_flicker
             self.message = ""
+            self.message_flash = False
             self.setCursor(Qt.CursorShape.BlankCursor)
             self.setStyleSheet("background: black;")
 
@@ -119,9 +121,17 @@ def _create_stimulus_window(screen_index: int):
 
         def paintEvent(self, event: QPaintEvent) -> None:
             painter = QPainter(self)
-            painter.fillRect(self.rect(), QColor("black"))
             if self.message:
-                painter.setPen(QColor("white"))
+                painter.fillRect(self.rect(), QColor("white") if self.message_flash else QColor("black"))
+            else:
+                background = (
+                    QColor("white")
+                    if self.fullscreen_flicker and self.lit
+                    else QColor("black")
+                )
+                painter.fillRect(self.rect(), background)
+            if self.message:
+                painter.setPen(QColor("black") if self.message_flash else QColor("white"))
                 painter.setFont(QFont("Sans Serif", max(28, self.height() // 12)))
                 painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self.message)
                 return
@@ -134,18 +144,41 @@ def _create_stimulus_window(screen_index: int):
             )
             for index, (center_x, center_y) in enumerate(positions):
                 rectangle = QRect(center_x - side // 2, center_y - side // 2, side, side)
-                color = QColor("white") if index == self.target_index and self.lit else QColor(28, 28, 28)
+                if self.fullscreen_flicker:
+                    selected = index == self.target_index
+                    color = (
+                        QColor("black")
+                        if selected and self.lit
+                        else QColor("white")
+                        if selected
+                        else QColor(226, 226, 226)
+                        if self.lit
+                        else QColor(28, 28, 28)
+                    )
+                else:
+                    color = (
+                        QColor("white")
+                        if index == self.target_index and self.lit
+                        else QColor(28, 28, 28)
+                    )
                 painter.fillRect(rectangle, color)
-                painter.setPen(QColor(90, 90, 90))
+                painter.setPen(
+                    QColor(90, 90, 90)
+                    if not self.fullscreen_flicker
+                    else QColor(120, 120, 120)
+                    if self.lit
+                    else QColor(150, 150, 150)
+                )
                 painter.drawRect(rectangle)
             patch_side = max(24, min(self.width(), self.height()) // 16)
             patch = QRect(self.width() - patch_side - 12, self.height() - patch_side - 12, patch_side, patch_side)
             painter.fillRect(patch, QColor("white") if self.lit else QColor("black"))
 
-        def show_message(self, message: str) -> None:
+        def show_message(self, message: str, *, flash: bool = False) -> None:
             self.message = message
             self.target_index = None
             self.lit = False
+            self.message_flash = bool(flash and int(time.perf_counter() * 4) % 2)
             self.repaint()
             application.processEvents()
 
@@ -271,7 +304,7 @@ def _write_frame_log(path: Path, rows: list[dict[str, Any]]) -> None:
 def _build_quality_report(
     *,
     raw_data: Any,
-    board_id: int,
+    board_id: int | None,
     frame_rows: list[dict[str, Any]],
     recording_status: str,
     error: str | None,
@@ -281,6 +314,23 @@ def _build_quality_report(
     import numpy as np
     from brainflow.board_shim import BoardShim
 
+    if board_id is None:
+        return {
+            "schema_version": 1,
+            "status": recording_status,
+            "recording_status": recording_status,
+            "error": error,
+            "sampling_rate_hz": 0,
+            "channel_count": 0,
+            "samples_per_channel": 0,
+            "duration_s": 0.0,
+            "effective_rate_hz": 0.0,
+            "timestamp_diff_median_s": None,
+            "timestamp_gap_count": 0,
+            "channels": {},
+            "frame_count": len(frame_rows),
+            "dropped_frame_count": sum(int(row.get("dropped_since_previous", 0)) for row in frame_rows),
+        }
     eeg_channels = BoardShim.get_eeg_channels(board_id)
     timestamp_channel = BoardShim.get_timestamp_channel(board_id)
     sampling_rate = int(BoardShim.get_sampling_rate(board_id))
@@ -347,7 +397,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--participant", required=True)
     parser.add_argument("--session-name", required=True)
-    parser.add_argument("--board", choices=("cyton", "synthetic"), default="cyton")
+    parser.add_argument("--board", choices=("cyton", "synthetic", "demo"), default="cyton")
     parser.add_argument("--port", default="COM5")
     parser.add_argument("--repetitions", type=int)
     parser.add_argument("--stimulus-seconds", type=float)
@@ -433,7 +483,11 @@ def main(argv: list[str] | None = None) -> int:
     raw_data = np.empty((0, 0))
 
     params = BrainFlowInputParams()
-    board_id = BoardIds.SYNTHETIC_BOARD if arguments.board == "synthetic" else BoardIds.CYTON_BOARD
+    board_id = (
+        None
+        if arguments.board == "demo"
+        else (BoardIds.SYNTHETIC_BOARD if arguments.board == "synthetic" else BoardIds.CYTON_BOARD)
+    )
     if arguments.board == "cyton":
         params.serial_port = arguments.port
 
@@ -476,18 +530,22 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         emit("preparing")
-        board = BoardShim(board_id, params)
-        board.prepare_session()
-        prepared = True
+        if board_id is not None:
+            board = BoardShim(board_id, params)
+            board.prepare_session()
+            prepared = True
         if not arguments.headless:
-            application, window = _create_stimulus_window(arguments.screen_index)
+            application, window = _create_stimulus_window(
+                arguments.screen_index,
+                fullscreen_flicker=arguments.board == "demo",
+            )
 
         countdown_started = time.perf_counter()
 
         def countdown_update(elapsed: float) -> None:
             remaining = max(0, math.ceil(countdown_s - elapsed))
             if window is not None:
-                window.show_message(str(remaining))
+                window.show_message(str(remaining), flash=True)
             emit("countdown", countdown_remaining_s=remaining)
 
         _wait_phase(
@@ -497,8 +555,9 @@ def main(argv: list[str] | None = None) -> int:
             window=window,
             update=countdown_update,
         )
-        board.start_stream()
-        streaming = True
+        if board is not None:
+            board.start_stream()
+            streaming = True
         recording_started = time.perf_counter()
         add_event("session_start", protocol.session_start_marker)
 
@@ -670,8 +729,8 @@ def main(argv: list[str] | None = None) -> int:
         "session_name": arguments.session_name,
         "board": arguments.board,
         "serial_port": arguments.port if arguments.board == "cyton" else None,
-        "sampling_rate_hz": int(BoardShim.get_sampling_rate(board_id)),
-        "channel_count": len(BoardShim.get_eeg_channels(board_id)),
+        "sampling_rate_hz": 0 if board_id is None else int(BoardShim.get_sampling_rate(board_id)),
+        "channel_count": 0 if board_id is None else len(BoardShim.get_eeg_channels(board_id)),
         "started_at": started_at,
         "ended_at": iso_now(),
         "recording_duration_s": round(elapsed_recording(), 3),
@@ -681,7 +740,7 @@ def main(argv: list[str] | None = None) -> int:
         "recorded_samples_per_channel": sample_count,
         "event_count": len(events),
         "frame_count": len(frame_rows),
-        "simulated": arguments.board == "synthetic",
+        "simulated": arguments.board in {"synthetic", "demo"},
         "headless": arguments.headless,
         "error": error_message,
         "channel_config_warnings": channel_warnings,
@@ -700,7 +759,7 @@ def main(argv: list[str] | None = None) -> int:
             "recorded_samples_per_channel": sample_count,
             "event_count": len(events),
             "completed_trials": completed_trials,
-            "simulated": arguments.board == "synthetic",
+            "simulated": arguments.board in {"synthetic", "demo"},
             "persisted": True,
             "error": error_message,
         },

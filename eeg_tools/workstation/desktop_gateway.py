@@ -14,6 +14,7 @@ from neurostation_contract import (
     CaptureMode,
     Dataset,
     DeviceInfo,
+    OpenBCIImportReport,
     OpenBCIWorkspaceStatus,
     Phase,
     TaskSnapshot,
@@ -50,6 +51,9 @@ class MetadataSimulationGateway:
         self.config = CaptureConfig(
             save_directory=(dataset_root or DatasetRepository.default_root()).resolve()
         )
+        self.repository = DatasetRepository(Path(self.config.save_directory))
+        self.auto_import_default = dataset_root is None
+        self.last_import_report = OpenBCIImportReport()
         self._snapshot = TaskSnapshot()
         self._service: WorkstationGateway | None = None
         self._manual_markers = 0
@@ -260,8 +264,24 @@ class MetadataSimulationGateway:
         )
 
     def _load_existing(self, root: Path) -> None:
-        for record in reversed(DatasetRepository(root).list_records()):
+        self.repository = DatasetRepository(root)
+        for record in reversed(self.repository.list_records()):
             self._remember(self._dataset_from_record(record))
+
+    def import_openbci_recordings(self, source_root: Path) -> OpenBCIImportReport:
+        self._ensure_available()
+        report = self.repository.import_openbci_recordings(source_root)
+        self.last_import_report = report
+        self.refresh_datasets()
+        return report
+
+    def refresh_datasets(self) -> None:
+        transient = [dataset for dataset in self._datasets if not dataset.persisted]
+        self._datasets = []
+        for record in reversed(self.repository.list_records()):
+            self._remember(self._dataset_from_record(record))
+        for dataset in transient:
+            self._remember(dataset)
 
     def _remember(self, dataset: Dataset) -> None:
         if any(existing.id == dataset.id for existing in self._datasets):
@@ -273,7 +293,17 @@ class MetadataSimulationGateway:
     def _dataset_from_record(
         record: DatasetRecord, *, demo_seconds: float = 0.0
     ) -> Dataset:
-        source = CaptureMode(record.source)
+        try:
+            source = CaptureMode(record.source)
+        except ValueError:
+            # Older workstation builds used several free-form source labels.
+            # Keep those records visible instead of allowing one unknown value
+            # to abort the entire dataset refresh.
+            source = (
+                CaptureMode.IMPORTED_OPENBCI
+                if record.imported or record.origin == "imported_openbci"
+                else CaptureMode.CYTON
+            )
         return Dataset(
             id=record.session_id,
             name=record.session_name,
@@ -295,6 +325,12 @@ class MetadataSimulationGateway:
             persisted=True,
             source=source,
             status=record.status,
+            channel_count=record.channel_count,
+            sampling_rate_hz=record.sampling_rate_hz,
+            files=record.files,
+            source_path=record.source_path,
+            imported=record.imported,
+            origin=record.origin,
         )
 
 
@@ -374,6 +410,13 @@ class DesktopGateway:
     def launch_openbci_workspace(self, locale: str) -> int:
         self._ensure_available()
         return self._simulation.launch_openbci_workspace(locale)
+
+    def import_openbci_recordings(self, source_root: Path) -> OpenBCIImportReport:
+        self._ensure_available()
+        return self._simulation.import_openbci_recordings(source_root)
+
+    def refresh_datasets(self) -> None:
+        self._simulation.refresh_datasets()
 
     def _ensure_available(self) -> None:
         if self.snapshot.active:

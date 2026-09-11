@@ -153,6 +153,12 @@ class WorkstationGateway:
     def list_datasets(self) -> list[dict]:
         return [self._serialize_record(record) for record in self.repository.list_records()]
 
+    def import_openbci_recordings(self, source_root: Path):
+        return self.repository.import_openbci_recordings(source_root)
+
+    def refresh_datasets(self) -> None:
+        return None
+
     @staticmethod
     def _serialize_record(record: DatasetRecord) -> dict:
         value = asdict(record)

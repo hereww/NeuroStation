@@ -87,6 +87,30 @@ class QtOffscreenTests(unittest.TestCase):
         self.assertTrue(page.port.isEnabled())
         self.assertTrue(page.channel.isEnabled())
 
+    def test_preview_and_cyton_channel_mapping_defaults(self):
+        from apps.workstation_ui.gateway import CaptureMode
+
+        page = self.window.pages["ssvep"]
+        page.mode.setCurrentIndex(page.mode.findData(CaptureMode.VISUAL_PREVIEW))
+        self.application.processEvents()
+        self.assertFalse(page.port.isEnabled())
+        self.assertFalse(page.channel_manual.isEnabled())
+        self.assertTrue(page.channel_auto_label.isHidden())
+        self.assertIsNone(page.config().channel_config)
+        with self.assertRaisesRegex(ValueError, "validation.flicker_ack"):
+            page.config().validate()
+
+        page.mode.setCurrentIndex(page.mode.findData(CaptureMode.CYTON))
+        self.application.processEvents()
+        self.assertTrue(page.port.isEnabled())
+        self.assertFalse(page.channel_auto_label.isHidden())
+        self.assertFalse(page.channel_manual.isChecked())
+        self.assertIsNone(page.config().channel_config)
+        page.channel_manual.setChecked(True)
+        channel_path = Path.cwd() / "configs" / "cyton.json"
+        page.channel.setText(str(channel_path))
+        self.assertEqual(channel_path, page.config().channel_config)
+
     def test_language_storage_and_window_geometry_persist(self):
         from PySide6.QtCore import QSettings
         from apps.workstation_ui.app import MainWindow

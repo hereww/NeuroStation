@@ -19,7 +19,7 @@ from eeg_tools.workstation.ssvep import SSVEPProtocol, SSVEPProtocolError
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_PROTOCOL = ROOT / "configs" / "protocols" / "ssvep_four_target_v2.json"
-DEFAULT_CHANNEL_CONFIG = ROOT / "configs" / "channel_config_v1_template.json"
+DEFAULT_CHANNEL_CONFIG = ROOT / "configs" / "channel_config_v1_auto.json"
 
 
 def build_parser() -> argparse.ArgumentParser:

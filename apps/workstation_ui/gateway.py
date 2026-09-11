@@ -18,6 +18,7 @@ from neurostation_contract import (
     CaptureMode,
     Dataset,
     DeviceInfo,
+    OpenBCIImportReport,
     OpenBCIWorkspaceStatus,
     Phase,
     TaskSnapshot,
@@ -37,6 +38,7 @@ __all__ = [
     "Dataset",
     "DeviceInfo",
     "MockGateway",
+    "OpenBCIImportReport",
     "OpenBCIWorkspaceStatus",
     "Phase",
     "TaskSnapshot",
@@ -72,6 +74,12 @@ class MockGateway:
 
     def launch_openbci_workspace(self, locale: str) -> int:
         raise RuntimeError("validation.openbci_unavailable")
+
+    def import_openbci_recordings(self, source_root):
+        return OpenBCIImportReport()
+
+    def refresh_datasets(self) -> None:
+        return None
 
     def _ensure_available(self) -> None:
         if self.snapshot.active:

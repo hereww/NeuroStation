@@ -76,7 +76,11 @@ class AcquisitionProcessGateway:
                 "eeg_tools.workstation.acquisition_worker",
             ]
         mode = CaptureMode(config.mode)
-        board = "cyton" if mode == CaptureMode.CYTON else "synthetic"
+        board = {
+            CaptureMode.CYTON: "cyton",
+            CaptureMode.SYNTHETIC: "synthetic",
+            CaptureMode.VISUAL_PREVIEW: "demo",
+        }.get(mode, "synthetic")
         channel_config = Path(config.channel_config or self.channel_config_path).resolve()
         command.extend(
             [
@@ -130,13 +134,23 @@ class AcquisitionProcessGateway:
         output_root = Path(config.save_directory).expanduser().resolve()
         output_root.mkdir(parents=True, exist_ok=True)
         self.config = config
-        self.device = DeviceInfo(
-            name="OpenBCI Cyton" if mode == CaptureMode.CYTON else "BrainFlow Synthetic",
-            port=config.port if mode == CaptureMode.CYTON else "—",
-            channels=8 if mode == CaptureMode.CYTON else 16,
-            connected=False,
-            simulated=mode == CaptureMode.SYNTHETIC,
-        )
+        if mode == CaptureMode.VISUAL_PREVIEW:
+            self.device = DeviceInfo(
+                name="Full-screen visual preview",
+                port="—",
+                channels=0,
+                sample_rate=0,
+                connected=False,
+                simulated=True,
+            )
+        else:
+            self.device = DeviceInfo(
+                name="OpenBCI Cyton" if mode == CaptureMode.CYTON else "BrainFlow Synthetic",
+                port=config.port if mode == CaptureMode.CYTON else "—",
+                channels=8 if mode == CaptureMode.CYTON else 16,
+                connected=False,
+                simulated=mode == CaptureMode.SYNTHETIC,
+            )
         self._runtime_dir = Path(tempfile.mkdtemp(prefix="neurostation-worker-"))
         self._status_file = self._runtime_dir / "status.json"
         self._cancel_file = self._runtime_dir / "cancel.request"
@@ -290,7 +304,11 @@ class AcquisitionProcessGateway:
             session = json.loads(session_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return None
-        source = CaptureMode.CYTON if session.get("board") == "cyton" else CaptureMode.SYNTHETIC
+        source = {
+            "cyton": CaptureMode.CYTON,
+            "synthetic": CaptureMode.SYNTHETIC,
+            "demo": CaptureMode.VISUAL_PREVIEW,
+        }.get(str(session.get("board", "")), CaptureMode.SYNTHETIC)
         created_at = str(session.get("started_at") or datetime.now(timezone.utc).isoformat())
         return Dataset(
             id=str(session["session_id"]),
@@ -311,4 +329,17 @@ class AcquisitionProcessGateway:
             status=str(session.get("status", "completed")),
             channel_count=int(session.get("channel_count", 8)),
             error=str(session.get("error") or ""),
+            sampling_rate_hz=int(session.get("sampling_rate_hz", 250) or 250),
+            files=tuple(
+                str(item)
+                for item in session.get("files", ())
+                if isinstance(item, str)
+            ) or tuple(
+                item.name
+                for item in sorted(output.iterdir())
+                if item.is_file() and item.name != "session.json"
+            ) if output.is_dir() else (),
+            source_path=str(session.get("source_path") or ""),
+            imported=bool(session.get("imported", False)),
+            origin=str(session.get("origin") or "acquired"),
         )

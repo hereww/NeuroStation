@@ -132,6 +132,8 @@ class SSVEPPage(Page):
         self.repetitions = self._spin(1, 10, config.repetitions)
         self.mode = QComboBox()
         for mode in CaptureMode:
+            if mode is CaptureMode.IMPORTED_OPENBCI:
+                continue
             self.mode.addItem(tr("mode." + mode.value), mode)
         self.mode.setCurrentIndex(max(0, self.mode.findData(config.mode)))
         self.port = QLineEdit(config.port)
@@ -147,11 +149,22 @@ class SSVEPPage(Page):
         picker_layout.addWidget(self.save, 1)
         picker_layout.addWidget(action(tr("action.browse"), self._choose_directory))
         self.channel = QLineEdit(str(config.channel_config or ""))
+        self.channel_manual = QCheckBox(tr("field.channel_manual"))
+        self.channel_manual.setChecked(config.channel_config is not None)
+        self.channel_browse = None
         channel_picker = QWidget()
         channel_picker_layout = QHBoxLayout(channel_picker)
         channel_picker_layout.setContentsMargins(0, 0, 0, 0)
         channel_picker_layout.addWidget(self.channel, 1)
-        channel_picker_layout.addWidget(action(tr("action.browse"), self._choose_channel_config))
+        self.channel_browse = action(tr("action.browse"), self._choose_channel_config)
+        channel_picker_layout.addWidget(self.channel_browse)
+        channel_controls = QWidget()
+        channel_controls_layout = QVBoxLayout(channel_controls)
+        channel_controls_layout.setContentsMargins(0, 0, 0, 0)
+        channel_controls_layout.setSpacing(6)
+        self.channel_auto_label = label(tr("field.channel_auto"), "muted")
+        channel_controls_layout.addWidget(self.channel_auto_label)
+        channel_controls_layout.addWidget(channel_picker)
         self.acknowledge = QCheckBox(tr("ssvep.acknowledge"))
         self.acknowledge.setChecked(config.acknowledge_flicker_risk)
         self.allow_draft = QCheckBox(tr("ssvep.allow_draft"))
@@ -162,8 +175,9 @@ class SSVEPPage(Page):
                             ("field.stimulus", self.stimulus), ("field.rest", self.rest),
                             ("field.repetitions", self.repetitions), ("field.refresh", label("60 Hz")),
                             ("field.speed", self.speed), ("field.save", picker),
-                            ("field.channel_config", channel_picker)):
+                            ("field.channel_config", channel_controls)):
             form.addRow(tr(key), widget)
+        form.addRow("", self.channel_manual)
         form.addRow("", self.acknowledge)
         form.addRow("", self.allow_draft)
         section.layout.addLayout(form)
@@ -184,6 +198,7 @@ class SSVEPPage(Page):
         for spin in (self.stimulus, self.rest, self.repetitions):
             spin.valueChanged.connect(self._update_estimate)
         self.mode.currentIndexChanged.connect(self._mode_changed)
+        self.channel_manual.toggled.connect(self._channel_manual_changed)
         self._mode_changed()
         self._update_estimate()
 
@@ -196,7 +211,12 @@ class SSVEPPage(Page):
         return spin
 
     def config(self) -> CaptureConfig:
-        channel_config = self.channel.text().strip()
+        mode = CaptureMode(self.mode.currentData())
+        channel_config = (
+            self.channel.text().strip()
+            if mode == CaptureMode.CYTON and self.channel_manual.isChecked()
+            else ""
+        )
         return CaptureConfig(participant=self.participant.text().strip(), name=self.name.text().strip(),
             stimulus_seconds=self.stimulus.value(), rest_seconds=self.rest.value(),
             repetitions=self.repetitions.value(), save_directory=Path(self.save.text()).expanduser(),
@@ -227,14 +247,33 @@ class SSVEPPage(Page):
         mode = CaptureMode(self.mode.currentData())
         demo = mode == CaptureMode.DEMO
         cyton = mode == CaptureMode.CYTON
+        preview = mode == CaptureMode.VISUAL_PREVIEW
         self.port.setEnabled(cyton)
+        self.channel_manual.setEnabled(cyton)
+        self.channel_auto_label.setVisible(cyton)
         self.channel.setEnabled(cyton)
+        self.channel.setReadOnly(not (cyton and self.channel_manual.isChecked()))
+        if self.channel_browse is not None:
+            self.channel_browse.setEnabled(cyton and self.channel_manual.isChecked())
+        if not cyton and self.channel_manual.isChecked():
+            self.channel_manual.blockSignals(True)
+            self.channel_manual.setChecked(False)
+            self.channel_manual.blockSignals(False)
         self.allow_draft.setEnabled(cyton)
         self.screen.setEnabled(not demo)
         self.acknowledge.setEnabled(not demo)
         self.speed.setEnabled(demo)
         if not demo:
             self.speed.setCurrentIndex(self.speed.findData(1))
+        if preview:
+            self.port.clear()
+
+    def _channel_manual_changed(self, checked: bool):
+        cyton = CaptureMode(self.mode.currentData()) == CaptureMode.CYTON
+        self.channel.setEnabled(cyton)
+        self.channel.setReadOnly(not (cyton and checked))
+        if self.channel_browse is not None:
+            self.channel_browse.setEnabled(cyton and checked)
 
     def _start(self):
         try:
@@ -313,6 +352,14 @@ class ResultPage(Page):
             status_key = "result.simulated_saved" if result.persisted else "result.simulated"
             notice_key = "result.notice_written" if result.persisted else "result.notice"
             path_key = "result.path_written" if result.persisted else "result.path"
+        elif result.source == CaptureMode.VISUAL_PREVIEW:
+            status_key = (
+                "result.preview_saved"
+                if result.status == "completed"
+                else "result." + result.status + "_saved"
+            )
+            notice_key = "result.preview_notice"
+            path_key = "result.path_written"
         else:
             status_key = (
                 "result." + result.source.value + "_saved"
@@ -321,8 +368,9 @@ class ResultPage(Page):
             )
             notice_key = "result.recorded_notice"
             path_key = "result.recorded_path"
-        sample_key = "result.samples" if result.source is CaptureMode.DEMO else "result.recorded_samples"
-        values_key = "result.values" if result.source is CaptureMode.DEMO else "result.recorded_values"
+        simulated_visual = result.source in (CaptureMode.DEMO, CaptureMode.VISUAL_PREVIEW)
+        sample_key = "result.samples" if simulated_visual else "result.recorded_samples"
+        values_key = "result.values" if simulated_visual else "result.recorded_values"
         super().__init__(tr, tr(title_key), f"{result.name} · {tr(status_key)}")
         self.layout.addWidget(label(tr(notice_key), "notice"))
         self.layout.addWidget(KeyValues([
@@ -348,10 +396,52 @@ class ResultPage(Page):
         self.layout.addStretch()
 
 
+class DatasetSummaryPage(Page):
+    def __init__(self, tr, result: Dataset, navigate):
+        super().__init__(tr, tr("dataset_summary.title"), result.name)
+        self.layout.addWidget(label(tr("dataset_summary.readonly"), "notice"))
+        source_name = tr("dataset_summary.imported") if result.imported else tr(
+            "dataset_summary.acquired"
+        )
+        self.layout.addWidget(KeyValues([
+            (tr("dataset_summary.session"), result.name),
+            (tr("dataset_summary.source"), source_name),
+            (tr("field.participant"), result.participant or tr("dataset_summary.unlabeled")),
+            (tr("dataset_summary.markers"), tr("dataset_summary.no_markers") if result.imported else str(result.event_count)),
+            (tr("result.channels"), str(result.channel_count)),
+            (tr("dataset_summary.sampling_rate"), f"{result.sampling_rate_hz:g} Hz"),
+            (tr("dataset_summary.duration"), format_duration(result.recording_seconds)),
+            (tr("dataset_summary.samples_per_channel"), f"{result.samples_per_channel:,}"),
+            (tr("dataset_summary.file_count"), str(len(result.files))),
+        ]))
+        files = Section(tr("dataset_summary.files"))
+        files.layout.addWidget(label("\n".join(result.files) or "—", "path"))
+        self.layout.addWidget(files)
+        paths = Section(tr("dataset_summary.paths"))
+        paths.layout.addWidget(label(f"{tr('dataset_summary.workstation_copy')}:\n{result.path}", "path"))
+        paths.layout.addWidget(label(f"{tr('dataset_summary.original_source')}:\n{result.source_path or '—'}", "path"))
+        self.layout.addWidget(paths)
+        self.layout.addWidget(action(tr("app.datasets"), lambda: navigate("datasets"), True))
+        self.layout.addStretch()
+
+
 class DatasetsPage(Page):
-    def __init__(self, tr, datasets: tuple[Dataset, ...], latest: str | None, show_result, navigate):
+    import_requested = Signal(object)
+
+    def __init__(self, tr, datasets: tuple[Dataset, ...], latest: str | None, show_result, navigate,
+                 import_busy: bool = False, import_status: str = "", import_directory: str = ""):
         super().__init__(tr, tr("app.datasets"), tr("datasets.subtitle"))
-        self.layout.addWidget(action(tr("nav.apps"), lambda: navigate("apps")))
+        controls = QHBoxLayout()
+        controls.addWidget(action(tr("nav.apps"), lambda: navigate("apps")))
+        self.import_button = action(tr("datasets.import_openbci"), self._choose_import_directory, True)
+        self.import_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon))
+        self.import_button.setEnabled(not import_busy)
+        controls.addWidget(self.import_button)
+        self.layout.addLayout(controls)
+        self.import_status = label(import_status, "muted")
+        self.import_status.setVisible(bool(import_status))
+        self.layout.addWidget(self.import_status)
+        self.import_directory = import_directory
         if not datasets:
             self.layout.addWidget(label(tr("datasets.empty"), "muted"))
         for dataset in reversed(datasets):
@@ -361,6 +451,12 @@ class DatasetsPage(Page):
                 status_key = "datasets.latest." + dataset.source.value
             elif dataset.source == CaptureMode.DEMO:
                 status_key = "result.simulated_saved" if dataset.persisted else "result.simulated"
+            elif dataset.source == CaptureMode.VISUAL_PREVIEW:
+                status_key = (
+                    "result.preview_saved"
+                    if dataset.status == "completed"
+                    else "result." + dataset.status + "_saved"
+                )
             else:
                 status_key = "result." + dataset.source.value + "_saved"
             item.layout.addWidget(label(tr(status_key), "muted"))
@@ -368,9 +464,16 @@ class DatasetsPage(Page):
                 duration=format_duration(dataset.recording_seconds), samples=f"{dataset.samples_per_channel:,}",
                 events=dataset.event_count)))
             item.layout.addWidget(label(str(dataset.path), "path"))
-            item.layout.addWidget(action(tr("action.summary"), lambda _checked=False, d=dataset: show_result(d)))
+            item.layout.addWidget(action(tr("action.view_dataset"), lambda _checked=False, d=dataset: show_result(d)))
             self.layout.addWidget(item)
         self.layout.addStretch()
+
+    def _choose_import_directory(self):
+        path = QFileDialog.getExistingDirectory(
+            self, self.tr("datasets.import_openbci"), self.import_directory
+        )
+        if path:
+            self.import_requested.emit(path)
 
 
 class InfoPage(Page):
