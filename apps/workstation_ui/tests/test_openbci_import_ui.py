@@ -50,10 +50,15 @@ class OpenBCIImportUiTests(unittest.TestCase):
             window.show_result(gateway.datasets[0])
             self.assertEqual("result", window.current_page)
             self.assertEqual("DatasetSummaryPage", type(window.pages["result"]).__name__)
-            from PySide6.QtWidgets import QLabel
+            from PySide6.QtWidgets import QLabel, QPushButton
 
             texts = "\n".join(node.text() for node in window.pages["result"].findChildren(QLabel))
             self.assertIn("工作站副本路径", texts)
+            window.navigate("datasets")
+            buttons = window.pages["datasets"].findChildren(QPushButton)
+            open_button = next(button for button in buttons if button.text() == "打开数据集")
+            open_button.click()
+            self.assertEqual("DatasetSummaryPage", type(window.pages["result"]).__name__)
             window.close()
 
 

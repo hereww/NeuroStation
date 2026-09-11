@@ -127,6 +127,7 @@ class MainWindow(QMainWindow):
                     save_directory=Path(saved_directory).expanduser(),
                 )
         self.result: Dataset | None = None
+        self._showing_dataset_summary = False
         self.latest_dataset: str | None = None
         self.import_thread: QThread | None = None
         self.import_worker: _ImportWorker | None = None
@@ -299,7 +300,7 @@ class MainWindow(QMainWindow):
                 self.tr,
                 self.gateway.datasets,
                 self.latest_dataset,
-                self.show_result,
+                self.show_dataset,
                 self.navigate,
                 import_busy=self.import_thread is not None,
                 import_status=self.import_status,
@@ -311,7 +312,7 @@ class MainWindow(QMainWindow):
             if self.result is None:
                 key = "apps"
             else:
-                page = DatasetSummaryPage if self.result.imported else ResultPage
+                page = DatasetSummaryPage if self._showing_dataset_summary else ResultPage
                 self._replace_page(key, page(self.tr, self.result, self.navigate))
         self.current_page = key
         self.stack.setCurrentWidget(self.screens[key])
@@ -402,6 +403,12 @@ class MainWindow(QMainWindow):
 
     def show_result(self, result: Dataset):
         self.result = result
+        self._showing_dataset_summary = result.imported
+        self.navigate("result")
+
+    def show_dataset(self, result: Dataset):
+        self.result = result
+        self._showing_dataset_summary = True
         self.navigate("result")
 
     def poll(self):

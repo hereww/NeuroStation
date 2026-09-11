@@ -354,6 +354,7 @@ class DesktopGateway:
             protocol_path=protocol_path,
             channel_config_path=channel_config_path,
         )
+        self.auto_import_default = dataset_root is None
         self._active = self._simulation
 
     @property

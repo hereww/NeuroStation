@@ -4,9 +4,10 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from eeg_tools.workstation.dataset import DatasetRepository
-from eeg_tools.workstation.desktop_gateway import MetadataSimulationGateway
+from eeg_tools.workstation.desktop_gateway import DesktopGateway, MetadataSimulationGateway
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -170,6 +171,23 @@ class DatasetImportTests(unittest.TestCase):
             self.assertEqual(1, len(gateway.datasets))
             self.assertTrue(gateway.datasets[0].imported)
             self.assertEqual("imported_openbci", gateway.datasets[0].source.value)
+
+    def test_desktop_gateway_exposes_default_import_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            gateway = DesktopGateway(
+                protocol_path=PROTOCOL,
+                channel_config_path=ROOT / "configs" / "channel_config_v1_auto.json",
+                dataset_root=root / "Datasets",
+            )
+
+            self.assertFalse(gateway.auto_import_default)
+            with patch.object(DatasetRepository, "default_root", return_value=root / "DefaultDatasets"):
+                default_gateway = DesktopGateway(
+                    protocol_path=PROTOCOL,
+                    channel_config_path=ROOT / "configs" / "channel_config_v1_auto.json",
+                )
+            self.assertTrue(default_gateway.auto_import_default)
 
 
 if __name__ == "__main__":
