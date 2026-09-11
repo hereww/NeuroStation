@@ -114,7 +114,7 @@ class Phase(str, Enum):
 @dataclass(frozen=True)
 class DeviceInfo:
     name: str = "OpenBCI Cyton"
-    port: str = "COM5"
+    port: str = "AUTO"
     channels: int = CHANNEL_COUNT
     sample_rate: int = SAMPLE_RATE
     connected: bool = True
@@ -216,3 +216,5 @@ class CaptureGateway(Protocol):
     def launch_openbci_workspace(self, locale: str) -> int: ...
     def import_openbci_recordings(self, source_root: Path) -> OpenBCIImportReport: ...
     def refresh_datasets(self) -> None: ...
+
+    def scan_serial_ports(self) -> tuple[dict[str, str], ...]: ...

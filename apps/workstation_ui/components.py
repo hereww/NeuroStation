@@ -1,7 +1,7 @@
 """Reusable Qt presentation components. All stimuli here are deliberately static."""
 from math import sin, exp
 
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QWidget, QLabel, QPushButton, QToolButton, QVBoxLayout, QHBoxLayout, QGridLayout,
@@ -103,12 +103,35 @@ class StaticTargets(Section):
 
 
 class WaveformWidget(QWidget):
-    """Static, deterministic illustrative traces; never presented as device data."""
-    def __init__(self, accessible_name: str):
+    """Animated illustrative traces for the in-memory acquisition test."""
+    def __init__(self, accessible_name: str, badge_text: str = ""):
         super().__init__()
         self.setMinimumSize(280, 345)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setAccessibleName(accessible_name)
+        self._phase = 0.0
+        self._active = False
+        self._badge_text = badge_text
+        self._timer = QTimer(self)
+        self._timer.setInterval(50)
+        self._timer.timeout.connect(self._advance)
+
+    def _advance(self):
+        self._phase = (self._phase + 0.035) % 1.0
+        self.update()
+
+    def set_active(self, active: bool):
+        self._active = active
+        self.update()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._timer.isActive():
+            self._timer.start()
+
+    def hideEvent(self, event):
+        self._timer.stop()
+        super().hideEvent(event)
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -117,6 +140,8 @@ class WaveformWidget(QWidget):
         grid = QColor("#34434e" if dark else "#e0e7ea")
         ink = QColor("#e0e9ef" if dark else "#263c48")
         accent = QColor("#69c8d3" if dark else "#087c88")
+        if not self._active:
+            accent.setAlpha(185)
         left, right = 58, self.width()-14
         top, bottom = 12, self.height()-32
         step = (bottom-top)/8
@@ -137,10 +162,17 @@ class WaveformWidget(QWidget):
             samples = max(240, right-left)
             for j in range(samples+1):
                 u = j/samples
-                amplitude = (sin(u*147+channel*.81)*.39+sin(u*323+channel*1.21)*.19
-                    +sin(u*67+channel*2.18)*.22+sin(u*829+channel*3.1)*.11)*11
+                shift = self._phase * 2.0 * 3.14159
+                amplitude = (sin(u*147+channel*.81-shift)*.39+sin(u*323+channel*1.21-shift*1.4)*.19
+                    +sin(u*67+channel*2.18-shift*.6)*.22+sin(u*829+channel*3.1-shift*2.2)*.11)*11
                 amplitude += exp(-((u-(.22+channel*.055))/.024)**2)*(9 if channel < 2 else 3)
                 x, y = left+(right-left)*u, center+amplitude
                 path.lineTo(x, y) if j else path.moveTo(x, y)
             painter.setPen(QPen(accent, 1.2))
             painter.drawPath(path)
+        scan_x = left + (right-left) * self._phase
+        painter.setPen(QPen(QColor("#d9a441" if not dark else "#f2c66d"), 1.5))
+        painter.drawLine(int(scan_x), top, int(scan_x), bottom)
+        if self._badge_text:
+            painter.setPen(QPen(ink, 1))
+            painter.drawText(right - 150, top + 14, self._badge_text)

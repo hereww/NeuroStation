@@ -236,6 +236,7 @@ class MainWindow(QMainWindow):
         self._replace_page("apps", AppsPage(self.tr, self.navigate))
         detail = SSVEPPage(self.tr, self.draft_config, self.navigate)
         detail.start_requested.connect(self.start_ssvep)
+        detail.serial_scan_requested.connect(self.scan_serial_ports)
         self._replace_page("ssvep", detail)
         task = TaskPage(self.tr)
         task.cancel_requested.connect(self.cancel_task)
@@ -349,6 +350,16 @@ class MainWindow(QMainWindow):
             self.settings.setValue("capture/save_directory", str(config.save_directory))
         self.navigate("task")
         self._start_timer()
+
+    def scan_serial_ports(self):
+        try:
+            ports = self.gateway.scan_serial_ports()
+        except Exception as error:
+            self._error(error)
+            return
+        page = self.pages.get("ssvep")
+        if page is not None and hasattr(page, "set_detected_ports"):
+            page.set_detected_ports(ports)
 
     def start_manual(self, config: CaptureConfig):
         try:

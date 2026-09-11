@@ -9,6 +9,7 @@ import unittest
 
 from apps.workstation_ui.gateway import CaptureConfig, CaptureMode, Phase
 from eeg_tools.workstation.acquisition_worker import main as worker_main
+from eeg_tools.workstation.acquisition_worker import _prepare_cyton_board
 from eeg_tools.workstation.process_gateway import AcquisitionProcessGateway
 
 
@@ -18,6 +19,32 @@ CHANNELS = ROOT / "configs" / "channel_config_v1_template.json"
 
 
 class AcquisitionWorkerTests(unittest.TestCase):
+    def test_cyton_prepare_scans_candidates_until_one_is_ready(self) -> None:
+        from unittest.mock import patch
+
+        class FakeBoard:
+            def __init__(self, _board_id, params):
+                self.port = params.serial_port
+
+            def prepare_session(self):
+                if self.port == "COM1":
+                    raise RuntimeError("BOARD_NOT_READY_ERROR:7")
+
+            def release_session(self):
+                return None
+
+        class Params:
+            serial_port = "AUTO"
+
+        with patch("eeg_tools.workstation.acquisition_worker.candidate_serial_ports", return_value=(
+            type("Port", (), {"device": "COM1"})(),
+            type("Port", (), {"device": "COM2"})(),
+        )), patch("brainflow.board_shim.BoardShim", FakeBoard):
+            board, selected, failures = _prepare_cyton_board(6, Params(), "AUTO")
+        self.assertEqual("COM2", selected)
+        self.assertEqual("COM2", board.port)
+        self.assertEqual("COM1", failures[0]["port"])
+
     def test_demo_headless_persists_visual_preview_metadata_without_samples(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "视觉预览"

@@ -228,11 +228,10 @@ def _prepare_cyton_board(
     failures: list[dict[str, str]] = []
     for candidate in candidates:
         params.serial_port = candidate.device
-        board = BoardShim(board_id, params)
-        prepared = False
+        board = None
         try:
+            board = BoardShim(board_id, params)
             board.prepare_session()
-            prepared = True
             return board, candidate.device, failures
         except Exception as error:
             failures.append(
@@ -241,7 +240,7 @@ def _prepare_cyton_board(
                     "error": f"{type(error).__name__}: {error}",
                 }
             )
-            if prepared:
+            if board is not None:
                 try:
                     board.release_session()
                 except Exception:
@@ -451,7 +450,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--participant", required=True)
     parser.add_argument("--session-name", required=True)
     parser.add_argument("--board", choices=("cyton", "synthetic", "demo"), default="cyton")
-    parser.add_argument("--port", default="COM5")
+    parser.add_argument("--port", default="AUTO")
     parser.add_argument("--repetitions", type=int)
     parser.add_argument("--stimulus-seconds", type=float)
     parser.add_argument("--rest-seconds", type=float)
@@ -580,6 +579,9 @@ def main(argv: list[str] | None = None) -> int:
             recording_duration_s=protocol.recording_duration_s,
             completed_trials=completed_trials,
             event_count=len(events),
+            serial_port=selected_port,
+            requested_serial_port=arguments.port if arguments.board == "cyton" else None,
+            screen_index=selected_screen_index,
             **extra,
         )
 

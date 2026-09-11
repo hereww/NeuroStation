@@ -108,14 +108,21 @@ class GatewayTests(unittest.TestCase):
             self.assertEqual(self.gateway.datasets, ())
 
     def test_manual_recording_and_markers(self):
-        self.gateway.start_manual(self.config)
-        self.clock.now = 2
-        self.assertEqual(self.gateway.add_marker(), 2)
-        self.clock.now = 3
-        result = self.gateway.stop_manual()
-        self.assertEqual(result.samples_per_channel, 750)
-        self.assertEqual(result.event_count, 3)
-        self.assertEqual(result.preparation_seconds, 0)
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "正式脑电数据库"
+            config = CaptureConfig(save_directory=target)
+            self.gateway.start_manual(config)
+            self.clock.now = 2
+            self.assertEqual(self.gateway.add_marker(), 2)
+            self.clock.now = 3
+            result = self.gateway.stop_manual()
+            self.assertEqual(result.samples_per_channel, 750)
+            self.assertEqual(result.event_count, 3)
+            self.assertEqual(result.preparation_seconds, 0)
+            self.assertEqual(result.origin, "capture_test")
+            self.assertFalse(result.persisted)
+            self.assertFalse(target.exists())
+            self.assertEqual(result.path, target.resolve() / result.id)
         with self.assertRaises(RuntimeError):
             self.gateway.add_marker()
 

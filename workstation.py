@@ -75,6 +75,7 @@ def build_diagnostics() -> dict[str, Any]:
         config_report["error"] = f"{type(error).__name__}: {error}"
 
     from eeg_tools.workstation.desktop_gateway import DesktopGateway
+    from eeg_tools.workstation.device_discovery import discover_serial_ports
 
     gateway = DesktopGateway(
         protocol_path=protocol_path,
@@ -108,7 +109,8 @@ def build_diagnostics() -> dict[str, Any]:
         },
         "hardware": {
             "cyton_connected": False,
-            "note": "Connectivity requires a live Cyton USB dongle check; diagnostics does not open the serial port.",
+            "serial_ports": [item.as_dict() for item in discover_serial_ports()],
+            "note": "Diagnostics discovers serial endpoints but does not open the serial port; Cyton readiness is verified by BrainFlow at task start.",
         },
     }
 

@@ -81,6 +81,9 @@ class MockGateway:
     def refresh_datasets(self) -> None:
         return None
 
+    def scan_serial_ports(self) -> tuple[dict[str, str], ...]:
+        return ()
+
     def _ensure_available(self) -> None:
         if self.snapshot.active:
             raise RuntimeError("validation.busy")
@@ -235,6 +238,7 @@ class MockGateway:
             path=self.config.save_directory.expanduser().resolve() / identifier,
             created_at=now.isoformat(),
             source=CaptureMode.DEMO,
+            origin="capture_test" if protocol == "manual" else "acquired",
         )
         self._datasets.append(result)
         return result

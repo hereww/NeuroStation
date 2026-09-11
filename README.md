@@ -50,7 +50,7 @@ python -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe workstation.py
 ```
 
-默认显示中文。英文界面使用 `--language en-US`；验收时可用 `--dataset-root` 指定独立数据目录。SSVEP 默认参数为 10/12/15/20 Hz、12 个试次、93 秒采集时间和 5 秒准备倒计时。默认流程演示不闪烁、不连接设备，点击开始即可运行并创建 `session.json`、`protocol.json`、`events.tsv`、`manifest.csv` 等会话元数据；需要检查黑白倒计时和整屏黑白刺激时使用 `workstation.py --preview`，该模式必须先确认光敏风险，并在结果页明确标记为视觉预览。
+默认显示中文。英文界面使用 `--language en-US`；验收时可用 `--dataset-root` 指定独立数据目录。导航中的“采集测试”只生成动态内存波形，结果标记为未保存，不写入正式脑电数据库或磁盘文件。SSVEP 默认参数为 10/12/15/20 Hz、12 个试次、93 秒采集时间和 5 秒准备倒计时。默认流程演示不闪烁、不连接设备，点击开始即可运行并创建 `session.json`、`protocol.json`、`events.tsv`、`manifest.csv` 等会话元数据；需要检查黑白倒计时和整屏黑白刺激时使用 `workstation.py --preview`，该模式必须先确认光敏风险，并在结果页明确标记为视觉预览。
 
 在连接设备前，可运行不会打开串口的预检。它会报告 Windows/Linux/macOS 运行环境、Qt/BrainFlow、协议与通道表状态，以及 OpenBCI GUI 源码/中文 overlay/runtime 是否就绪：
 
@@ -74,9 +74,11 @@ python -m pip install -r requirements.txt
 
 如只需要不创建文件的纯 UI mock，请在测试中注入 `MockGateway`；生产入口不要把预览结果解释为真实 EEG。预览支持 `--dataset-root` 指定会话目录。
 
-Cyton 模式默认使用 `configs/channel_config_v1_auto.json`，自动匹配板卡 CH1–CH8 到 N1P–N8P 的输入顺序，不要求普通用户填写 JSON。该映射不知道实际电极佩戴位置；正式实验前仍需审核电极位置、参考、BIAS 和接线。只有勾选 SSVEP 参数页的“高级：手动指定通道配置文件”后，才会启用 JSON 路径选择。
+BrainFlow 已作为工作台采集核心集成。Cyton 模式的串口默认是 `AUTO`：启动采集时工作站会扫描 Windows COM、Linux `/dev/tty*`、macOS `/dev/cu.*`，逐个调用 BrainFlow `prepare_session()`，第一个成功握手的设备才会进入采集。SSVEP 刺激屏幕也会自动回退到当前第一个可用 Qt 屏幕，实际端口和屏幕编号会写入 `session.json`。如果扫描失败，工作台会显示已扫描端口和 `BOARD_NOT_READY_ERROR:7` 的可操作诊断，而不是只显示原生 traceback。
 
-先确认 Cyton USB dongle 对应的串口（示例使用 `COM5`），并确保没有其他程序占用该串口。
+Cyton 模式默认使用 `configs/channel_config_v1_auto.json`，自动匹配板卡 CH1–CH8 到 N1P–N8P 的输入顺序，不要求普通用户填写 JSON。该映射不知道实际电极佩戴位置；正式实验前仍需审核电极位置、参考、BIAS 和接线。只有勾选 SSVEP 参数页的“高级：手动指定通道配置文件”后，才会启用 JSON 路径选择。工作台中的“扫描 COM”按钮只做只读发现；真正的设备识别仍由 BrainFlow 握手完成。
+
+默认使用 `AUTO` 扫描串口并由 BrainFlow 验证 Cyton 握手；如需固定设备，可填写 `COM5` 或对应的 `/dev/cu.*` 路径。开始前请关闭 OpenBCI GUI 或其他串口监视程序，避免设备被占用。
 
 ## 采集前准备
 
@@ -101,7 +103,7 @@ Cyton 模式默认使用 `configs/channel_config_v1_auto.json`，自动匹配板
 先做 15 秒连通性检查：
 
 ```powershell
-python check_cyton_live.py --port COM5 --seconds 15
+python check_cyton_live.py --port AUTO --seconds 15
 ```
 
 正常情况下输出一段 JSON。重点检查：
@@ -115,7 +117,7 @@ python check_cyton_live.py --port COM5 --seconds 15
 
 ```powershell
 python run_ssvep_session.py `
-  --port COM5 `
+  --port AUTO `
   --channel-config configs\channel_config_v1.json
 ```
 

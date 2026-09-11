@@ -15,6 +15,7 @@ class WorkstationDiagnosticsTests(unittest.TestCase):
         self.assertIn(report["configuration"]["status"], {"ready", "draft", "invalid"})
         self.assertIsInstance(report["configuration"]["warnings"], list)
         self.assertFalse(report["hardware"]["cyton_connected"])
+        self.assertIsInstance(report["hardware"]["serial_ports"], list)
         self.assertIn("does not open the serial port", report["hardware"]["note"])
 
     def test_check_cyton_cli_is_explicit_when_port_is_unavailable(self) -> None:

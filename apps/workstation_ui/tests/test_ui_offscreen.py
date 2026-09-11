@@ -79,6 +79,29 @@ class QtOffscreenTests(unittest.TestCase):
         self.assertIsNotNone(self.window.result)
         self.assertFalse(self.window.result.persisted)
 
+    def test_live_page_is_non_persistent_capture_test_with_animated_waveform(self):
+        from apps.workstation_ui.gateway import CaptureMode
+
+        page = self.window.pages["live"]
+        self.window.navigate("live")
+        self.window.show()
+        self.application.processEvents()
+        self.assertEqual("采集测试", page.title_label.text())
+        self.assertTrue(page.waveform._timer.isActive())
+        phase = page.waveform._phase
+        page.waveform._advance()
+        self.assertNotEqual(phase, page.waveform._phase)
+
+        page._start()
+        self.assertIs(CaptureMode.DEMO, self.gateway.config.mode)
+        self.now = 3
+        self.window.poll()
+        self.window.stop_manual()
+        self.assertEqual("result", self.window.current_page)
+        self.assertEqual("capture_test", self.window.result.origin)
+        self.assertFalse(self.window.result.persisted)
+        self.assertFalse(self.window.result.path.exists())
+
     def test_cancel_and_close_stop_timer(self):
         from apps.workstation_ui.gateway import CaptureConfig, Phase
         self.window.start_ssvep(CaptureConfig(), 8)
@@ -131,6 +154,15 @@ class QtOffscreenTests(unittest.TestCase):
         channel_path = Path.cwd() / "configs" / "cyton.json"
         page.channel.setText(str(channel_path))
         self.assertEqual(channel_path, page.config().channel_config)
+
+    def test_serial_scan_updates_auto_status(self):
+        page = self.window.pages["ssvep"]
+        self.window.gateway.scan_serial_ports = lambda: (
+            {"device": "COM5", "description": "USB serial"},
+        )
+        self.window.scan_serial_ports()
+        self.assertEqual("AUTO", page.port.text())
+        self.assertIn("COM5", page.port_status.text())
 
     def test_language_storage_and_window_geometry_persist(self):
         from PySide6.QtCore import QSettings

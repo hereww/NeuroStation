@@ -24,6 +24,7 @@ from .dataset import DatasetRecord, DatasetRepository
 from .gateway import WorkstationGateway
 from .openbci_workspace import OpenBCIWorkspaceError, OpenBCIWorkspaceManager
 from .process_gateway import AcquisitionProcessGateway
+from .device_discovery import discover_serial_ports
 from .task import TaskPhase
 
 
@@ -159,6 +160,7 @@ class MetadataSimulationGateway:
             simulated=True,
             persisted=False,
             source=CaptureMode.DEMO,
+            origin="capture_test",
         )
         self._remember(result)
         self._snapshot = TaskSnapshot(
@@ -421,6 +423,9 @@ class DesktopGateway:
 
     def refresh_datasets(self) -> None:
         self._simulation.refresh_datasets()
+
+    def scan_serial_ports(self) -> tuple[dict[str, str], ...]:
+        return tuple(item.as_dict() for item in discover_serial_ports())
 
     def _ensure_available(self) -> None:
         if self.snapshot.active:

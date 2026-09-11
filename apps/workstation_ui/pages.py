@@ -197,7 +197,7 @@ class HomePage(Page):
     def __init__(self, tr, navigate):
         super().__init__(tr, tr("home.ready"), tr("home.subtitle"))
         device = Section("OpenBCI Cyton")
-        device.layout.addWidget(label("COM5 · 8 CH · 250 Hz"))
+        device.layout.addWidget(label("AUTO · 8 CH · 250 Hz"))
         device.layout.addWidget(label(tr("device.connected"), "muted"))
         self.layout.addWidget(device)
         self.layout.addWidget(action(tr("home.check"), lambda: navigate("live")))
@@ -208,7 +208,7 @@ class HomePage(Page):
 class DevicesPage(Page):
     def __init__(self, tr, navigate):
         super().__init__(tr, tr("nav.devices"), tr("device.serial_note"))
-        device = Section("OpenBCI Cyton · COM5")
+        device = Section("OpenBCI Cyton · AUTO")
         device.layout.addWidget(KeyValues([
             (tr("device.title"), tr("device.connected")),
             (tr("device.channels"), "8 CH / 250 Hz"),
@@ -232,12 +232,12 @@ class LivePage(Page):
     def __init__(self, tr, config: CaptureConfig):
         super().__init__(tr, tr("nav.live"), tr("live.subtitle"))
         self.config = config
-        self.layout.addWidget(label("OpenBCI Cyton · COM5 · 8 CH · 250 Hz"))
+        self.layout.addWidget(label(tr("live.test_mode"), "notice"))
         self.layout.addWidget(label(tr("live.status"), "muted"))
         settings = Section(tr("live.settings"))
         form = QFormLayout()
         self.participant = QLineEdit(config.participant)
-        self.name = QLineEdit(tr("apps.rest"))
+        self.name = QLineEdit(tr("live.test_name"))
         form.addRow(tr("field.participant"), self.participant)
         form.addRow(tr("field.name"), self.name)
         settings.layout.addLayout(form)
@@ -253,13 +253,18 @@ class LivePage(Page):
         self.layout.addWidget(settings)
         wave = Section(tr("live.waveform"))
         wave.layout.addWidget(label(tr("live.display"), "muted"))
-        wave.layout.addWidget(WaveformWidget(tr("live.waveform")))
+        self.waveform = WaveformWidget(tr("live.waveform"), tr("live.waveform_badge"))
+        wave.layout.addWidget(self.waveform)
         wave.layout.addWidget(label(tr("live.filter_note"), "muted"))
         self.layout.addWidget(wave)
 
     def _start(self):
-        self.start_requested.emit(CaptureConfig(participant=self.participant.text().strip(),
-            name=self.name.text().strip(), save_directory=self.config.save_directory))
+        self.start_requested.emit(CaptureConfig(
+            participant=self.participant.text().strip(),
+            name=self.name.text().strip(),
+            save_directory=self.config.save_directory,
+            mode=CaptureMode.DEMO,
+        ))
 
     def update_snapshot(self, snapshot: TaskSnapshot):
         manual = snapshot.protocol == "manual" and snapshot.phase == Phase.RUNNING
@@ -268,6 +273,7 @@ class LivePage(Page):
         self.marker_button.setEnabled(manual)
         self.participant.setEnabled(not snapshot.active)
         self.name.setEnabled(not snapshot.active)
+        self.waveform.set_active(manual)
         self.status.setText(f"{self.tr('live.recording')} · {format_duration(snapshot.elapsed)} · "
             +self.tr("live.markers", count=snapshot.event_count) if manual else self.tr("live.idle"))
 
@@ -286,7 +292,7 @@ class AppsPage(Page):
         for index, (title, subtitle, icon_type, callback) in enumerate(entries):
             grid.addWidget(AppTile(tr(title), tr(subtitle), icon_type, callback), index//2, index%2)
         self.layout.addLayout(grid)
-        device = Section("OpenBCI Cyton · COM5 · 8 CH · 250 Hz")
+        device = Section("OpenBCI Cyton · AUTO · 8 CH · 250 Hz")
         device.layout.addWidget(label(tr("device.connected"), "muted"))
         self.layout.addWidget(device)
         self.layout.addWidget(label(tr("apps.flow"), "muted"))
@@ -295,6 +301,7 @@ class AppsPage(Page):
 
 class SSVEPPage(Page):
     start_requested = Signal(object, float)
+    serial_scan_requested = Signal()
 
     def __init__(self, tr, config: CaptureConfig, navigate):
         super().__init__(tr, "SSVEP", tr("ssvep.subtitle"))
@@ -317,6 +324,13 @@ class SSVEPPage(Page):
             self.mode.addItem(tr("mode." + mode.value), mode)
         self.mode.setCurrentIndex(max(0, self.mode.findData(config.mode)))
         self.port = QLineEdit(config.port)
+        self.port.setPlaceholderText("AUTO")
+        port_picker = QWidget()
+        port_picker_layout = QHBoxLayout(port_picker)
+        port_picker_layout.setContentsMargins(0, 0, 0, 0)
+        port_picker_layout.addWidget(self.port, 1)
+        port_picker_layout.addWidget(action(tr("action.scan_ports"), self.serial_scan_requested.emit))
+        self.port_status = label(tr("field.port_auto"), "muted")
         self.screen = self._spin(0, 15, config.screen_index)
         self.speed = QComboBox()
         for value in (1, 4, 8, 16):
@@ -329,11 +343,12 @@ class SSVEPPage(Page):
         picker_layout.addWidget(self.save, 1)
         picker_layout.addWidget(action(tr("action.browse"), self._choose_directory))
         self.channel = QLineEdit(str(config.channel_config or ""))
+        self.channel.setPlaceholderText(tr("field.channel_manual_placeholder"))
         self.channel_manual = QCheckBox(tr("field.channel_manual"))
         self.channel_manual.setChecked(config.channel_config is not None)
         self.channel_browse = None
-        channel_picker = QWidget()
-        channel_picker_layout = QHBoxLayout(channel_picker)
+        self.channel_picker = QWidget()
+        channel_picker_layout = QHBoxLayout(self.channel_picker)
         channel_picker_layout.setContentsMargins(0, 0, 0, 0)
         channel_picker_layout.addWidget(self.channel, 1)
         self.channel_browse = action(tr("action.browse"), self._choose_channel_config)
@@ -344,13 +359,13 @@ class SSVEPPage(Page):
         channel_controls_layout.setSpacing(6)
         self.channel_auto_label = label(tr("field.channel_auto"), "muted")
         channel_controls_layout.addWidget(self.channel_auto_label)
-        channel_controls_layout.addWidget(channel_picker)
+        channel_controls_layout.addWidget(self.channel_picker)
         self.acknowledge = QCheckBox(tr("ssvep.acknowledge"))
         self.acknowledge.setChecked(config.acknowledge_flicker_risk)
         self.allow_draft = QCheckBox(tr("ssvep.allow_draft"))
         self.allow_draft.setChecked(config.allow_draft_hardware_config)
         for key, widget in (("field.participant", self.participant), ("field.name", self.name),
-                            ("field.mode", self.mode), ("field.port", self.port),
+                            ("field.mode", self.mode), ("field.port", port_picker),
                             ("field.screen", self.screen),
                             ("field.stimulus", self.stimulus), ("field.rest", self.rest),
                             ("field.repetitions", self.repetitions), ("field.refresh", label("60 Hz")),
@@ -361,13 +376,14 @@ class SSVEPPage(Page):
         form.addRow("", self.acknowledge)
         form.addRow("", self.allow_draft)
         section.layout.addLayout(form)
+        section.layout.addWidget(self.port_status)
         section.layout.addWidget(label(tr("ssvep.refresh_note"), "muted"))
         self.estimate = label("", "estimate")
         section.layout.addWidget(self.estimate)
         section.layout.addWidget(label(tr("ssvep.formula"), "muted"))
         self.layout.addWidget(section)
         self.layout.addWidget(StaticTargets(tr))
-        self.layout.addWidget(KeyValues([(tr("device.channels"), "OpenBCI Cyton · COM5 · 8 CH / 250 Hz"),
+        self.layout.addWidget(KeyValues([(tr("device.channels"), "OpenBCI Cyton · AUTO · 8 CH / 250 Hz"),
             (tr("ssvep.frequencies"), "10 / 12 / 15 / 20 Hz"), ("Marker", tr("ssvep.marker_map"))]))
         self.error = label("", "error")
         self.layout.addWidget(self.error)
@@ -423,6 +439,15 @@ class SSVEPPage(Page):
         if path:
             self.channel.setText(path)
 
+    def set_detected_ports(self, ports: tuple[dict[str, str], ...] | list[dict[str, str]]) -> None:
+        devices = [str(item.get("device", "")).strip() for item in ports if item.get("device")]
+        if devices:
+            self.port.setText("AUTO")
+            self.port_status.setText(self.tr("field.port_detected", ports=", ".join(devices)))
+        else:
+            self.port.setText("AUTO")
+            self.port_status.setText(self.tr("field.port_none"))
+
     def _mode_changed(self):
         mode = CaptureMode(self.mode.currentData())
         demo = mode == CaptureMode.DEMO
@@ -431,10 +456,14 @@ class SSVEPPage(Page):
         self.port.setEnabled(cyton)
         self.channel_manual.setEnabled(cyton)
         self.channel_auto_label.setVisible(cyton)
+        manual_channels = cyton and self.channel_manual.isChecked()
+        self.channel_picker.setVisible(manual_channels)
+        # Keep this control enabled for keyboard/accessibility tooling while
+        # the advanced path picker itself stays hidden in automatic mode.
         self.channel.setEnabled(cyton)
-        self.channel.setReadOnly(not (cyton and self.channel_manual.isChecked()))
+        self.channel.setReadOnly(not manual_channels)
         if self.channel_browse is not None:
-            self.channel_browse.setEnabled(cyton and self.channel_manual.isChecked())
+            self.channel_browse.setEnabled(manual_channels)
         if not cyton and self.channel_manual.isChecked():
             self.channel_manual.blockSignals(True)
             self.channel_manual.setChecked(False)
@@ -450,10 +479,12 @@ class SSVEPPage(Page):
 
     def _channel_manual_changed(self, checked: bool):
         cyton = CaptureMode(self.mode.currentData()) == CaptureMode.CYTON
+        manual_channels = cyton and checked
+        self.channel_picker.setVisible(manual_channels)
         self.channel.setEnabled(cyton)
-        self.channel.setReadOnly(not (cyton and checked))
+        self.channel.setReadOnly(not manual_channels)
         if self.channel_browse is not None:
-            self.channel_browse.setEnabled(cyton and checked)
+            self.channel_browse.setEnabled(manual_channels)
 
     def _start(self):
         try:
@@ -528,7 +559,12 @@ class ResultPage(Page):
             "aborted": "result.aborted_title",
             "error": "result.error_title",
         }.get(result.status, "result.title")
-        if result.source == CaptureMode.DEMO:
+        capture_test = result.protocol == "manual" or result.origin == "capture_test"
+        if capture_test:
+            status_key = "result.capture_test"
+            notice_key = "result.capture_test_notice"
+            path_key = "result.capture_test_path"
+        elif result.source == CaptureMode.DEMO:
             status_key = "result.simulated_saved" if result.persisted else "result.simulated"
             notice_key = "result.notice_written" if result.persisted else "result.notice"
             path_key = "result.path_written" if result.persisted else "result.path"
@@ -549,8 +585,12 @@ class ResultPage(Page):
             notice_key = "result.recorded_notice"
             path_key = "result.recorded_path"
         simulated_visual = result.source in (CaptureMode.DEMO, CaptureMode.VISUAL_PREVIEW)
-        sample_key = "result.samples" if simulated_visual else "result.recorded_samples"
-        values_key = "result.values" if simulated_visual else "result.recorded_values"
+        sample_key = "result.test_samples" if capture_test else (
+            "result.samples" if simulated_visual else "result.recorded_samples"
+        )
+        values_key = "result.test_values" if capture_test else (
+            "result.values" if simulated_visual else "result.recorded_values"
+        )
         super().__init__(tr, tr(title_key), f"{result.name} · {tr(status_key)}")
         self.layout.addWidget(label(tr(notice_key), "notice"))
         self.layout.addWidget(KeyValues([
@@ -565,7 +605,8 @@ class ResultPage(Page):
             (tr("result.events"), str(result.event_count)),
         ]))
         path = Section(tr(path_key))
-        path.layout.addWidget(label(str(result.path), "path"))
+        path_value = tr("result.capture_test_memory") if capture_test else str(result.path)
+        path.layout.addWidget(label(path_value, "path"))
         self.layout.addWidget(path)
         if result.error:
             error_section = Section(tr("result.error_details"))
@@ -581,8 +622,10 @@ class DatasetSummaryPage(Page):
         super().__init__(tr, tr("dataset_summary.title"), result.name)
         self._result_path = result.path
         self.layout.addWidget(label(tr("dataset_summary.readonly"), "notice"))
-        source_name = tr("dataset_summary.imported") if result.imported else tr(
-            "dataset_summary.acquired"
+        source_name = (
+            tr("dataset_summary.capture_test")
+            if result.protocol == "manual" or result.origin == "capture_test"
+            else tr("dataset_summary.imported") if result.imported else tr("dataset_summary.acquired")
         )
         session_rows = (
             (tr("dataset_summary.session"), result.name),
@@ -594,7 +637,12 @@ class DatasetSummaryPage(Page):
             (tr("dataset_summary.duration"), format_duration(result.recording_seconds)),
             (tr("dataset_summary.samples_per_channel"), f"{result.samples_per_channel:,}"),
             (tr("dataset_summary.file_count"), str(len(_dataset_file_rows(result)))),
-            (tr("dataset_summary.workstation_copy"), str(result.path)),
+            (
+                tr("dataset_summary.workstation_copy"),
+                tr("result.capture_test_memory")
+                if result.protocol == "manual" or result.origin == "capture_test"
+                else str(result.path),
+            ),
             (tr("dataset_summary.original_source"), result.source_path or "—"),
         )
         session_table = _readonly_table(
@@ -710,7 +758,9 @@ class DatasetsPage(Page):
         for dataset in reversed(datasets):
             item = Section(dataset.name)
             item.setObjectName("latestDataset" if dataset.id == latest else "section")
-            if dataset.id == latest:
+            if dataset.protocol == "manual" or dataset.origin == "capture_test":
+                status_key = "result.capture_test"
+            elif dataset.id == latest:
                 status_key = "datasets.latest." + dataset.source.value
             elif dataset.source == CaptureMode.DEMO:
                 status_key = "result.simulated_saved" if dataset.persisted else "result.simulated"
@@ -726,7 +776,12 @@ class DatasetsPage(Page):
             item.layout.addWidget(label(tr("datasets.details", participant=dataset.participant,
                 duration=format_duration(dataset.recording_seconds), samples=f"{dataset.samples_per_channel:,}",
                 events=dataset.event_count)))
-            item.layout.addWidget(label(str(dataset.path), "path"))
+            item.layout.addWidget(label(
+                tr("result.capture_test_memory")
+                if dataset.protocol == "manual" or dataset.origin == "capture_test"
+                else str(dataset.path),
+                "path",
+            ))
             item.layout.addWidget(action(tr("action.view_dataset"), lambda _checked=False, d=dataset: show_result(d)))
             self.layout.addWidget(item)
         self.layout.addStretch()

@@ -26,7 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run one NeuroStation SSVEP acquisition session."
     )
-    parser.add_argument("--port", default="COM5")
+    parser.add_argument("--port", default="AUTO")
     parser.add_argument("--protocol", type=Path, default=DEFAULT_PROTOCOL)
     parser.add_argument("--channel-config", type=Path, default=DEFAULT_CHANNEL_CONFIG)
     parser.add_argument("--output-root", type=Path, default=DatasetRepository.default_root())

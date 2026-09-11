@@ -11,7 +11,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 import glob
 import os
-from pathlib import Path
 import re
 from typing import Iterable
 
@@ -110,7 +109,9 @@ def candidate_serial_ports(requested: str | None) -> tuple[SerialPortInfo, ...]:
     requested_value = (requested or "AUTO").strip()
     if requested_value and requested_value.upper() != "AUTO":
         return (SerialPortInfo(requested_value),)
-    return discover_serial_ports()
+    # Normalize once more here because callers/tests may provide a discovery
+    # adapter that returns raw entries instead of discover_serial_ports().
+    return tuple(_normalise(discover_serial_ports()))
 
 
 __all__ = ["SerialPortInfo", "candidate_serial_ports", "discover_serial_ports"]

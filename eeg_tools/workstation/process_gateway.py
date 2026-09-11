@@ -7,6 +7,7 @@ files.  This keeps a driver or display failure from taking down the workstation.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 import json
 import os
@@ -258,6 +259,9 @@ class AcquisitionProcessGateway:
         return text[-2000:]
 
     def _map_status(self, value: dict[str, Any]) -> TaskSnapshot:
+        selected_port = str(value.get("serial_port") or "").strip()
+        if selected_port and self.config.mode == CaptureMode.CYTON:
+            self.device = replace(self.device, port=selected_port)
         raw_phase = str(value.get("phase", ""))
         phase = {
             "preparing": Phase.COUNTDOWN,

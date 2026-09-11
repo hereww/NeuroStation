@@ -3,12 +3,14 @@ import json
 import sys
 import time
 
+from eeg_tools.workstation.acquisition_worker import _prepare_cyton_board
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Capture a short OpenBCI Cyton sample and report signal metrics as JSON."
     )
-    parser.add_argument("--port", default="COM5", help="Cyton serial port (default: COM5)")
+    parser.add_argument("--port", default="AUTO", help="Cyton serial port or AUTO scan (default: AUTO)")
     parser.add_argument(
         "--seconds", type=float, default=15.0,
         help="Capture duration in seconds (default: 15)",
@@ -31,14 +33,16 @@ def main() -> int:
     if args.debug:
         BoardShim.enable_dev_board_logger()
     params = BrainFlowInputParams()
-    params.serial_port = args.port
-    board = BoardShim(BoardIds.CYTON_BOARD, params)
+    board = None
+    selected_port = args.port
     session_prepared = False
     stream_started = False
     data = np.empty((0, 0))
 
     try:
-        board.prepare_session()
+        board, selected_port, _failures = _prepare_cyton_board(
+            BoardIds.CYTON_BOARD, params, args.port
+        )
         session_prepared = True
         board.start_stream()
         stream_started = True
@@ -50,7 +54,8 @@ def main() -> int:
         # users to interpret a native BrainFlow traceback.
         failure = {
             "status": "error",
-            "port": args.port,
+            "port": selected_port,
+            "requested_port": args.port,
             "requested_seconds": args.seconds,
             "error_type": type(error).__name__,
             "error": str(error),
@@ -111,7 +116,8 @@ def main() -> int:
 
     result = {
         "status": "ok" if data.shape[1] else "no_data",
-        "port": args.port,
+        "port": selected_port,
+        "requested_port": args.port,
         "samples": int(data.shape[1]),
         "channels": int(len(eeg_channels)),
         "sampling_rate_hz": int(sampling_rate),

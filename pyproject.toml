@@ -30,6 +30,7 @@ files = [
   "eeg_tools/workstation/gateway.py",
   "eeg_tools/workstation/openbci_workspace.py",
   "eeg_tools/workstation/process_gateway.py",
+  "eeg_tools/workstation/device_discovery.py",
   "eeg_tools/workstation/ssvep.py",
   "eeg_tools/workstation/task.py",
 ]
