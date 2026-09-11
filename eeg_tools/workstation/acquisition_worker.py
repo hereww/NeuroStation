@@ -247,10 +247,32 @@ def _prepare_cyton_board(
                     pass
     attempted = ", ".join(item["port"] for item in failures)
     detail = "; ".join(f"{item['port']}: {item['error']}" for item in failures)
+    # BrainFlow logs the literal "welcome characters" message, but its Python
+    # exception often only exposes the stable BOARD_NOT_READY_ERROR:7 wrapper.
+    # Treat both forms as the same radio-handshake failure so the user gets a
+    # useful hardware diagnosis in the saved session metadata as well as in the
+    # console/UI error banner.
+    no_welcome = bool(failures) and all(
+        (
+            "welcome characters" in item["error"].lower()
+            or "board_not_ready_error:7" in item["error"].lower()
+            or "unable to prepare streaming session" in item["error"].lower()
+        )
+        for item in failures
+    )
+    if no_welcome:
+        diagnosis = (
+            "串口可以打开，但没有收到 Cyton 欢迎字符；请确认 Cyton 主板已上电、"
+            "无线 USB dongle 与主板已配对且距离合适，板卡开关处于 PC/运行位置，"
+            "然后重新上电。若 COM5 对应的是其他 USB-UART 设备，请在界面中选择正确的端口。"
+        )
+    else:
+        diagnosis = (
+            "请确认 USB dongle 已连接、驱动正常，并关闭 OpenBCI GUI 或其他占用串口的程序。"
+        )
     raise RuntimeError(
         "BrainFlow 无法准备 OpenBCI Cyton 串流（BOARD_NOT_READY_ERROR:7）。"
-        f" 已扫描：{attempted or '无'}。{detail} "
-        "请确认 USB dongle 已连接、驱动正常，并关闭 OpenBCI GUI 或其他占用串口的程序。"
+        f" 已扫描：{attempted or '无'}。{detail} {diagnosis}"
     )
 
 

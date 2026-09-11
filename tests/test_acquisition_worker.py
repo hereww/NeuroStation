@@ -45,6 +45,32 @@ class AcquisitionWorkerTests(unittest.TestCase):
         self.assertEqual("COM2", board.port)
         self.assertEqual("COM1", failures[0]["port"])
 
+    def test_cyton_prepare_explains_board_not_ready_as_radio_handshake(self) -> None:
+        from unittest.mock import patch
+
+        class FakeBoard:
+            def __init__(self, _board_id, _params):
+                return None
+
+            def prepare_session(self):
+                raise RuntimeError(
+                    "BrainFlowError: BOARD_NOT_READY_ERROR:7 "
+                    "unable to prepare streaming session"
+                )
+
+            def release_session(self):
+                return None
+
+        class Params:
+            serial_port = "AUTO"
+
+        with patch(
+            "eeg_tools.workstation.acquisition_worker.candidate_serial_ports",
+            return_value=(type("Port", (), {"device": "COM5"})(),),
+        ), patch("brainflow.board_shim.BoardShim", FakeBoard):
+            with self.assertRaisesRegex(RuntimeError, "没有收到 Cyton 欢迎字符"):
+                _prepare_cyton_board(6, Params(), "AUTO")
+
     def test_demo_headless_persists_visual_preview_metadata_without_samples(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "视觉预览"

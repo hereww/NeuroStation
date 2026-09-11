@@ -60,10 +60,11 @@ def main() -> int:
             "error_type": type(error).__name__,
             "error": str(error),
             "hint": (
-                "Close OpenBCI GUI or another serial monitor, verify the port, "
-                "and retry."
+                "Serial port opened but Cyton sent no welcome characters. Verify that the Cyton board is powered, "
+                "the USB dongle is paired and set to PC/run mode, and that this is the correct COM port; "
+                "also close OpenBCI GUI or other serial monitors."
                 if session_prepared is False
-                else "The Cyton stream failed after connection; inspect the USB cable and board power."
+                else "The Cyton stream failed after connection; inspect the USB cable, radio link, and board power."
             ),
         }
         print(json.dumps(failure, ensure_ascii=False, indent=2), file=sys.stdout)
