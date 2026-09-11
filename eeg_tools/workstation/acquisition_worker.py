@@ -15,6 +15,13 @@ from typing import Any, Callable
 
 from eeg_tools.config import ConfigError, validate_channel_config
 from eeg_tools.session_files import iso_now, write_events, write_json, write_manifest
+from neurostation_contract import (
+    PRODUCT_DESCRIPTION,
+    PRODUCT_NAME,
+    PRODUCT_SEMVER,
+    PRODUCT_VERSION,
+    RELEASE_DATE,
+)
 
 from .ssvep import SSVEPProtocol, SSVEPProtocolError
 from .device_discovery import candidate_serial_ports
@@ -838,6 +845,13 @@ def main(argv: list[str] | None = None) -> int:
         "headless": arguments.headless,
         "error": error_message,
         "channel_config_warnings": channel_warnings,
+        "application": {
+            "name": PRODUCT_NAME,
+            "version": PRODUCT_VERSION,
+            "semantic_version": PRODUCT_SEMVER,
+            "release_date": RELEASE_DATE,
+            "description": PRODUCT_DESCRIPTION,
+        },
     }
     write_json(session_path, session_value)
     output_files.append(session_path)

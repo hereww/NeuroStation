@@ -69,12 +69,13 @@ def main() -> int:
         configuration = diagnostics_value.get("configuration", {})
         openbci = diagnostics_value.get("openbci_gui", {})
         dependencies = diagnostics_value.get("dependencies", {})
+        openbci_runtime_required = sys.platform == "win32"
         if not (
             resources.get("protocol_ready")
             and resources.get("locales_ready")
             and configuration.get("status") in {"ready", "draft"}
             and not configuration.get("error")
-            and openbci.get("executable_ready")
+            and (openbci.get("executable_ready") or not openbci_runtime_required)
             and dependencies.get("PySide6", {}).get("available")
             and dependencies.get("brainflow", {}).get("available")
         ):

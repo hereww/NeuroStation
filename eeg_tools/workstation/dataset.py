@@ -13,7 +13,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from neurostation_contract import OpenBCIImportReport
+from neurostation_contract import (
+    OpenBCIImportReport,
+    PRODUCT_DESCRIPTION,
+    PRODUCT_NAME,
+    PRODUCT_SEMVER,
+    PRODUCT_VERSION,
+    RELEASE_DATE,
+)
 
 from eeg_tools.session_files import write_manifest
 
@@ -141,6 +148,13 @@ class DatasetRepository:
         session_payload["notice"] = (
             "UI acceptance simulation: no hardware EEG samples were recorded."
         )
+        session_payload["application"] = {
+            "name": PRODUCT_NAME,
+            "version": PRODUCT_VERSION,
+            "semantic_version": PRODUCT_SEMVER,
+            "release_date": RELEASE_DATE,
+            "description": PRODUCT_DESCRIPTION,
+        }
         temporary_path = output_dir / "session.json.pending"
         temporary_path.write_text(
             json.dumps(session_payload, ensure_ascii=False, indent=2), encoding="utf-8"

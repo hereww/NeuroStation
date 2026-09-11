@@ -1,0 +1,61 @@
+name: NeuroStation release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create or update"
+        required: true
+        default: "v1.0.0"
+
+permissions:
+  contents: write
+
+jobs:
+  windows-release:
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install desktop dependencies
+        run: python -m pip install -r requirements.txt "Nuitka>=4.2,<5"
+
+      - name: Prepare OpenBCI GUI runtime
+        shell: pwsh
+        run: |
+          .\scripts\sync_openbci_gui.ps1 -Action sync
+          .\scripts\sync_openbci_gui.ps1 -Action overlay
+          .\scripts\build_openbci_gui.ps1 -Python python
+
+      - name: Run acceptance tests
+        run: |
+          python -m unittest discover -s tests -v
+          python -m unittest discover -s apps/workstation_ui/tests -v
+
+      - name: Build Windows standalone package
+        shell: pwsh
+        run: .\scripts\build_desktop.ps1 -Python python -Mode standalone
+
+      - name: Verify packaged application
+        run: python scripts/smoke_packaged.py
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: NeuroStation MVP1.0
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          body_path: release/NeuroStation-MVP1.0-Windows-x64.md
+          files: dist/NeuroStation-MVP1.0-Windows-x64.zip

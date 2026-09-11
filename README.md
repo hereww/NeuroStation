@@ -1,5 +1,9 @@
 # NeuroStation 跨平台脑电采集工作站
 
+当前交付版本：**MVP1.0（语义版本 1.0.0）**，主要交付 Windows 10/11 x64 standalone portable 包。版本说明、功能边界和验收状态见 [`release/NeuroStation-MVP1.0-Windows-x64.md`](release/NeuroStation-MVP1.0-Windows-x64.md)。
+
+Windows 下载：发布后可从 [GitHub Releases](https://github.com/hereww/NeuroStation/releases/latest) 下载 `NeuroStation-MVP1.0-Windows-x64.zip`；仓库中的 `dist/` 仅用于本地构建，不提交大体积二进制。
+
 本项目现包含一个可运行的中文桌面工作站、OpenBCI GUI 源码集成流程，以及两个真实硬件命令行工具：
 
 - `workstation.py`：PySide6 工作站入口，提供采集应用图标、SSVEP 参数、任务状态、结果路径和数据集导航。默认启动为**流程演示**（无需硬件、无需额外配置，点击开始即可完成并保存会话元数据）；使用 `--preview` 才进入全屏视觉预览。采集页还提供 BrainFlow Synthetic（会保存合成原始数据）和 OpenBCI Cyton（连接真实硬件）模式，所有模式都会在界面和会话元数据中明确区分。
@@ -170,7 +174,7 @@ $env:QT_QPA_PLATFORM='offscreen'
 .\scripts\build_desktop.ps1 -Python .\.venv\Scripts\python.exe
 ```
 
-Linux/macOS 使用 `PYTHON=.venv/bin/python ./scripts/build_desktop.sh`。构建配置见 `pysidedeploy.spec`，产物进入 `dist/`；`.github/workflows/desktop.yml` 同时执行三平台测试和 standalone 构建。当前构建产物仍是无硬件的桌面功能 MVP，不能标记为 Cyton 正式采集版。
+Linux/macOS 使用 `PYTHON=.venv/bin/python ./scripts/build_desktop.sh`。构建配置见 `pysidedeploy.spec`，产物进入 `dist/`；Windows 构建会同时生成 `dist/NeuroStation.dist/` 可运行目录和 `dist/NeuroStation-MVP1.0-Windows-x64.zip` 交付归档。`.github/workflows/desktop.yml` 同时执行三平台测试和 standalone 构建。当前构建产物是无硬件的桌面功能 MVP1.0，不能标记为 Cyton 正式采集版。
 
 Windows 中文路径会触发部分原生 DLL 扫描器的问题，因此 PowerShell 构建脚本会在本机 ASCII 缓存目录中隔离编译，再验证 `workstation.exe` 确实存在并复制回 `dist/`。打包后的独立启动验收命令为：
 

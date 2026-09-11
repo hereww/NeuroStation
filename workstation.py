@@ -10,6 +10,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from neurostation_contract import (
+    PRODUCT_DESCRIPTION,
+    PRODUCT_NAME,
+    PRODUCT_SEMVER,
+    PRODUCT_VERSION,
+    RELEASE_DATE,
+)
+
 
 ROOT = Path(__file__).resolve().parent
 
@@ -83,6 +91,14 @@ def build_diagnostics() -> dict[str, Any]:
     )
     openbci = gateway.openbci_status
     return {
+        "application": {
+            "name": PRODUCT_NAME,
+            "version": PRODUCT_VERSION,
+            "semantic_version": PRODUCT_SEMVER,
+            "release_date": RELEASE_DATE,
+            "description": PRODUCT_DESCRIPTION,
+            "release_note": "Windows standalone functional MVP for research and teaching validation; not a medical device.",
+        },
         "platform": {
             "system": platform.system(),
             "release": platform.release(),
@@ -120,7 +136,14 @@ def main() -> int:
         from eeg_tools.workstation.acquisition_worker import main as worker_main
 
         return worker_main(sys.argv[2:])
-    parser = argparse.ArgumentParser(description="NeuroStation EEG workstation MVP")
+    parser = argparse.ArgumentParser(
+        description=f"{PRODUCT_NAME} {PRODUCT_VERSION} EEG acquisition workstation"
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"{PRODUCT_NAME} {PRODUCT_VERSION} ({PRODUCT_SEMVER})",
+    )
     parser.add_argument("--language", choices=("zh-CN", "en-US"))
     parser.add_argument(
         "--dataset-root",
@@ -175,8 +198,9 @@ def main() -> int:
         raise
 
     application = QApplication(sys.argv[:1])
-    application.setApplicationName("NeuroStation")
-    application.setOrganizationName("NeuroStation")
+    application.setApplicationName(PRODUCT_NAME)
+    application.setApplicationVersion(PRODUCT_SEMVER)
+    application.setOrganizationName(PRODUCT_NAME)
     window = MainWindow(
         gateway=gateway,
         locale=arguments.language,

@@ -32,6 +32,9 @@ def main() -> int:
 
     if args.debug:
         BoardShim.enable_dev_board_logger()
+    else:
+        # Keep stdout machine-readable for CI, desktop diagnostics, and shell callers.
+        BoardShim.disable_board_logger()
     params = BrainFlowInputParams()
     board = None
     selected_port = args.port

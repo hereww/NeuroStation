@@ -1,5 +1,5 @@
 {
-  "app.title": "NeuroStation · 脑电采集工作站",
+  "app.title": "NeuroStation MVP1.0 · 脑电采集工作站",
   "app.simulated": "模拟采集 · 不连接真实设备",
   "mode.banner": "当前模式：{mode}",
   "mode.demo": "流程演示（元数据）",

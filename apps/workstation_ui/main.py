@@ -6,10 +6,17 @@ import importlib
 from pathlib import Path
 import sys
 
+from neurostation_contract import PRODUCT_NAME, PRODUCT_SEMVER, PRODUCT_VERSION
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="NeuroStation desktop acquisition workstation"
+        description=f"{PRODUCT_NAME} {PRODUCT_VERSION} desktop acquisition workstation"
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"{PRODUCT_NAME} {PRODUCT_VERSION} ({PRODUCT_SEMVER})",
     )
     parser.add_argument("--language", choices=("zh-CN", "en-US"))
     parser.add_argument(
@@ -37,8 +44,9 @@ def main() -> int:
             return 2
         raise
     application = QApplication(sys.argv[:1])
-    application.setApplicationName("NeuroStation")
-    application.setOrganizationName("NeuroStation")
+    application.setApplicationName(PRODUCT_NAME)
+    application.setApplicationVersion(PRODUCT_SEMVER)
+    application.setOrganizationName(PRODUCT_NAME)
     root = Path(__file__).resolve().parents[2]
     if arguments.dataset_root is not None:
         session_root = arguments.dataset_root.expanduser().resolve()
