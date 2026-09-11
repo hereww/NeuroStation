@@ -50,7 +50,7 @@ class CaptureConfig:
     save_directory: Path = field(default_factory=default_save_directory)
     refresh_rate: int = 60
     mode: CaptureMode = CaptureMode.DEMO
-    port: str = "COM5"
+    port: str = "AUTO"
     screen_index: int = 0
     acknowledge_flicker_risk: bool = False
     channel_config: Path | None = None

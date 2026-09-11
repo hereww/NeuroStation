@@ -17,6 +17,7 @@ from eeg_tools.config import ConfigError, validate_channel_config
 from eeg_tools.session_files import iso_now, write_events, write_json, write_manifest
 
 from .ssvep import SSVEPProtocol, SSVEPProtocolError
+from .device_discovery import candidate_serial_ports
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -190,16 +191,68 @@ def _create_stimulus_window(screen_index: int, *, fullscreen_flicker: bool = Fal
             application.processEvents()
 
     screens = application.screens()
-    if not 0 <= screen_index < len(screens):
-        raise ValueError(
-            f"screen-index {screen_index} is invalid; detected {len(screens)} screen(s)"
-        )
+    if not screens:
+        raise RuntimeError("No usable display was detected for the SSVEP stimulus")
+    # A saved monitor index can become stale after docking/undocking. Always
+    # fall back to the first Qt screen so a task remains startable.
+    selected_index = screen_index if 0 <= screen_index < len(screens) else 0
     window = StimulusWindow()
-    window.setScreen(screens[screen_index])
-    window.setGeometry(screens[screen_index].geometry())
+    window.setScreen(screens[selected_index])
+    window.setGeometry(screens[selected_index].geometry())
     window.showFullScreen()
     application.processEvents()
     return application, window
+
+
+def _prepare_cyton_board(
+    board_id: int,
+    params: Any,
+    requested_port: str,
+) -> tuple[Any, str, list[dict[str, str]]]:
+    """Prepare the first Cyton endpoint accepted by BrainFlow.
+
+    BrainFlow's native error ``BOARD_NOT_READY_ERROR:7`` is commonly caused by
+    a wrong COM port or another process holding the dongle. Trying every
+    discovered endpoint turns that opaque failure into a reliable automatic
+    scan while preserving explicit-port behavior.
+    """
+
+    from brainflow.board_shim import BoardShim
+
+    candidates = candidate_serial_ports(requested_port)
+    if not candidates:
+        raise RuntimeError(
+            "No serial ports were detected. Connect the OpenBCI USB dongle, "
+            "close OpenBCI GUI/other serial monitors, then retry."
+        )
+    failures: list[dict[str, str]] = []
+    for candidate in candidates:
+        params.serial_port = candidate.device
+        board = BoardShim(board_id, params)
+        prepared = False
+        try:
+            board.prepare_session()
+            prepared = True
+            return board, candidate.device, failures
+        except Exception as error:
+            failures.append(
+                {
+                    "port": candidate.device,
+                    "error": f"{type(error).__name__}: {error}",
+                }
+            )
+            if prepared:
+                try:
+                    board.release_session()
+                except Exception:
+                    pass
+    attempted = ", ".join(item["port"] for item in failures)
+    detail = "; ".join(f"{item['port']}: {item['error']}" for item in failures)
+    raise RuntimeError(
+        "BrainFlow 无法准备 OpenBCI Cyton 串流（BOARD_NOT_READY_ERROR:7）。"
+        f" 已扫描：{attempted or '无'}。{detail} "
+        "请确认 USB dongle 已连接、驱动正常，并关闭 OpenBCI GUI 或其他占用串口的程序。"
+    )
 
 
 def _check_abort(cancel_file: Path | None, window: Any | None) -> None:
@@ -471,6 +524,8 @@ def main(argv: list[str] | None = None) -> int:
     events: list[dict[str, Any]] = []
     frame_rows: list[dict[str, Any]] = []
     board = None
+    selected_port = arguments.port if arguments.board == "cyton" else None
+    selected_screen_index = arguments.screen_index
     prepared = False
     streaming = False
     application = None
@@ -531,13 +586,26 @@ def main(argv: list[str] | None = None) -> int:
     try:
         emit("preparing")
         if board_id is not None:
-            board = BoardShim(board_id, params)
-            board.prepare_session()
-            prepared = True
+            if arguments.board == "cyton":
+                board, selected_port, _port_failures = _prepare_cyton_board(
+                    board_id, params, arguments.port
+                )
+                prepared = True
+            else:
+                board = BoardShim(board_id, params)
+                board.prepare_session()
+                prepared = True
         if not arguments.headless:
             application, window = _create_stimulus_window(
                 arguments.screen_index,
                 fullscreen_flicker=arguments.board == "demo",
+            )
+            # Qt has already resolved an invalid saved index to screen 0 in
+            # _create_stimulus_window; retain the effective value in metadata.
+            selected_screen_index = (
+                arguments.screen_index
+                if 0 <= arguments.screen_index < len(application.screens())
+                else 0
             )
 
         countdown_started = time.perf_counter()
@@ -728,7 +796,9 @@ def main(argv: list[str] | None = None) -> int:
         "participant_id": arguments.participant,
         "session_name": arguments.session_name,
         "board": arguments.board,
-        "serial_port": arguments.port if arguments.board == "cyton" else None,
+        "serial_port": selected_port,
+        "requested_serial_port": arguments.port if arguments.board == "cyton" else None,
+        "screen_index": selected_screen_index,
         "sampling_rate_hz": 0 if board_id is None else int(BoardShim.get_sampling_rate(board_id)),
         "channel_count": 0 if board_id is None else len(BoardShim.get_eeg_channels(board_id)),
         "started_at": started_at,

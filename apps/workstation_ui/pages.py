@@ -1,17 +1,196 @@
 """Qt pages; all acquisition commands are emitted to the window's gateway owner."""
 from __future__ import annotations
 
+import csv
+from datetime import datetime
+import json
 from pathlib import Path
 import math
+import re
 
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QLineEdit,
     QSpinBox, QComboBox, QCheckBox, QFileDialog, QProgressBar, QStyle,
+    QAbstractItemView, QHeaderView, QTableWidget, QTableWidgetItem,
 )
 
 from .components import Page, Section, KeyValues, AppTile, StaticTargets, WaveformWidget, action, label
 from .gateway import CaptureConfig, CaptureMode, TaskSnapshot, Phase, Dataset, format_duration
+
+
+def _readonly_table(headers: tuple[str, ...]) -> QTableWidget:
+    table = QTableWidget(0, len(headers))
+    table.setHorizontalHeaderLabels(list(headers))
+    table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+    table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+    table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+    table.setAlternatingRowColors(True)
+    # Fill rows before enabling sorting; QTableWidget can move the active row
+    # while individual cells are being inserted when sorting is already on.
+    table.setSortingEnabled(False)
+    table.setWordWrap(False)
+    table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+    table.verticalHeader().setVisible(False)
+    table.horizontalHeader().setStretchLastSection(True)
+    table.setMinimumHeight(72)
+    return table
+
+
+def _table_item(value: object) -> QTableWidgetItem:
+    item = QTableWidgetItem(str(value))
+    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+    item.setToolTip(str(value))
+    return item
+
+
+def _format_file_size(size: int | None) -> str:
+    if size is None:
+        return "—"
+    if size < 1024:
+        return f"{size} B"
+    if size < 1024 * 1024:
+        return f"{size / 1024:.1f} KB"
+    if size < 1024 * 1024 * 1024:
+        return f"{size / (1024 * 1024):.1f} MB"
+    return f"{size / (1024 * 1024 * 1024):.2f} GB"
+
+
+def _dataset_file_rows(result: Dataset) -> list[tuple[str, str, str, str]]:
+    """Build a metadata-only file table; raw EEG content is never loaded."""
+
+    names = result.files
+    if not names and result.path.is_dir():
+        try:
+            names = tuple(
+                sorted(
+                    path.relative_to(result.path).as_posix()
+                    for path in result.path.rglob("*")
+                    if path.is_file() and path.name not in {"session.json", "session.json.pending"}
+                )
+            )
+        except OSError:
+            names = ()
+
+    source_metadata: dict[str, dict[str, object]] = {}
+    metadata_path = result.path / "session.json"
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        raw_files = metadata.get("raw_files", ())
+        if isinstance(raw_files, list):
+            source_metadata = {
+                str(item["name"]): item
+                for item in raw_files
+                if isinstance(item, dict) and item.get("name")
+            }
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        pass
+
+    rows: list[tuple[str, str, str, str]] = []
+    for name in names:
+        path = result.path / name
+        # Imported sessions reserve session.json for workstation metadata and
+        # retain an original source session.json as source_session.json.
+        if result.imported and name == "session.json" and (result.path / "source_session.json").is_file():
+            path = result.path / "source_session.json"
+        elif not path.is_file() and name == "session.json":
+            path = result.path / "source_session.json"
+        size: int | None = None
+        modified_ns: int | None = None
+        try:
+            stat = path.stat()
+            size = stat.st_size
+            modified_ns = stat.st_mtime_ns
+        except OSError:
+            detail = source_metadata.get(name, {})
+            try:
+                size = int(detail.get("size_bytes"))
+            except (TypeError, ValueError):
+                size = None
+            try:
+                modified_ns = int(detail.get("modified_ns"))
+            except (TypeError, ValueError):
+                modified_ns = None
+        suffix = Path(name).suffix.lower().lstrip(".")
+        kind = suffix.upper() if suffix else "FILE"
+        modified = "—"
+        if modified_ns is not None:
+            try:
+                modified = datetime.fromtimestamp(modified_ns / 1_000_000_000).astimezone().strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
+            except (OSError, OverflowError, ValueError):
+                pass
+        rows.append((name, kind, _format_file_size(size), modified))
+    return rows
+
+
+def _dataset_raw_file_names(result: Dataset) -> tuple[str, ...]:
+    names = result.files
+    if not names and result.path.is_dir():
+        try:
+            names = tuple(
+                sorted(
+                    path.relative_to(result.path).as_posix()
+                    for path in result.path.rglob("*")
+                    if path.is_file()
+                )
+            )
+        except OSError:
+            names = ()
+    return tuple(
+        name
+        for name in names
+        if (
+            re.fullmatch(r"BrainFlow-RAW_.*\.csv", name, re.IGNORECASE)
+            or re.fullmatch(r"OpenBCI-RAW-.*\.txt", name, re.IGNORECASE)
+            or Path(name).name.lower() == "raw_brainflow.tsv"
+        )
+    )
+
+
+def _read_data_preview(path: Path, limit: int = 100) -> tuple[tuple[str, ...], list[list[str]]]:
+    """Read only a bounded prefix for the Excel-like read-only data preview."""
+
+    rows: list[list[str]] = []
+    headers: list[str] | None = None
+    try:
+        with path.open("r", encoding="utf-8-sig", errors="replace", newline="") as handle:
+            first_line = handle.readline()
+            if not first_line:
+                return (), []
+            delimiter = "\t" if "\t" in first_line else ","
+            handle.seek(0)
+            reader = csv.reader(handle, delimiter=delimiter)
+            for row in reader:
+                if not row or not any(cell.strip() for cell in row):
+                    continue
+                first = row[0].strip()
+                if first.startswith("%"):
+                    continue
+                try:
+                    float(first)
+                except ValueError:
+                    if headers is None:
+                        headers = row
+                    continue
+                rows.append(row)
+                if len(rows) >= limit:
+                    break
+    except (OSError, UnicodeError, csv.Error):
+        return (), []
+
+    column_count = max((len(row) for row in rows), default=len(headers or ()))
+    if column_count == 0:
+        return (), []
+    if headers is None:
+        headers = [f"Column {index}" for index in range(1, column_count + 1)]
+    elif len(headers) < column_count:
+        headers.extend(
+            f"Column {index}" for index in range(len(headers) + 1, column_count + 1)
+        )
+    normalized = [row + [""] * (column_count - len(row)) for row in rows]
+    return tuple(headers[:column_count]), normalized
 
 
 class HomePage(Page):
@@ -400,11 +579,12 @@ class ResultPage(Page):
 class DatasetSummaryPage(Page):
     def __init__(self, tr, result: Dataset, navigate):
         super().__init__(tr, tr("dataset_summary.title"), result.name)
+        self._result_path = result.path
         self.layout.addWidget(label(tr("dataset_summary.readonly"), "notice"))
         source_name = tr("dataset_summary.imported") if result.imported else tr(
             "dataset_summary.acquired"
         )
-        self.layout.addWidget(KeyValues([
+        session_rows = (
             (tr("dataset_summary.session"), result.name),
             (tr("dataset_summary.source"), source_name),
             (tr("field.participant"), result.participant or tr("dataset_summary.unlabeled")),
@@ -413,17 +593,99 @@ class DatasetSummaryPage(Page):
             (tr("dataset_summary.sampling_rate"), f"{result.sampling_rate_hz:g} Hz"),
             (tr("dataset_summary.duration"), format_duration(result.recording_seconds)),
             (tr("dataset_summary.samples_per_channel"), f"{result.samples_per_channel:,}"),
-            (tr("dataset_summary.file_count"), str(len(result.files))),
-        ]))
+            (tr("dataset_summary.file_count"), str(len(_dataset_file_rows(result)))),
+            (tr("dataset_summary.workstation_copy"), str(result.path)),
+            (tr("dataset_summary.original_source"), result.source_path or "—"),
+        )
+        session_table = _readonly_table(
+            (tr("dataset_summary.field"), tr("dataset_summary.value"))
+        )
+        session_table.setObjectName("datasetSessionTable")
+        session_table.setAccessibleName(tr("dataset_summary.session_table"))
+        session_table.setColumnWidth(0, 210)
+        session_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.ResizeToContents
+        )
+        for key, value in session_rows:
+            row = session_table.rowCount()
+            session_table.insertRow(row)
+            session_table.setItem(row, 0, _table_item(key))
+            session_table.setItem(row, 1, _table_item(value))
+        session_table.resizeRowsToContents()
+        session_table.setSortingEnabled(True)
+        session_table.setMinimumHeight(min(420, max(150, session_table.sizeHintForRow(0) * len(session_rows) + 44)))
+        self.layout.addWidget(session_table)
+
         files = Section(tr("dataset_summary.files"))
-        files.layout.addWidget(label("\n".join(result.files) or "—", "path"))
+        file_rows = _dataset_file_rows(result)
+        file_table = _readonly_table(
+            (
+                tr("dataset_summary.file_name"),
+                tr("dataset_summary.file_type"),
+                tr("dataset_summary.file_size"),
+                tr("dataset_summary.file_modified"),
+            )
+        )
+        file_table.setObjectName("datasetFilesTable")
+        file_table.setAccessibleName(tr("dataset_summary.file_table"))
+        file_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Stretch
+        )
+        for column in (1, 2, 3):
+            file_table.horizontalHeader().setSectionResizeMode(
+                column, QHeaderView.ResizeMode.ResizeToContents
+            )
+        for values in file_rows:
+            row = file_table.rowCount()
+            file_table.insertRow(row)
+            for column, value in enumerate(values):
+                file_table.setItem(row, column, _table_item(value))
+        file_table.resizeRowsToContents()
+        file_table.setSortingEnabled(True)
+        file_table.setMinimumHeight(min(360, max(84, file_table.sizeHintForRow(0) * max(1, len(file_rows)) + 44)))
+        files.layout.addWidget(file_table)
         self.layout.addWidget(files)
-        paths = Section(tr("dataset_summary.paths"))
-        paths.layout.addWidget(label(f"{tr('dataset_summary.workstation_copy')}:\n{result.path}", "path"))
-        paths.layout.addWidget(label(f"{tr('dataset_summary.original_source')}:\n{result.source_path or '—'}", "path"))
-        self.layout.addWidget(paths)
+
+        raw_names = _dataset_raw_file_names(result)
+        if raw_names:
+            preview = Section(tr("dataset_summary.data_preview"))
+            preview.layout.addWidget(label(tr("dataset_summary.data_preview_note"), "muted"))
+            self.preview_file = QComboBox()
+            self.preview_file.addItems(list(raw_names))
+            self.preview_file.setAccessibleName(tr("dataset_summary.preview_file"))
+            preview.layout.addWidget(self.preview_file)
+            headers, values = _read_data_preview(result.path / raw_names[0])
+            self.preview_table = _readonly_table(headers or (tr("dataset_summary.no_columns"),))
+            self.preview_table.setObjectName("datasetRawPreviewTable")
+            self.preview_table.setAccessibleName(tr("dataset_summary.raw_preview_table"))
+            preview.layout.addWidget(self.preview_table)
+            self._set_preview_table(headers, values)
+            self.preview_file.currentTextChanged.connect(self._preview_file_changed)
+            self.layout.addWidget(preview)
         self.layout.addWidget(action(tr("app.datasets"), lambda: navigate("datasets"), True))
         self.layout.addStretch()
+
+    def _preview_file_changed(self, name: str) -> None:
+        headers, values = _read_data_preview(self._result_path / name)
+        self._set_preview_table(headers, values)
+
+    def _set_preview_table(
+        self, headers: tuple[str, ...], values: list[list[str]]
+    ) -> None:
+        table = self.preview_table
+        table.setSortingEnabled(False)
+        table.clearContents()
+        table.setColumnCount(len(headers) or 1)
+        table.setHorizontalHeaderLabels(list(headers) or [self.tr("dataset_summary.no_columns")])
+        table.setRowCount(0)
+        for values_row in values:
+            row = table.rowCount()
+            table.insertRow(row)
+            for column, value in enumerate(values_row):
+                table.setItem(row, column, _table_item(value))
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        table.setMinimumHeight(min(440, max(108, 30 * min(10, max(1, len(values))) + 44)))
+        table.setSortingEnabled(True)
 
 
 class DatasetsPage(Page):
