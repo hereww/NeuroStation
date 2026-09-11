@@ -183,9 +183,12 @@ class MetadataSimulationGateway:
             return self._snapshot
         if self._service is not None and self._snapshot.active:
             core = self._service.abort_task()
-            if core.result is not None:
-                self._remember(self._dataset_from_record(core.result))
-            self._snapshot = TaskSnapshot(phase=Phase.CANCELLED)
+            # Keep the aborted session attached to the terminal snapshot so
+            # the UI can show its saved path immediately, just like the
+            # subprocess-backed Synthetic/Cyton gateway does.
+            self._snapshot = self._map_snapshot(core, self._snapshot.speed)
+            if self._snapshot.result is not None:
+                self._remember(self._snapshot.result)
         return self._snapshot
 
     def tick(self) -> TaskSnapshot:

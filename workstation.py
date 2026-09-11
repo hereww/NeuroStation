@@ -135,6 +135,11 @@ def main() -> int:
         action="store_true",
         help="Print packaged resource and OpenBCI integration status, then exit",
     )
+    parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="Launch SSVEP in explicit full-screen visual preview mode",
+    )
     arguments = parser.parse_args()
     from eeg_tools.workstation.desktop_gateway import DesktopGateway
 
@@ -175,7 +180,7 @@ def main() -> int:
         locale=arguments.language,
         persist_settings=True,
         save_directory_override=arguments.dataset_root,
-        preview_mode=True,
+        preview_mode=arguments.preview,
     )
     window.show()
     if arguments.smoke_test:

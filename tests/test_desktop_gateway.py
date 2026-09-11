@@ -76,6 +76,22 @@ class MetadataSimulationGatewayTests(unittest.TestCase):
             self.assertEqual(Phase.COMPLETED, completed.phase)
             self.assertEqual(26, completed.result.recording_seconds)
 
+    def test_metadata_cancel_returns_saved_aborted_result(self) -> None:
+        clock = FakeClock()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "中止数据"
+            gateway = MetadataSimulationGateway(
+                protocol_path=PROTOCOL_PATH, dataset_root=root, clock=clock
+            )
+            gateway.start_ssvep(CaptureConfig(save_directory=root), 8)
+            clock.now = 5
+            gateway.tick()
+            cancelled = gateway.cancel()
+            self.assertEqual(Phase.CANCELLED, cancelled.phase)
+            self.assertIsNotNone(cancelled.result)
+            self.assertEqual("aborted", cancelled.result.status)
+            self.assertTrue(cancelled.result.path.is_dir())
+
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 HAS_QT = importlib.util.find_spec("PySide6") is not None

@@ -121,6 +121,7 @@ class SSVEPPage(Page):
         super().__init__(tr, "SSVEP", tr("ssvep.subtitle"))
         self.layout.addWidget(action(tr("action.back_apps"), lambda: navigate("apps")))
         self.layout.addWidget(label(tr("ssvep.description"), "muted"))
+        self.layout.addWidget(label(tr("ssvep.defaults"), "muted"))
         self.layout.addWidget(label(tr("ssvep.safety"), "notice"))
         section = Section(tr("ssvep.parameters"))
         form = QFormLayout()

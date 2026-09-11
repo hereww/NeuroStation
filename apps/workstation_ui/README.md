@@ -2,7 +2,7 @@
 
 由 GPT-6 按已确认的中文界面初稿实现。该目录是一条独立 UI 开发线，使用 PySide6，可与项目采集核心分开运行。所有采集调用集中在 `gateway.py`；页面不直接导入 BrainFlow、LSL、串口库或根目录采集程序。
 
-当前 UI 有两个明确层级：测试可注入的 `MockGateway` 仍是不落盘的纯 UI mock；独立入口 `python -m apps.workstation_ui.main` 和根目录 `workstation.py` 默认使用真实 worker 驱动的**全屏视觉预览**。预览会显示黑白 5 秒倒计时和整屏黑白刺激，必须确认光敏风险；它不连接设备、不生成 EEG 样本，但会保存协议、事件、帧时序、质量摘要和 session manifest。BrainFlow Synthetic 会保存合成原始数据，Cyton 才会连接真实硬件。所有结果都会显著标记为预览、模拟或实机。
+当前 UI 有两个明确层级：测试可注入的 `MockGateway` 仍是不落盘的纯 UI mock；独立入口 `python -m apps.workstation_ui.main` 和根目录 `workstation.py` 默认使用可一键运行的流程演示。流程演示不闪烁、不连接设备，但会保存协议、事件、质量摘要和 session manifest；传入 `--preview` 才启动真实 worker 驱动的全屏视觉预览，显示黑白 5 秒倒计时和整屏黑白刺激，并要求确认光敏风险。BrainFlow Synthetic 会保存合成原始数据，Cyton 才会连接真实硬件。所有结果都会显著标记为预览、模拟或实机。
 
 ## 启动
 
@@ -12,6 +12,12 @@
 python -m venv .venv-ui
 .venv-ui\Scripts\python -m pip install -r apps/workstation_ui/requirements.txt
 .venv-ui\Scripts\python -m apps.workstation_ui.main
+```
+
+显式启动全屏视觉预览：
+
+```powershell
+.venv-ui\Scripts\python -m apps.workstation_ui.main --preview
 ```
 
 Linux / macOS：
@@ -35,7 +41,7 @@ python3 -m venv .venv-ui
 - 左侧保留首页、设备、实时采集、采集应用、会话/数据集、OpenBCI 工作区、集成中心七类导航。
 - 采集应用提供 SSVEP 和静息态入口；运动想象、P300 标记为尚未实现。
 - SSVEP 参数页可编辑参与者、数据集名、刺激时长、休息、重复数、显示屏、绝对保存目录；自动计算预计试次与时长。
-- 开始任务先经过真实 5 秒全屏倒计时；预览 worker 在倒计时和刺激阶段执行整屏黑白切换，按 Esc / Q 可中止。运行页展示正式时间轴、试次、目标、频率、阶段、采集与 Marker 状态。
+- 默认流程演示点击“开始采集任务”即可进入 5 秒准备倒计时并完成一轮会话；显式预览模式的 worker 在倒计时和刺激阶段执行整屏黑白切换，按 Esc / Q 可中止。运行页展示正式时间轴、试次、目标、频率、阶段、采集与 Marker 状态。
 - Cyton 默认显示自动通道映射（CH1–CH8 → N1P–N8P），普通用户不需要填写 JSON；只有勾选高级手动选项后才启用配置文件选择。自动映射不代表知道实际电极位置。
 - 完成页展示样本/事件、时长、模拟状态、绝对目标路径；点击“系统工作站 / 数据集”可查看并突出最近完成项。视觉预览的通道数和样本数固定为 0，但元数据和帧时序仍会保存。
 - 实时采集页提供静态八通道示例波形、手动开始/停止和 Marker，且与 SSVEP 互斥占用模拟设备。

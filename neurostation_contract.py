@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 import os
 from pathlib import Path
@@ -26,8 +26,10 @@ class CaptureMode(str, Enum):
 def default_save_directory() -> Path:
     override = os.environ.get("NEUROSTATION_DATASETS")
     if override:
-        return Path(override).expanduser()
-    return Path.home() / "Documents" / "NeuroStation" / "Datasets"
+        # Resolve the environment override once at the boundary so every
+        # default-created CaptureConfig is valid on all three desktop OSes.
+        return Path(override).expanduser().resolve()
+    return (Path.home() / "Documents" / "NeuroStation" / "Datasets").resolve()
 
 
 def format_duration(seconds: float) -> str:
@@ -42,7 +44,10 @@ class CaptureConfig:
     stimulus_seconds: int = 5
     rest_seconds: int = 3
     repetitions: int = 3
-    save_directory: Path = default_save_directory()
+    # Use a factory rather than evaluating the path at import time. This keeps
+    # NEUROSTATION_DATASETS and per-user home directories reliable in packaged
+    # apps, test runners, and long-lived desktop processes.
+    save_directory: Path = field(default_factory=default_save_directory)
     refresh_rate: int = 60
     mode: CaptureMode = CaptureMode.DEMO
     port: str = "COM5"

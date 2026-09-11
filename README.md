@@ -2,7 +2,7 @@
 
 本项目现包含一个可运行的中文桌面工作站、OpenBCI GUI 源码集成流程，以及两个真实硬件命令行工具：
 
-- `workstation.py`：PySide6 工作站入口，提供采集应用图标、SSVEP 参数、全屏 5 秒倒计时、任务状态、结果路径和数据集导航。默认启动为**全屏视觉预览**（不连接硬件、不生成 EEG 样本，但保存会话元数据）；采集页还提供流程演示、BrainFlow Synthetic（会保存合成原始数据）和 OpenBCI Cyton（连接真实硬件）模式，所有模式都会在界面和会话元数据中明确区分。
+- `workstation.py`：PySide6 工作站入口，提供采集应用图标、SSVEP 参数、任务状态、结果路径和数据集导航。默认启动为**流程演示**（无需硬件、无需额外配置，点击开始即可完成并保存会话元数据）；使用 `--preview` 才进入全屏视觉预览。采集页还提供 BrainFlow Synthetic（会保存合成原始数据）和 OpenBCI Cyton（连接真实硬件）模式，所有模式都会在界面和会话元数据中明确区分。
 - `apps/workstation_ui/`：由 GPT-6 独立实现的 UI 层；页面只通过网关调用采集能力。
 
 - `check_cyton_live.py`：短时连接 Cyton，输出采样率、时间戳间隔和各通道信号统计，用于正式采集前的连通性检查。
@@ -50,7 +50,7 @@ python -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe workstation.py
 ```
 
-默认显示中文。英文界面使用 `--language en-US`；验收时可用 `--dataset-root` 指定独立数据目录。SSVEP 默认参数为 10/12/15/20 Hz、12 个试次、93 秒采集时间和 5 秒准备倒计时。默认的全屏视觉预览会在独立 worker 中显示黑白倒计时和整屏黑白刺激，必须先确认光敏风险；它不连接设备、不生成 EEG 样本，但会创建 `session.json`、`protocol.json`、`events.tsv`、`frame_timing.tsv`、`quality.json` 和 `manifest.csv`，并在结果页显示绝对保存路径。
+默认显示中文。英文界面使用 `--language en-US`；验收时可用 `--dataset-root` 指定独立数据目录。SSVEP 默认参数为 10/12/15/20 Hz、12 个试次、93 秒采集时间和 5 秒准备倒计时。默认流程演示不闪烁、不连接设备，点击开始即可运行并创建 `session.json`、`protocol.json`、`events.tsv`、`manifest.csv` 等会话元数据；需要检查黑白倒计时和整屏黑白刺激时使用 `workstation.py --preview`，该模式必须先确认光敏风险，并在结果页明确标记为视觉预览。
 
 在连接设备前，可运行不会打开串口的预检。它会报告 Windows/Linux/macOS 运行环境、Qt/BrainFlow、协议与通道表状态，以及 OpenBCI GUI 源码/中文 overlay/runtime 是否就绪：
 
@@ -60,10 +60,16 @@ python -m pip install -r requirements.txt
 
 其中 `configuration.status: "draft"` 表示当前使用的仍是模板或草稿配置；这与“发现到 Cyton 设备”是两回事。只有 `check_cyton_live.py` 才会实际尝试打开 USB dongle 对应的串口；若串口不可用，命令会返回结构化 JSON 和退出码 3，便于设备向导或 CI 识别。
 
-独立 UI 入口现在默认启动真实 worker 驱动的全屏视觉预览（不连接硬件）：
+独立 UI 入口默认启动可一键运行的流程演示（不连接硬件）：
 
 ```powershell
 .\.venv\Scripts\python.exe -m apps.workstation_ui.main
+```
+
+显式启动全屏视觉预览：
+
+```powershell
+.\.venv\Scripts\python.exe -m apps.workstation_ui.main --preview
 ```
 
 如只需要不创建文件的纯 UI mock，请在测试中注入 `MockGateway`；生产入口不要把预览结果解释为真实 EEG。预览支持 `--dataset-root` 指定会话目录。

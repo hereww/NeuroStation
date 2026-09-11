@@ -58,6 +58,27 @@ class QtOffscreenTests(unittest.TestCase):
         self.assertIsNotNone(self.window.pages["datasets"].findChild(QFrame, "latestDataset"))
         self.assertFalse(self.window.timer.isActive())
 
+    def test_default_ssvep_page_is_one_click_runnable(self):
+        from apps.workstation_ui.gateway import CaptureMode, Phase
+
+        page = self.window.pages["ssvep"]
+        self.assertEqual(CaptureMode(page.mode.currentData()), CaptureMode.DEMO)
+        self.assertTrue(page.config().save_directory.is_absolute())
+        page._start()
+        self.assertEqual(self.window.current_page, "task")
+        self.assertEqual(self.gateway.snapshot.phase, Phase.COUNTDOWN)
+        self.assertFalse(page.start_button.isEnabled())
+
+        # A normal user can leave every field untouched and still reach the
+        # completed result path through the same UI signal as a button click.
+        self.now = 5
+        self.window.poll()
+        self.now = 16.625
+        self.window.poll()
+        self.assertEqual(self.window.current_page, "result")
+        self.assertIsNotNone(self.window.result)
+        self.assertFalse(self.window.result.persisted)
+
     def test_cancel_and_close_stop_timer(self):
         from apps.workstation_ui.gateway import CaptureConfig, Phase
         self.window.start_ssvep(CaptureConfig(), 8)

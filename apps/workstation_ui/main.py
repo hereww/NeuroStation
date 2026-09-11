@@ -5,18 +5,22 @@ import argparse
 import importlib
 from pathlib import Path
 import sys
-import tempfile
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="NeuroStation desktop visual-preview workstation"
+        description="NeuroStation desktop acquisition workstation"
     )
     parser.add_argument("--language", choices=("zh-CN", "en-US"))
     parser.add_argument(
         "--dataset-root",
         type=Path,
-        help="Directory for full-screen preview session files (default: system temporary folder)",
+        help="Directory for session files (default: Documents/NeuroStation/Datasets)",
+    )
+    parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="Launch SSVEP in explicit full-screen visual preview mode",
     )
     arguments = parser.parse_args()
     if not __package__:
@@ -36,22 +40,23 @@ def main() -> int:
     application.setApplicationName("NeuroStation")
     application.setOrganizationName("NeuroStation")
     root = Path(__file__).resolve().parents[2]
-    preview_root = (
-        arguments.dataset_root.expanduser().resolve()
-        if arguments.dataset_root is not None
-        else Path(tempfile.gettempdir()) / "NeuroStationPreview"
-    )
+    if arguments.dataset_root is not None:
+        session_root = arguments.dataset_root.expanduser().resolve()
+    else:
+        from neurostation_contract import default_save_directory
+
+        session_root = default_save_directory()
     gateway = DesktopGateway(
         protocol_path=root / "configs" / "protocols" / "ssvep_four_target_v2.json",
         channel_config_path=root / "configs" / "channel_config_v1_auto.json",
-        dataset_root=preview_root,
+        dataset_root=session_root,
     )
     window = MainWindow(
         gateway=gateway,
         locale=arguments.language,
         persist_settings=True,
-        save_directory_override=preview_root,
-        preview_mode=True,
+        save_directory_override=session_root,
+        preview_mode=arguments.preview,
     )
     window.show()
     return application.exec()
