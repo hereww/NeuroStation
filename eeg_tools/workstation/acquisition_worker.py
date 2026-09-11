@@ -70,7 +70,10 @@ class ProgressReporter:
         payload = {"schema_version": 1, "updated_at": iso_now(), **value}
         if self.path:
             _atomic_json(self.path, payload)
-        print(json.dumps(payload, ensure_ascii=False), flush=True)
+        # stdout is consumed by desktop runners and CI on Windows, where the
+        # active console encoding may not represent diagnostic text. JSON is
+        # still Unicode-safe because the payload file is written as UTF-8.
+        print(json.dumps(payload, ensure_ascii=True), flush=True)
         self._last_emit_at = now
         self._last_phase = phase
 

@@ -70,7 +70,7 @@ def main() -> int:
                 else "The Cyton stream failed after connection; inspect the USB cable, radio link, and board power."
             ),
         }
-        print(json.dumps(failure, ensure_ascii=False, indent=2), file=sys.stdout)
+        print(json.dumps(failure, ensure_ascii=True, indent=2), file=sys.stdout)
         return 3
     finally:
         if stream_started:
@@ -135,7 +135,7 @@ def main() -> int:
         "timestamp_gap_count": gaps,
         "channel_metrics": channels,
     }
-    print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
+    print(json.dumps(result, ensure_ascii=True, indent=2, allow_nan=False))
     return 0 if data.shape[1] else 2
 
 

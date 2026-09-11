@@ -15,6 +15,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 from typing import Any
 
 from neurostation_contract import (
@@ -217,15 +218,35 @@ class AcquisitionProcessGateway:
             return self._snapshot
         assert self._cancel_file is not None
         self._cancel_file.write_text("cancel\n", encoding="ascii")
+
+        # Cancellation is a persistence operation as well as a process
+        # operation. On fast Linux runners the worker can exit between the
+        # first poll and the final atomic status write, so keep polling until
+        # the terminal status includes the saved session result.
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline:
+            status = self._read_status(force=True)
+            if status:
+                mapped = self._map_status(status)
+                if mapped.phase is Phase.CANCELLED and mapped.result is not None:
+                    self._snapshot = mapped
+                    if self._process.poll() is not None:
+                        return self._snapshot
+            if self._process.poll() is not None:
+                # The worker has exited; give its final status/session write a
+                # short grace period before deciding that it failed to persist.
+                deadline = min(deadline, time.monotonic() + 1.0)
+            time.sleep(0.02)
+
         try:
-            self._process.wait(timeout=5)
+            self._process.wait(timeout=0.5)
         except subprocess.TimeoutExpired:
             self._process.terminate()
             try:
-                self._process.wait(timeout=2)
+                self._process.wait(timeout=1)
             except subprocess.TimeoutExpired:
                 self._process.kill()
-                self._process.wait(timeout=2)
+                self._process.wait(timeout=1)
         status = self._read_status(force=True)
         if status:
             self._snapshot = self._map_status(status)
