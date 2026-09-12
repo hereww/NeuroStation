@@ -8,6 +8,7 @@ venv/
 .vendor/
 .tools/
 .tmp_acceptance/
+.tmp_preview/
 integrations/openbci_gui/runtime/
 build/
 dist/
