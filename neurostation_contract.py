@@ -7,6 +7,9 @@ from enum import Enum
 import os
 from pathlib import Path
 from typing import Protocol
+from datetime import datetime
+from dataclasses import asdict
+from typing import Any
 
 
 PRODUCT_NAME = "NeuroStation"
@@ -24,6 +27,77 @@ FREQUENCIES = (10, 12, 15, 20)
 PREPARATION_SECONDS = 5
 SAMPLE_RATE = 250
 CHANNEL_COUNT = 8
+GENDERS = ("male", "female", "other", "unspecified")
+MEDICAL_OPTIONS = (
+    "none",
+    "photosensitive_epilepsy",
+    "cardiovascular",
+    "hypertension",
+    "diabetes",
+    "other",
+)
+
+
+@dataclass(frozen=True)
+class UserProfile:
+    user_id: str
+    name: str
+    age: int
+    gender: str = "unspecified"
+    medical_conditions: tuple[str, ...] = ("none",)
+    medical_other: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+    status: str = "active"
+    is_demo: bool = False
+    deleted_at: str = ""
+
+    @property
+    def display_name(self) -> str:
+        return f"{self.user_id} · {self.name}"
+
+    def validate(self) -> None:
+        if not self.user_id.strip():
+            raise ValueError("validation.user_id")
+        if not self.name.strip():
+            raise ValueError("validation.user_name")
+        if type(self.age) is not int or not 0 <= self.age <= 150:
+            raise ValueError("validation.user_age")
+        if self.gender not in GENDERS:
+            raise ValueError("validation.user_gender")
+        conditions = tuple(dict.fromkeys(self.medical_conditions))
+        if not conditions or any(item not in MEDICAL_OPTIONS for item in conditions):
+            raise ValueError("validation.user_medical")
+        if "none" in conditions and len(conditions) > 1:
+            raise ValueError("validation.user_medical_none")
+        if "other" in conditions and not self.medical_other.strip():
+            raise ValueError("validation.user_medical_other")
+
+    def to_dict(self) -> dict[str, Any]:
+        value = asdict(self)
+        value["medical_conditions"] = list(self.medical_conditions)
+        return value
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "UserProfile":
+        conditions = value.get("medical_conditions", ("none",))
+        if isinstance(conditions, str):
+            conditions = (conditions,)
+        if not isinstance(conditions, (list, tuple)):
+            conditions = ("none",)
+        return cls(
+            user_id=str(value.get("user_id") or ""),
+            name=str(value.get("name") or ""),
+            age=int(value.get("age", 0) or 0),
+            gender=str(value.get("gender") or "unspecified"),
+            medical_conditions=tuple(str(item) for item in conditions),
+            medical_other=str(value.get("medical_other") or ""),
+            created_at=str(value.get("created_at") or ""),
+            updated_at=str(value.get("updated_at") or ""),
+            status=str(value.get("status") or "active"),
+            is_demo=bool(value.get("is_demo", False)),
+            deleted_at=str(value.get("deleted_at") or ""),
+        )
 
 
 class CaptureMode(str, Enum):
@@ -52,6 +126,8 @@ def format_duration(seconds: float) -> str:
 class CaptureConfig:
     participant: str = "P001"
     name: str = "SSVEP"
+    user_id: str = "U0000"
+    user_name: str = "演示用户"
     stimulus_seconds: int = 5
     rest_seconds: int = 3
     repetitions: int = 3
@@ -165,6 +241,9 @@ class Dataset:
     source_path: str = ""
     imported: bool = False
     origin: str = "acquired"
+    user_id: str = ""
+    user_name: str = ""
+    user_link_status: str = "unlinked"
 
     @property
     def sample_values(self) -> int:

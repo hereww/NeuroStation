@@ -10,6 +10,7 @@ from pathlib import Path
 
 from apps.workstation_ui.gateway import CaptureConfig, CaptureMode, Phase
 from eeg_tools.workstation.desktop_gateway import DesktopGateway, MetadataSimulationGateway
+from neurostation_contract import UserProfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -145,9 +146,15 @@ class IntegratedDesktopQtTests(unittest.TestCase):
                 channel_config_path=ROOT / "configs" / "channel_config_v1_template.json",
                 dataset_root=dataset_root,
             )
+            gateway.add_user(UserProfile(
+                user_id="U0001", name="Synthetic user", age=30,
+                gender="unspecified", medical_conditions=("none",),
+            ))
             window = MainWindow(gateway=gateway, timer_enabled=False)
             config = CaptureConfig(
                 participant="UI-P001",
+                user_id="U0001",
+                user_name="Synthetic user",
                 name="UI synthetic acceptance",
                 stimulus_seconds=1,
                 rest_seconds=0,

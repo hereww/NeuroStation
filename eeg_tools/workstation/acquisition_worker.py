@@ -481,6 +481,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--participant", required=True)
     parser.add_argument("--session-name", required=True)
+    parser.add_argument("--user-id", default="")
+    parser.add_argument("--user-name", default="")
     parser.add_argument("--board", choices=("cyton", "synthetic", "demo"), default="cyton")
     parser.add_argument("--port", default="AUTO")
     parser.add_argument("--repetitions", type=int)
@@ -829,6 +831,9 @@ def main(argv: list[str] | None = None) -> int:
         "status": status,
         "participant_id": arguments.participant,
         "session_name": arguments.session_name,
+        "user_id": arguments.user_id,
+        "user_name": arguments.user_name,
+        "user_link_status": "active" if arguments.user_id else "unlinked",
         "board": arguments.board,
         "serial_port": selected_port,
         "requested_serial_port": arguments.port if arguments.board == "cyton" else None,

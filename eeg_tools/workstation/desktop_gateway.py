@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import time
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -26,6 +27,7 @@ from .openbci_workspace import OpenBCIWorkspaceError, OpenBCIWorkspaceManager
 from .process_gateway import AcquisitionProcessGateway
 from .device_discovery import discover_serial_ports
 from .task import TaskPhase
+from .users import UserProfile, UserRegistry
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -62,6 +64,7 @@ class MetadataSimulationGateway:
         self._task_started_at = 0.0
         self._last_result_id: str | None = None
         self._openbci = OpenBCIWorkspaceManager(ROOT)
+        self._users = UserRegistry(Path(self.config.save_directory))
         self._load_existing(Path(self.config.save_directory))
 
     @property
@@ -71,6 +74,37 @@ class MetadataSimulationGateway:
     @property
     def datasets(self) -> tuple[Dataset, ...]:
         return tuple(self._datasets)
+
+    @property
+    def users(self) -> tuple[UserProfile, ...]:
+        return self._users.users
+
+    @property
+    def trashed_users(self) -> tuple[UserProfile, ...]:
+        return self._users.trash
+
+    def next_user_id(self) -> str:
+        return self._users.next_user_id()
+
+    def add_user(self, profile: UserProfile) -> UserProfile:
+        return self._users.add(profile)
+
+    def update_user(self, original_id: str, profile: UserProfile) -> UserProfile:
+        return self._users.update(original_id, profile)
+
+    def delete_user(self, user_id: str, *, move_data: bool) -> UserProfile:
+        profile = self._users.delete(user_id, move_data=move_data)
+        self.refresh_datasets()
+        return profile
+
+    def restore_user(self, user_id: str) -> UserProfile:
+        profile = self._users.restore(user_id)
+        self.refresh_datasets()
+        return profile
+
+    def purge_user(self, user_id: str) -> None:
+        self._users.purge(user_id)
+        self.refresh_datasets()
 
     @property
     def openbci_status(self) -> OpenBCIWorkspaceStatus:
@@ -103,7 +137,18 @@ class MetadataSimulationGateway:
             raise ValueError("validation.speed")
         root = Path(config.save_directory).expanduser().resolve()
         self._load_existing(root)
-        self.config = config
+        self._users = UserRegistry(root)
+        profile = self._users.get(config.user_id)
+        if profile is None or profile.status != "active":
+            raise ValueError("validation.user_not_found")
+        if config.mode != CaptureMode.DEMO and profile.is_demo:
+            raise ValueError("validation.user_demo")
+        self.config = replace(
+            config,
+            participant=profile.user_id,
+            user_id=profile.user_id,
+            user_name=profile.name,
+        )
         self._manual_markers = 0
         self._service = WorkstationGateway(
             protocol_path=self.protocol_path,
@@ -111,8 +156,11 @@ class MetadataSimulationGateway:
             clock=self._clock,
         )
         core = self._service.start_ssvep(
-            participant_id=config.participant,
+            participant_id=profile.user_id,
             session_name=config.name,
+            user_id=profile.user_id,
+            user_name=profile.name,
+            user_link_status="active",
             repetitions=config.repetitions,
             stimulus_s=config.stimulus_seconds,
             rest_s=config.rest_seconds,
@@ -161,6 +209,9 @@ class MetadataSimulationGateway:
             persisted=False,
             source=CaptureMode.DEMO,
             origin="capture_test",
+            user_id=self.config.user_id,
+            user_name=self.config.user_name,
+            user_link_status="active",
         )
         self._remember(result)
         self._snapshot = TaskSnapshot(
@@ -336,6 +387,9 @@ class MetadataSimulationGateway:
             source_path=record.source_path,
             imported=record.imported,
             origin=record.origin,
+            user_id=record.user_id,
+            user_name=record.user_name,
+            user_link_status=record.user_link_status,
         )
 
 
@@ -385,11 +439,53 @@ class DesktopGateway:
         return tuple(combined)
 
     @property
+    def users(self) -> tuple[UserProfile, ...]:
+        return self._simulation.users
+
+    @property
+    def trashed_users(self) -> tuple[UserProfile, ...]:
+        return self._simulation.trashed_users
+
+    def next_user_id(self) -> str:
+        return self._simulation.next_user_id()
+
+    def add_user(self, profile: UserProfile) -> UserProfile:
+        return self._simulation.add_user(profile)
+
+    def update_user(self, original_id: str, profile: UserProfile) -> UserProfile:
+        return self._simulation.update_user(original_id, profile)
+
+    def delete_user(self, user_id: str, *, move_data: bool) -> UserProfile:
+        profile = self._simulation.delete_user(user_id, move_data=move_data)
+        self.refresh_datasets()
+        return profile
+
+    def restore_user(self, user_id: str) -> UserProfile:
+        profile = self._simulation.restore_user(user_id)
+        self.refresh_datasets()
+        return profile
+
+    def purge_user(self, user_id: str) -> None:
+        self._simulation.purge_user(user_id)
+        self.refresh_datasets()
+
+    @property
     def openbci_status(self) -> OpenBCIWorkspaceStatus:
         return self._simulation.openbci_status
 
     def start_ssvep(self, config: CaptureConfig, speed: float = 8) -> TaskSnapshot:
         self._ensure_available()
+        profile = self._simulation._users.get(config.user_id)
+        if profile is None or profile.status != "active":
+            raise ValueError("validation.user_not_found")
+        if CaptureMode(config.mode) != CaptureMode.DEMO and profile.is_demo:
+            raise ValueError("validation.user_demo")
+        config = replace(
+            config,
+            participant=profile.user_id,
+            user_id=profile.user_id,
+            user_name=profile.name,
+        )
         if CaptureMode(config.mode) == CaptureMode.DEMO:
             self._active = self._simulation
             return self._simulation.start_ssvep(config, speed)

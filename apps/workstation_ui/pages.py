@@ -13,10 +13,12 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QLineEdit,
     QSpinBox, QComboBox, QCheckBox, QFileDialog, QProgressBar, QStyle,
     QAbstractItemView, QHeaderView, QTableWidget, QTableWidgetItem,
+    QDialog, QDialogButtonBox, QMessageBox, QTextEdit,
 )
 
 from .components import Page, Section, KeyValues, AppTile, StaticTargets, WaveformWidget, action, label
 from .gateway import CaptureConfig, CaptureMode, TaskSnapshot, Phase, Dataset, format_duration
+from neurostation_contract import GENDERS, MEDICAL_OPTIONS, UserProfile
 
 
 def _readonly_table(headers: tuple[str, ...]) -> QTableWidget:
@@ -193,6 +195,236 @@ def _read_data_preview(path: Path, limit: int = 100) -> tuple[tuple[str, ...], l
     return tuple(headers[:column_count]), normalized
 
 
+class UserDialog(QDialog):
+    def __init__(self, tr, profile: UserProfile | None = None, next_id: str = "U0001"):
+        super().__init__()
+        self.tr = tr
+        self.original_id = profile.user_id if profile else ""
+        self.setWindowTitle(tr("users.edit_title") if profile else tr("users.add_title"))
+        self.setMinimumWidth(460)
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        self.user_id = QLineEdit(profile.user_id if profile else next_id)
+        self.name = QLineEdit(profile.name if profile else "")
+        self.age = QSpinBox()
+        self.age.setRange(0, 150)
+        self.age.setValue(profile.age if profile else 0)
+        self.gender = QComboBox()
+        for key in GENDERS:
+            self.gender.addItem(tr("users.gender." + key), key)
+        if profile:
+            self.gender.setCurrentIndex(max(0, self.gender.findData(profile.gender)))
+        form.addRow(tr("users.field_id"), self.user_id)
+        form.addRow(tr("users.field_name"), self.name)
+        form.addRow(tr("users.field_age"), self.age)
+        form.addRow(tr("users.field_gender"), self.gender)
+        layout.addLayout(form)
+        medical = Section(tr("users.field_medical"))
+        self.medical_checks: dict[str, QCheckBox] = {}
+        current = set(profile.medical_conditions if profile else ("none",))
+        grid = QGridLayout()
+        for index, key in enumerate(MEDICAL_OPTIONS):
+            check = QCheckBox(tr("users.medical." + key))
+            check.setChecked(key in current)
+            self.medical_checks[key] = check
+            grid.addWidget(check, index // 2, index % 2)
+        medical.layout.addLayout(grid)
+        self.medical_other = QTextEdit(profile.medical_other if profile else "")
+        self.medical_other.setPlaceholderText(tr("users.medical_other_placeholder"))
+        self.medical_other.setMaximumHeight(72)
+        medical.layout.addWidget(self.medical_other)
+        layout.addWidget(medical)
+        self.error = label("", "error")
+        layout.addWidget(self.error)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self._accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def profile(self) -> UserProfile:
+        conditions = tuple(key for key, check in self.medical_checks.items() if check.isChecked())
+        return UserProfile(
+            user_id=self.user_id.text().strip(),
+            name=self.name.text().strip(),
+            age=self.age.value(),
+            gender=str(self.gender.currentData()),
+            medical_conditions=conditions,
+            medical_other=self.medical_other.toPlainText().strip(),
+            is_demo=self.user_id.text().strip() == "U0000",
+        )
+
+    def _accept(self):
+        try:
+            self.profile().validate()
+        except ValueError as error:
+            self.error.setText(self.tr(str(error)))
+            return
+        self.accept()
+
+
+class UserManagementPage(Page):
+    def __init__(self, tr, users, trash, callbacks):
+        super().__init__(tr, tr("nav.users"), tr("users.subtitle"))
+        self._callbacks = callbacks
+        self._users = tuple(users)
+        self._trash = tuple(trash)
+        controls = QHBoxLayout()
+        self.add_button = action(tr("users.add"), self._add, True)
+        self.edit_button = action(tr("users.edit"), self._edit)
+        self.delete_button = action(tr("users.delete"), self._delete)
+        controls.addWidget(self.add_button)
+        controls.addWidget(self.edit_button)
+        controls.addWidget(self.delete_button)
+        controls.addStretch()
+        self.layout.addLayout(controls)
+        self.search = QLineEdit()
+        self.search.setPlaceholderText(tr("users.search_placeholder"))
+        self.search.setClearButtonEnabled(True)
+        self.search.setObjectName("userSearch")
+        self.search.textChanged.connect(lambda _text: self._refresh_tables())
+        self.layout.addWidget(self.search)
+        self.status = label("", "muted")
+        self.layout.addWidget(self.status)
+        self.table = _readonly_table((tr("users.field_id"), tr("users.field_name"), tr("users.field_age"),
+                                      tr("users.field_gender"), tr("users.field_medical"),
+                                      tr("users.updated"), tr("users.status")))
+        self.table.setObjectName("usersTable")
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.itemSelectionChanged.connect(self._selection_changed)
+        self.layout.addWidget(self.table)
+        trash_section = Section(tr("users.trash"))
+        trash_controls = QHBoxLayout()
+        self.restore_button = action(tr("users.restore"), self._restore)
+        self.purge_button = action(tr("users.purge"), self._purge)
+        trash_controls.addWidget(self.restore_button)
+        trash_controls.addWidget(self.purge_button)
+        trash_controls.addStretch()
+        trash_section.layout.addLayout(trash_controls)
+        self.trash_table = _readonly_table((tr("users.field_id"), tr("users.field_name"), tr("users.deleted_at")))
+        self.trash_table.setObjectName("usersTrashTable")
+        self.trash_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        trash_section.layout.addWidget(self.trash_table)
+        self.layout.addWidget(trash_section)
+        self._refresh_tables()
+
+    def set_users(self, users, trash):
+        self._users = tuple(users)
+        self._trash = tuple(trash)
+        self._refresh_tables()
+
+    def _refresh_tables(self):
+        self.table.setRowCount(0)
+        query = self.search.text().strip().casefold() if hasattr(self, "search") else ""
+        self._visible_users = tuple(
+            profile for profile in self._users
+            if not query or query in profile.user_id.casefold() or query in profile.name.casefold()
+        )
+        for profile in self._visible_users:
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            values = (profile.user_id, profile.name, profile.age,
+                      self.tr("users.gender." + profile.gender),
+                      ", ".join(self.tr("users.medical." + item) for item in profile.medical_conditions),
+                      profile.updated_at or "—",
+                      self.tr("users.active"))
+            for col, value in enumerate(values):
+                self.table.setItem(row, col, _table_item(value))
+        self.trash_table.setRowCount(0)
+        self._visible_trash = self._trash
+        for profile in self._visible_trash:
+            row = self.trash_table.rowCount()
+            self.trash_table.insertRow(row)
+            for col, value in enumerate((profile.user_id, profile.name, profile.deleted_at or "—")):
+                self.trash_table.setItem(row, col, _table_item(value))
+        self._selection_changed()
+        self.status.setText(self.tr("users.empty") if not self._visible_users else "")
+
+    def _selected(self, table):
+        rows = table.selectionModel().selectedRows()
+        if not rows:
+            return None
+        index = rows[0].row()
+        values = self._visible_users if table is self.table else self._visible_trash
+        return values[index] if 0 <= index < len(values) else None
+
+    def _selection_changed(self):
+        self.edit_button.setEnabled(self._selected(self.table) is not None)
+        self.delete_button.setEnabled(self._selected(self.table) is not None)
+        self.restore_button.setEnabled(self._selected(self.trash_table) is not None)
+        self.purge_button.setEnabled(self._selected(self.trash_table) is not None)
+
+    def _add(self):
+        dialog = UserDialog(self.tr, next_id=self._callbacks["next_id"]())
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            self._callbacks["add"](dialog.profile())
+        except ValueError as error:
+            self.status.setText(self.tr(str(error)))
+            return
+        self._callbacks["refresh"]()
+
+    def _edit(self):
+        selected = self._selected(self.table)
+        if selected is None:
+            return
+        dialog = UserDialog(self.tr, selected)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            self._callbacks["update"](selected.user_id, dialog.profile())
+        except ValueError as error:
+            self.status.setText(self.tr(str(error)))
+            return
+        self._callbacks["refresh"]()
+
+    def _delete(self):
+        selected = self._selected(self.table)
+        if selected is None or selected.is_demo:
+            self.status.setText(self.tr("users.demo_protected"))
+            return
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle(self.tr("users.delete_title"))
+        dialog.setText(self.tr("users.delete_prompt", name=selected.name, user_id=selected.user_id))
+        keep = dialog.addButton(self.tr("users.delete_keep_data"), QMessageBox.ButtonRole.AcceptRole)
+        move = dialog.addButton(self.tr("users.delete_move_data"), QMessageBox.ButtonRole.DestructiveRole)
+        dialog.addButton(QMessageBox.StandardButton.Cancel)
+        dialog.exec()
+        clicked = dialog.clickedButton()
+        if clicked not in (keep, move):
+            return
+        try:
+            self._callbacks["delete"](selected.user_id, move_data=clicked is move)
+            self._callbacks["refresh"]()
+        except (ValueError, RuntimeError) as error:
+            self.status.setText(self.tr(str(error)))
+
+    def _restore(self):
+        selected = self._selected(self.trash_table)
+        if selected:
+            try:
+                self._callbacks["restore"](selected.user_id)
+                self._callbacks["refresh"]()
+            except (ValueError, RuntimeError) as error:
+                self.status.setText(self.tr(str(error)))
+
+    def _purge(self):
+        selected = self._selected(self.trash_table)
+        if selected is None:
+            return
+        answer = QMessageBox.question(self, self.tr("users.purge_title"),
+                                      self.tr("users.purge_prompt", name=selected.name),
+                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if answer == QMessageBox.StandardButton.Yes:
+            try:
+                self._callbacks["purge"](selected.user_id)
+                self._callbacks["refresh"]()
+            except (ValueError, RuntimeError) as error:
+                self.status.setText(self.tr(str(error)))
+
+
 class HomePage(Page):
     def __init__(self, tr, navigate):
         super().__init__(tr, tr("home.ready"), tr("home.subtitle"))
@@ -302,8 +534,10 @@ class AppsPage(Page):
 class SSVEPPage(Page):
     start_requested = Signal(object, float)
     serial_scan_requested = Signal()
+    create_user_requested = Signal()
+    refresh_users_requested = Signal()
 
-    def __init__(self, tr, config: CaptureConfig, navigate):
+    def __init__(self, tr, config: CaptureConfig, navigate, users=()):
         super().__init__(tr, "SSVEP", tr("ssvep.subtitle"))
         self.layout.addWidget(action(tr("action.back_apps"), lambda: navigate("apps")))
         self.layout.addWidget(label(tr("ssvep.description"), "muted"))
@@ -313,7 +547,16 @@ class SSVEPPage(Page):
         form = QFormLayout()
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         self.participant = QLineEdit(config.participant)
+        self.participant.setReadOnly(True)
         self.name = QLineEdit(config.name)
+        self.user = QComboBox()
+        self.user.setObjectName("captureUserSelector")
+        self.user_picker = QWidget()
+        user_picker_layout = QHBoxLayout(self.user_picker)
+        user_picker_layout.setContentsMargins(0, 0, 0, 0)
+        user_picker_layout.addWidget(self.user, 1)
+        user_picker_layout.addWidget(action(tr("users.add_short"), self.create_user_requested.emit))
+        user_picker_layout.addWidget(action(tr("users.refresh"), self.refresh_users_requested.emit))
         self.stimulus = self._spin(1, 30, config.stimulus_seconds, tr("field.seconds"))
         self.rest = self._spin(0, 30, config.rest_seconds, tr("field.seconds"))
         self.repetitions = self._spin(1, 10, config.repetitions)
@@ -364,7 +607,7 @@ class SSVEPPage(Page):
         self.acknowledge.setChecked(config.acknowledge_flicker_risk)
         self.allow_draft = QCheckBox(tr("ssvep.allow_draft"))
         self.allow_draft.setChecked(config.allow_draft_hardware_config)
-        for key, widget in (("field.participant", self.participant), ("field.name", self.name),
+        for key, widget in (("field.user", self.user_picker), ("field.participant", self.participant), ("field.name", self.name),
                             ("field.mode", self.mode), ("field.port", port_picker),
                             ("field.screen", self.screen),
                             ("field.stimulus", self.stimulus), ("field.rest", self.rest),
@@ -394,7 +637,9 @@ class SSVEPPage(Page):
         for spin in (self.stimulus, self.rest, self.repetitions):
             spin.valueChanged.connect(self._update_estimate)
         self.mode.currentIndexChanged.connect(self._mode_changed)
+        self.user.currentIndexChanged.connect(self._user_changed)
         self.channel_manual.toggled.connect(self._channel_manual_changed)
+        self.set_users(users, selected_id=config.user_id)
         self._mode_changed()
         self._update_estimate()
 
@@ -408,12 +653,16 @@ class SSVEPPage(Page):
 
     def config(self) -> CaptureConfig:
         mode = CaptureMode(self.mode.currentData())
+        profile = self.user.currentData()
+        user_id = str(profile.user_id) if isinstance(profile, UserProfile) else ""
+        user_name = str(profile.name) if isinstance(profile, UserProfile) else ""
         channel_config = (
             self.channel.text().strip()
             if mode == CaptureMode.CYTON and self.channel_manual.isChecked()
             else ""
         )
-        return CaptureConfig(participant=self.participant.text().strip(), name=self.name.text().strip(),
+        return CaptureConfig(participant=user_id or self.participant.text().strip(), name=self.name.text().strip(),
+            user_id=user_id, user_name=user_name,
             stimulus_seconds=self.stimulus.value(), rest_seconds=self.rest.value(),
             repetitions=self.repetitions.value(), save_directory=Path(self.save.text()).expanduser(),
             mode=CaptureMode(self.mode.currentData()), port=self.port.text().strip(),
@@ -421,6 +670,34 @@ class SSVEPPage(Page):
             acknowledge_flicker_risk=self.acknowledge.isChecked(),
             channel_config=Path(channel_config).expanduser() if channel_config else None,
             allow_draft_hardware_config=self.allow_draft.isChecked())
+
+    def set_users(self, users, selected_id: str = ""):
+        if not selected_id:
+            selected_id = self.config().user_id
+        self.user.blockSignals(True)
+        self.user.clear()
+        for profile in users:
+            if profile.status != "active":
+                continue
+            self.user.addItem(profile.display_name, profile)
+        # UserProfile objects are stored as item data, so QComboBox's
+        # findData cannot compare them to a string ID reliably across Qt
+        # bindings. Resolve the ID explicitly to keep refresh/new-user flows
+        # deterministic.
+        for index in range(self.user.count()):
+            profile = self.user.itemData(index)
+            if isinstance(profile, UserProfile) and profile.user_id == selected_id:
+                self.user.setCurrentIndex(index)
+                break
+        self.user.blockSignals(False)
+        self._user_changed()
+
+    def _user_changed(self):
+        profile = self.user.currentData()
+        if isinstance(profile, UserProfile):
+            self.participant.setText(profile.user_id)
+        else:
+            self.participant.clear()
 
     def _update_estimate(self):
         config = self.config()
@@ -595,6 +872,9 @@ class ResultPage(Page):
         self.layout.addWidget(label(tr(notice_key), "notice"))
         self.layout.addWidget(KeyValues([
             (tr("field.participant"), result.participant),
+            (tr("field.user_id"), result.user_id or tr("users.unlinked")),
+            (tr("field.user_name"), result.user_name or tr("users.unlinked")),
+            (tr("field.user_status"), tr("users.link_" + result.user_link_status)),
             (tr("result.recording"), format_duration(result.recording_seconds)),
             (tr("result.preparation"), format_duration(result.preparation_seconds)),
             (tr("result.demo"), format_duration(math.ceil(result.demo_seconds))),
@@ -627,7 +907,7 @@ class DatasetSummaryPage(Page):
             if result.protocol == "manual" or result.origin == "capture_test"
             else tr("dataset_summary.imported") if result.imported else tr("dataset_summary.acquired")
         )
-        session_rows = (
+        session_rows = [
             (tr("dataset_summary.session"), result.name),
             (tr("dataset_summary.source"), source_name),
             (tr("field.participant"), result.participant or tr("dataset_summary.unlabeled")),
@@ -644,7 +924,15 @@ class DatasetSummaryPage(Page):
                 else str(result.path),
             ),
             (tr("dataset_summary.original_source"), result.source_path or "—"),
-        )
+        ]
+        # Always show the association fields, including for legacy/imported
+        # sessions.  An explicit “unlinked” value is safer than hiding the
+        # absence of a user record or guessing an identity from participant_id.
+        session_rows[3:3] = [
+            (tr("field.user_id"), result.user_id or tr("users.unlinked")),
+            (tr("field.user_name"), result.user_name or tr("users.unlinked")),
+            (tr("field.user_status"), tr("users.link_" + result.user_link_status)),
+        ]
         session_table = _readonly_table(
             (tr("dataset_summary.field"), tr("dataset_summary.value"))
         )
@@ -776,6 +1064,12 @@ class DatasetsPage(Page):
             item.layout.addWidget(label(tr("datasets.details", participant=dataset.participant,
                 duration=format_duration(dataset.recording_seconds), samples=f"{dataset.samples_per_channel:,}",
                 events=dataset.event_count)))
+            item.layout.addWidget(label(
+                tr("datasets.user_details", user_id=dataset.user_id or tr("users.unlinked"),
+                   user_name=dataset.user_name or tr("users.unlinked"),
+                   status=tr("users.link_" + dataset.user_link_status)),
+                "muted",
+            ))
             item.layout.addWidget(label(
                 tr("result.capture_test_memory")
                 if dataset.protocol == "manual" or dataset.origin == "capture_test"

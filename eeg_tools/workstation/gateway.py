@@ -117,6 +117,9 @@ class WorkstationGateway:
         *,
         participant_id: str,
         session_name: str,
+        user_id: str = "",
+        user_name: str = "",
+        user_link_status: str = "unlinked",
         repetitions: int | None = None,
         stimulus_s: float | None = None,
         rest_s: float | None = None,
@@ -136,6 +139,9 @@ class WorkstationGateway:
             self.repository,
             participant_id=participant_id,
             session_name=session_name,
+            user_id=user_id,
+            user_name=user_name,
+            user_link_status=user_link_status,
             simulation_speed=simulation_speed,
         )
         return self._task.start(self.clock())

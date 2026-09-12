@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 import math
 from time import monotonic
@@ -25,6 +26,88 @@ from neurostation_contract import (
     default_save_directory,
     format_duration,
 )
+from neurostation_contract import GENDERS, MEDICAL_OPTIONS, UserProfile
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).astimezone().isoformat(timespec="milliseconds")
+
+
+class _MemoryUserRegistry:
+    def __init__(self):
+        self._users = {
+            "U0000": UserProfile(
+                user_id="U0000", name="演示用户", age=0, is_demo=True,
+                created_at="memory", updated_at="memory",
+            )
+        }
+        self._trash = {}
+
+    @property
+    def users(self):
+        return tuple(sorted(self._users.values(), key=lambda item: item.user_id))
+
+    @property
+    def trash(self):
+        return tuple(sorted(self._trash.values(), key=lambda item: item.user_id))
+
+    def next_user_id(self):
+        values = [int(key[1:]) for key in (*self._users, *self._trash) if key.startswith("U") and key[1:].isdigit()]
+        return f"U{max(values or [0]) + 1:04d}"
+
+    def get(self, user_id):
+        return self._users.get(user_id)
+
+    def add(self, profile):
+        profile = replace(
+            profile,
+            user_id=profile.user_id.strip() or self.next_user_id(),
+            name=profile.name.strip(),
+            status="active",
+            created_at=profile.created_at or _now(),
+            updated_at=_now(),
+            deleted_at="",
+        )
+        profile.validate()
+        if profile.user_id in self._users or profile.user_id in self._trash:
+            raise ValueError("validation.user_id_duplicate")
+        self._users[profile.user_id] = profile
+        return profile
+
+    def update(self, original_id, profile):
+        if original_id not in self._users:
+            raise ValueError("validation.user_not_found")
+        profile = replace(profile, user_id=profile.user_id.strip(), name=profile.name.strip(),
+                          updated_at=_now(), status="active", deleted_at="")
+        profile.validate()
+        if profile.user_id != original_id and (
+            profile.user_id in self._users or profile.user_id in self._trash
+        ):
+            raise ValueError("validation.user_id_duplicate")
+        del self._users[original_id]
+        self._users[profile.user_id] = profile
+        return profile
+
+    def delete(self, user_id, *, move_data=False):
+        if user_id == "U0000":
+            raise ValueError("validation.user_not_found")
+        profile = self._users.pop(user_id, None)
+        if profile is None:
+            raise ValueError("validation.user_not_found")
+        self._trash[user_id] = replace(profile, status="trash", deleted_at=_now(), updated_at=_now())
+        return profile
+
+    def restore(self, user_id):
+        profile = self._trash.pop(user_id, None)
+        if profile is None:
+            raise ValueError("validation.user_not_found")
+        self._users[user_id] = replace(profile, status="active", deleted_at="", updated_at=_now())
+        return profile
+
+    def purge(self, user_id):
+        if user_id not in self._trash:
+            raise ValueError("validation.user_not_found")
+        del self._trash[user_id]
 
 
 __all__ = [
@@ -59,6 +142,7 @@ class MockGateway:
         self._task_start = 0.0
         self._run_start = 0.0
         self._manual_markers = 0
+        self._users = _MemoryUserRegistry()
 
     @property
     def snapshot(self) -> TaskSnapshot:
@@ -67,6 +151,32 @@ class MockGateway:
     @property
     def datasets(self) -> tuple[Dataset, ...]:
         return tuple(self._datasets)
+
+    @property
+    def users(self) -> tuple[UserProfile, ...]:
+        return self._users.users
+
+    @property
+    def trashed_users(self) -> tuple[UserProfile, ...]:
+        return self._users.trash
+
+    def next_user_id(self) -> str:
+        return self._users.next_user_id()
+
+    def add_user(self, profile: UserProfile) -> UserProfile:
+        return self._users.add(profile)
+
+    def update_user(self, original_id: str, profile: UserProfile) -> UserProfile:
+        return self._users.update(original_id, profile)
+
+    def delete_user(self, user_id: str, *, move_data: bool) -> UserProfile:
+        return self._users.delete(user_id, move_data=move_data)
+
+    def restore_user(self, user_id: str) -> UserProfile:
+        return self._users.restore(user_id)
+
+    def purge_user(self, user_id: str) -> None:
+        self._users.purge(user_id)
 
     @property
     def openbci_status(self) -> OpenBCIWorkspaceStatus:
@@ -91,6 +201,11 @@ class MockGateway:
     def start_ssvep(self, config: CaptureConfig, speed: float = 8) -> TaskSnapshot:
         self._ensure_available()
         config.validate()
+        profile = self._users.get(config.user_id)
+        if profile is None or profile.status != "active":
+            raise ValueError("validation.user_not_found")
+        if config.mode != CaptureMode.DEMO and profile.is_demo:
+            raise ValueError("validation.user_demo")
         if not math.isfinite(speed) or not 1 <= speed <= 32:
             raise ValueError("validation.speed")
         self.config = config
@@ -239,6 +354,9 @@ class MockGateway:
             created_at=now.isoformat(),
             source=CaptureMode.DEMO,
             origin="capture_test" if protocol == "manual" else "acquired",
+            user_id=self.config.user_id,
+            user_name=self.config.user_name,
+            user_link_status="active",
         )
         self._datasets.append(result)
         return result

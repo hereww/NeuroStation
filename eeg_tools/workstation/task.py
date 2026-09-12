@@ -38,6 +38,9 @@ class SSVEPTask:
         *,
         participant_id: str,
         session_name: str,
+        user_id: str = "",
+        user_name: str = "",
+        user_link_status: str = "unlinked",
         simulation_speed: float = 1.0,
     ):
         if simulation_speed <= 0:
@@ -48,6 +51,9 @@ class SSVEPTask:
         self.repository = repository
         self.participant_id = participant_id.strip()
         self.session_name = session_name.strip()
+        self.user_id = user_id.strip()
+        self.user_name = user_name.strip()
+        self.user_link_status = user_link_status
         self.simulation_speed = simulation_speed
         self.phase = TaskPhase.READY
         self._started_at: float | None = None
@@ -72,6 +78,9 @@ class SSVEPTask:
             session_name=self.session_name,
             status="aborted",
             completed_trials=completed_trials,
+            user_id=self.user_id,
+            user_name=self.user_name,
+            user_link_status=self.user_link_status,
         )
         self.phase = TaskPhase.ABORTED
         return self.snapshot(now_s)
@@ -111,6 +120,9 @@ class SSVEPTask:
                 self.protocol,
                 participant_id=self.participant_id,
                 session_name=self.session_name,
+                user_id=self.user_id,
+                user_name=self.user_name,
+                user_link_status=self.user_link_status,
             )
             self.phase = TaskPhase.COMPLETED
 

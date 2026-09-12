@@ -48,6 +48,9 @@ class DatasetRecord:
     imported: bool = False
     origin: str = "acquired"
     fingerprint: str = ""
+    user_id: str = ""
+    user_name: str = ""
+    user_link_status: str = "unlinked"
 
 
 @dataclass(frozen=True)
@@ -82,6 +85,9 @@ class DatasetRepository:
         session_name: str,
         status: str = "completed",
         completed_trials: int | None = None,
+        user_id: str = "",
+        user_name: str = "",
+        user_link_status: str = "unlinked",
     ) -> DatasetRecord:
         now = datetime.now().astimezone()
         session_id = now.strftime("session_%Y%m%d_%H%M%S_%f")[:-3]
@@ -104,6 +110,9 @@ class DatasetRepository:
             source="demo",
             sampling_rate_hz=protocol.sampling_rate_hz,
             channel_count=protocol.channel_count,
+            user_id=user_id,
+            user_name=user_name,
+            user_link_status=user_link_status,
         )
 
         protocol_path = output_dir / "protocol.json"
@@ -278,6 +287,9 @@ class DatasetRepository:
                             )
                         ),
                         fingerprint=str(value.get("fingerprint") or ""),
+                        user_id=str(value.get("user_id") or ""),
+                        user_name=str(value.get("user_name") or ""),
+                        user_link_status=str(value.get("user_link_status") or ("active" if value.get("user_id") else "unlinked")),
                     )
                 )
             except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
@@ -398,6 +410,7 @@ class DatasetRepository:
                 imported=True,
                 origin="imported_openbci",
                 fingerprint=fingerprint,
+                user_link_status="unlinked",
             ),
             raw_files,
             copied_files,

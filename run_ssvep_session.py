@@ -32,6 +32,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-root", type=Path, default=DatasetRepository.default_root())
     parser.add_argument("--participant", default="P001")
     parser.add_argument("--session-name", default="SSVEP")
+    parser.add_argument("--user-id", default="U0000")
+    parser.add_argument("--user-name", default="演示用户")
     parser.add_argument("--repetitions", type=int)
     parser.add_argument("--stimulus-seconds", type=float)
     parser.add_argument("--rest-seconds", type=float)
@@ -78,6 +80,8 @@ def main(argv: list[str] | None = None) -> int:
         "--output-root", str(arguments.output_root),
         "--participant", arguments.participant,
         "--session-name", arguments.session_name,
+        "--user-id", arguments.user_id,
+        "--user-name", arguments.user_name,
         "--board", "synthetic" if arguments.synthetic else "cyton",
         "--port", arguments.port,
         "--screen-index", str(arguments.screen_index),

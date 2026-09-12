@@ -17,7 +17,7 @@ from .i18n import Translator
 from .pages import (
     HomePage, DevicesPage, LivePage, AppsPage, SSVEPPage, TaskPage,
     ResultPage, DatasetsPage, InfoPage,
-    DatasetSummaryPage,
+    DatasetSummaryPage, UserManagementPage, UserDialog,
 )
 class _ImportWorker(QObject):
     finished = Signal(object)
@@ -37,7 +37,7 @@ class _ImportWorker(QObject):
         self.finished.emit(report)
 
 
-NAVIGATION = ("home", "devices", "live", "apps", "datasets", "openbci", "integrations")
+NAVIGATION = ("home", "devices", "users", "live", "apps", "datasets", "openbci", "integrations")
 
 
 def product_stylesheet(dark: bool) -> str:
@@ -233,10 +233,13 @@ class MainWindow(QMainWindow):
         live.stop_requested.connect(self.stop_manual)
         live.marker_requested.connect(self.add_marker)
         self._replace_page("live", live)
+        self._replace_page("users", self._build_users_page())
         self._replace_page("apps", AppsPage(self.tr, self.navigate))
-        detail = SSVEPPage(self.tr, self.draft_config, self.navigate)
+        detail = SSVEPPage(self.tr, self.draft_config, self.navigate, self.gateway.users)
         detail.start_requested.connect(self.start_ssvep)
         detail.serial_scan_requested.connect(self.scan_serial_ports)
+        detail.create_user_requested.connect(self.create_user_from_capture)
+        detail.refresh_users_requested.connect(self.refresh_users)
         self._replace_page("ssvep", detail)
         task = TaskPage(self.tr)
         task.cancel_requested.connect(self.cancel_task)
@@ -309,6 +312,8 @@ class MainWindow(QMainWindow):
             )
             page.import_requested.connect(self._start_import)
             self._replace_page(key, page)
+        elif key == "users":
+            self._replace_page(key, self._build_users_page())
         elif key == "result":
             if self.result is None:
                 key = "apps"
@@ -360,6 +365,47 @@ class MainWindow(QMainWindow):
         page = self.pages.get("ssvep")
         if page is not None and hasattr(page, "set_detected_ports"):
             page.set_detected_ports(ports)
+
+    def _build_users_page(self):
+        callbacks = {
+            "next_id": self.gateway.next_user_id,
+            "add": self.gateway.add_user,
+            "update": self.gateway.update_user,
+            "delete": self.gateway.delete_user,
+            "restore": self.gateway.restore_user,
+            "purge": self.gateway.purge_user,
+            "refresh": self.refresh_users,
+        }
+        return UserManagementPage(
+            self.tr,
+            self.gateway.users,
+            self.gateway.trashed_users,
+            callbacks,
+        )
+
+    def refresh_users(self):
+        page = self.pages.get("users")
+        if isinstance(page, UserManagementPage):
+            page.set_users(self.gateway.users, self.gateway.trashed_users)
+        ssvep = self.pages.get("ssvep")
+        if ssvep is not None and hasattr(ssvep, "set_users"):
+            selected = ssvep.config().user_id
+            ssvep.set_users(self.gateway.users, selected_id=selected)
+
+    def create_user_from_capture(self):
+        next_id = "U0001"
+        if hasattr(self.gateway, "next_user_id"):
+            next_id = self.gateway.next_user_id()
+        dialog = UserDialog(self.tr, next_id=next_id)
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+        try:
+            profile = self.gateway.add_user(dialog.profile())
+        except ValueError as error:
+            self._error(error)
+            return
+        self.refresh_users()
+        self.pages["ssvep"].set_users(self.gateway.users, selected_id=profile.user_id)
 
     def start_manual(self, config: CaptureConfig):
         try:
