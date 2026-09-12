@@ -1,5 +1,5 @@
 {
-  "app.title": "NeuroStation MVP1.0 · EEG workstation",
+  "app.title": "NeuroStation MVP1.0.1 · EEG workstation",
   "app.simulated": "SIMULATED ACQUISITION · No real hardware",
   "mode.banner": "Current mode: {mode}",
   "mode.demo": "Workflow demo (metadata)",

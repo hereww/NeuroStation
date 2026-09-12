@@ -5,16 +5,26 @@
 
 NeuroStation 是一个面向科研与教学技术验证的跨平台脑电采集工作站。项目把 PySide6 桌面界面、BrainFlow 采集 worker、SSVEP 刺激流程、OpenBCI Cyton 接入、会话文件和数据集浏览整合在同一套工作流中。
 
-当前交付版本为 **MVP1.0（语义版本 1.0.0）**。Windows 10/11 x64 提供无需 Python 环境的 standalone portable 包；Linux 和 macOS 主要用于源码测试与平台构建验收。
+当前交付版本为 **MVP1.0.1（语义版本 1.0.1）**，属于 MVP1.0 系列的功能维护版本。Windows 10/11 x64 提供无需 Python 环境的 standalone portable 包；Linux 和 macOS 主要用于源码测试与平台构建验收。
 
 ## 下载与版本边界
 
-- [下载 NeuroStation MVP1.0 Windows x64](https://github.com/hereww/NeuroStation/releases/latest)
-- [查看 Release 说明](release/NeuroStation-MVP1.0-Windows-x64.md)
+- [下载 NeuroStation MVP1.0.1 Windows x64](https://github.com/hereww/NeuroStation/releases/latest)
+- [查看 MVP1.0.1 Release 说明](release/NeuroStation-MVP1.0.1-Windows-x64.md)
 - [查看完整验收清单](docs/验收清单.md)
 - [查看跨平台方案](docs/跨平台脑电采集工作站方案.md)
 
 Windows 包是可直接解压运行的目录，不是 MSI 安装器，也不包含真实 Cyton 设备。默认启动为不连接硬件的流程演示；Synthetic 模式产生 BrainFlow 合成数据；Cyton 模式才会打开真实串口。
+
+### MVP1.0.1 更新内容
+
+- 新增采集用户管理：用户编号、姓名、年龄、性别和本地医疗情况字段校验；
+- 新增用户与采集会话关联，结果页和数据集列表显示用户摘要与关联状态；
+- 新增用户回收站，支持保留关联数据删除、恢复和永久删除；演示用户受保护；
+- 新增从 SSVEP 采集页快速创建用户并自动回填当前采集任务；
+- 改进用户编号生成、重复编号校验、草稿/演示用户限制和旧会话兼容；
+- 修正 OpenBCI 导入数据集摘要的行数测试，确保新增用户列后 UI 验收口径一致；
+- 延续上一版本的 Windows Unicode 输出、Linux Qt 依赖、跨平台构建和取消后会话持久化修复。
 
 本项目不是医疗诊断设备。SSVEP 参数、通道位置、参考电极、BIAS、显示器刷新率和光学/marker 时序仍需在正式实验前人工复核。MVP1.0 的自动化测试不能替代 Cyton 实机、photodiode/TTL 和长时间稳定性验收。
 
@@ -32,7 +42,7 @@ Windows 包是可直接解压运行的目录，不是 MSI 安装器，也不包�
 
 ### 使用 Windows 发布包
 
-1. 下载并解压 `NeuroStation-MVP1.0-Windows-x64.zip`。
+1. 下载并解压 `NeuroStation-MVP1.0.1-Windows-x64.zip`。
 2. 运行 `NeuroStation.dist\workstation.exe`。
 3. 首次使用先选择默认流程演示，确认界面和会话目录能够正常生成。
 4. 需要查看运行环境时执行：
@@ -178,7 +188,7 @@ python scripts\smoke_packaged.py
 构建会把源码复制到 ASCII 路径的临时 stage，使用 Qt 官方 `pyside6-deploy`/Nuitka 构建，再把产物复制回 `dist/`。Windows 输出包括：
 
 - `dist\NeuroStation.dist\`：可运行目录；
-- `dist\NeuroStation-MVP1.0-Windows-x64.zip`：发布归档。
+- `dist\NeuroStation-MVP1.0.1-Windows-x64.zip`：发布归档。
 
 GitHub Actions 的职责分工如下：
 
