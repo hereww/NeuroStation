@@ -2,8 +2,14 @@ name: Desktop acceptance
 
 on:
   push:
+    branches:
+      - main
   pull_request:
   workflow_dispatch:
+
+concurrency:
+  group: desktop-acceptance-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test-and-package:
