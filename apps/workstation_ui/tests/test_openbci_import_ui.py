@@ -58,7 +58,7 @@ class OpenBCIImportUiTests(unittest.TestCase):
             file_table = window.pages["result"].findChild(QTableWidget, "datasetFilesTable")
             self.assertIsNotNone(session_table)
             self.assertIsNotNone(file_table)
-            self.assertEqual(11, session_table.rowCount())
+            self.assertEqual(14, session_table.rowCount())
             self.assertEqual(4, file_table.columnCount())
             self.assertEqual(1, file_table.rowCount())
             session_texts = [
