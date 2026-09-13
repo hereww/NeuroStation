@@ -319,9 +319,21 @@ class DatasetRepository:
         for path in files:
             stat = path.stat()
             relative = path.relative_to(source_directory).as_posix()
+            file_digest = hashlib.sha256()
+            with path.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    file_digest.update(chunk)
             digest.update(
-                f"{relative}\0{stat.st_size}\0{stat.st_mtime_ns}\n".encode("utf-8")
+                f"{relative}\0{stat.st_size}\0{stat.st_mtime_ns}\0{file_digest.hexdigest()}\n".encode("utf-8")
             )
+        return digest.hexdigest()
+
+    @staticmethod
+    def _file_sha256(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
         return digest.hexdigest()
 
     @staticmethod
@@ -508,6 +520,7 @@ class DatasetRepository:
                     "name": path.relative_to(source_directory).as_posix(),
                     "size_bytes": path.stat().st_size,
                     "modified_ns": path.stat().st_mtime_ns,
+                    "content_sha256": self._file_sha256(path),
                 }
                 for path in raw_files
             ]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 import time
 from dataclasses import replace
@@ -26,6 +27,7 @@ from .gateway import WorkstationGateway
 from .openbci_workspace import OpenBCIWorkspaceError, OpenBCIWorkspaceManager
 from .process_gateway import AcquisitionProcessGateway
 from .device_discovery import discover_serial_ports
+from eeg_tools.config import ConfigError, validate_channel_config
 from .task import TaskPhase
 from .users import UserProfile, UserRegistry
 
@@ -105,6 +107,9 @@ class MetadataSimulationGateway:
     def purge_user(self, user_id: str) -> None:
         self._users.purge(user_id)
         self.refresh_datasets()
+
+    def export_public_users(self, path: Path) -> Path:
+        return self._users.export_public_snapshot(path)
 
     @property
     def openbci_status(self) -> OpenBCIWorkspaceStatus:
@@ -360,6 +365,18 @@ class MetadataSimulationGateway:
                 if record.imported or record.origin == "imported_openbci"
                 else CaptureMode.CYTON
             )
+        quality: dict[str, object] = {}
+        try:
+            loaded_quality = json.loads((record.output_dir / "quality.json").read_text(encoding="utf-8"))
+            if isinstance(loaded_quality, dict):
+                quality = loaded_quality
+        except (OSError, json.JSONDecodeError):
+            pass
+        channels = quality.get("channels", {})
+        flat_channel_count = sum(
+            1 for item in channels.values()
+            if isinstance(item, dict) and float(item.get("flat_fraction", 0.0) or 0.0) >= 0.95
+        ) if isinstance(channels, dict) else 0
         return Dataset(
             id=record.session_id,
             name=record.session_name,
@@ -390,6 +407,10 @@ class MetadataSimulationGateway:
             user_id=record.user_id,
             user_name=record.user_name,
             user_link_status=record.user_link_status,
+            quality_status=str(quality.get("status") or "unknown"),
+            timestamp_gap_count=int(quality.get("timestamp_gap_count", 0) or 0),
+            dropped_frame_count=int(quality.get("dropped_frame_count", 0) or 0),
+            flat_channel_count=flat_channel_count,
         )
 
 
@@ -469,12 +490,36 @@ class DesktopGateway:
         self._simulation.purge_user(user_id)
         self.refresh_datasets()
 
+    def export_public_users(self, path: Path) -> Path:
+        return self._simulation.export_public_users(path)
+
     @property
     def openbci_status(self) -> OpenBCIWorkspaceStatus:
         return self._simulation.openbci_status
 
+    def preflight_cyton(self, seconds: float = 3.0, port: str = "AUTO") -> dict[str, object]:
+        return self._acquisition.preflight_cyton(seconds, port)
+
     def start_ssvep(self, config: CaptureConfig, speed: float = 8) -> TaskSnapshot:
         self._ensure_available()
+        config.validate()
+        if CaptureMode(config.mode) == CaptureMode.CYTON and not config.allow_draft_hardware_config:
+            channel_path = Path(config.channel_config or self._acquisition.channel_config_path).resolve()
+            try:
+                protocol_value = json.loads(
+                    self._acquisition.protocol_path.read_text(encoding="utf-8")
+                )
+                channel_value = json.loads(channel_path.read_text(encoding="utf-8"))
+                if not isinstance(protocol_value, dict) or not isinstance(channel_value, dict):
+                    raise ConfigError("configuration roots must be objects")
+                warnings = []
+                if str(protocol_value.get("status", "")).lower().startswith("draft"):
+                    warnings.append("protocol is draft")
+                warnings.extend(validate_channel_config(channel_value, channel_path))
+            except (ConfigError, OSError, ValueError, json.JSONDecodeError) as error:
+                raise ValueError("validation.hardware_config") from error
+            if warnings:
+                raise ValueError("validation.hardware_draft")
         profile = self._simulation._users.get(config.user_id)
         if profile is None or profile.status != "active":
             raise ValueError("validation.user_not_found")

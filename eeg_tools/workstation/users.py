@@ -9,6 +9,8 @@ from pathlib import Path
 import shutil
 from typing import Any
 from neurostation_contract import GENDERS, MEDICAL_OPTIONS, UserProfile
+from .privacy import write_public_user_snapshot
+from .secure_storage import protect, unprotect, SecureStorageError
 
 
 def _now() -> str:
@@ -22,6 +24,7 @@ class UserRegistry:
         self.root = Path(dataset_root).expanduser().resolve() if dataset_root else None
         self.users_dir = self.root / "Users" if self.root else None
         self.registry_path = self.users_dir / "registry.json" if self.users_dir else None
+        self.secure_registry_path = self.users_dir / "registry.secure" if self.users_dir else None
         self.trash_root = self.root / "Trash" if self.root else None
         self._active: dict[str, UserProfile] = {}
         self._trash: dict[str, UserProfile] = {}
@@ -30,13 +33,26 @@ class UserRegistry:
         self._ensure_demo()
 
     def _load(self) -> None:
-        if self.registry_path is None or not self.registry_path.is_file():
+        if self.registry_path is None:
             return
+        if not self.registry_path.is_file() and (self.secure_registry_path is None or not self.secure_registry_path.is_file()):
+            return
+        source_path = self.registry_path
+        raw: bytes
+        if self.secure_registry_path is not None and self.secure_registry_path.is_file():
+            try:
+                raw, _storage_mode = unprotect(self.secure_registry_path.read_bytes())
+                source_path = self.secure_registry_path
+            except (OSError, SecureStorageError):
+                raw = self.registry_path.read_bytes()
+        else:
+            try:
+                raw = self.registry_path.read_bytes()
+            except OSError:
+                return
         try:
-            value = json.loads(self.registry_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError, json.JSONDecodeError):
-            # Preserve a recoverable copy before a later save replaces a
-            # damaged registry with the built-in demo profile.
+            value = json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, ValueError, json.JSONDecodeError):
             try:
                 backup = self.registry_path.with_suffix(".json.corrupt")
                 if backup.exists():
@@ -44,7 +60,7 @@ class UserRegistry:
                     while backup.exists():
                         backup = self.registry_path.with_suffix(f".json.corrupt.{index}")
                         index += 1
-                shutil.copy2(self.registry_path, backup)
+                shutil.copy2(source_path, backup)
             except OSError:
                 pass
             return
@@ -73,7 +89,7 @@ class UserRegistry:
                         ]
 
     def _save(self) -> None:
-        if self.registry_path is None:
+        if self.registry_path is None or self.secure_registry_path is None:
             return
         assert self.users_dir is not None
         self.users_dir.mkdir(parents=True, exist_ok=True)
@@ -90,8 +106,29 @@ class UserRegistry:
             "users": [profile.to_dict() for profile in self._active.values()],
             "trash": trash,
         }
+        payload = json.dumps(value, ensure_ascii=False, indent=2).encode("utf-8")
+        protected, storage_mode = protect(payload)
+        secure_pending = self.secure_registry_path.with_suffix(".secure.pending")
+        secure_pending.write_bytes(protected)
+        secure_pending.replace(self.secure_registry_path)
+        # Keep a readable, privacy-minimized index for diagnostics and migration.
+        public = {
+            "schema_version": 1,
+            "storage": storage_mode,
+            "updated_at": value["updated_at"],
+            "users": [
+                {"user_id": profile.user_id, "status": profile.status, "is_demo": profile.is_demo,
+                 "created_at": profile.created_at, "updated_at": profile.updated_at}
+                for profile in self._active.values()
+            ],
+            "trash": [
+                {"user_id": profile.user_id, "status": profile.status, "is_demo": profile.is_demo,
+                 "created_at": profile.created_at, "updated_at": profile.updated_at, "deleted_at": profile.deleted_at}
+                for profile in self._trash.values()
+            ],
+        }
         pending = self.registry_path.with_suffix(".json.pending")
-        pending.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+        pending.write_text(json.dumps(public, ensure_ascii=False, indent=2), encoding="utf-8")
         pending.replace(self.registry_path)
 
     def _ensure_demo(self) -> None:
@@ -109,6 +146,12 @@ class UserRegistry:
             is_demo=True,
         )
         self._save()
+
+    def export_public_snapshot(self, path: Path) -> Path:
+        """Export a redacted user index suitable for sharing or diagnostics."""
+        destination = Path(path).expanduser().resolve()
+        write_public_user_snapshot(destination, self.users, self.trash)
+        return destination
 
     @property
     def users(self) -> tuple[UserProfile, ...]:

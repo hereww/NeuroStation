@@ -6,6 +6,22 @@ from workstation import build_diagnostics
 
 
 class WorkstationDiagnosticsTests(unittest.TestCase):
+    def test_sbom_generator_emits_cyclonedx_shape(self) -> None:
+        from scripts.generate_sbom import build_sbom
+        value = build_sbom()
+        self.assertEqual("CycloneDX", value["bomFormat"])
+        self.assertEqual("1.5", value["specVersion"])
+        self.assertTrue(value["components"])
+
+    def test_diagnostics_contains_display_facts_when_qt_is_available(self) -> None:
+        report = build_diagnostics()
+        self.assertIn("displays", report)
+        self.assertIsInstance(report["displays"], list)
+        if report["displays"]:
+            display = report["displays"][0]
+            self.assertIn("device_pixel_ratio", display)
+            self.assertIn("refresh_rate_hz", display)
+
     def test_preflight_report_distinguishes_configuration_from_hardware(self) -> None:
         report = build_diagnostics()
 

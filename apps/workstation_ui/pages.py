@@ -265,6 +265,7 @@ class UserDialog(QDialog):
 
 
 class UserManagementPage(Page):
+    export_requested = Signal()
     def __init__(self, tr, users, trash, callbacks):
         super().__init__(tr, tr("nav.users"), tr("users.subtitle"))
         self._callbacks = callbacks
@@ -274,9 +275,11 @@ class UserManagementPage(Page):
         self.add_button = action(tr("users.add"), self._add, True)
         self.edit_button = action(tr("users.edit"), self._edit)
         self.delete_button = action(tr("users.delete"), self._delete)
+        self.export_button = action(tr("users.export_public"), self.export_requested.emit)
         controls.addWidget(self.add_button)
         controls.addWidget(self.edit_button)
         controls.addWidget(self.delete_button)
+        controls.addWidget(self.export_button)
         controls.addStretch()
         self.layout.addLayout(controls)
         self.search = QLineEdit()
@@ -326,7 +329,7 @@ class UserManagementPage(Page):
             self.table.insertRow(row)
             values = (profile.user_id, profile.name, profile.age,
                       self.tr("users.gender." + profile.gender),
-                      ", ".join(self.tr("users.medical." + item) for item in profile.medical_conditions),
+                      self.tr("users.screening_recorded") if profile.medical_conditions else self.tr("users.screening_missing"),
                       profile.updated_at or "—",
                       self.tr("users.active"))
             for col, value in enumerate(values):
@@ -438,7 +441,7 @@ class HomePage(Page):
 
 
 class DevicesPage(Page):
-    def __init__(self, tr, navigate):
+    def __init__(self, tr, navigate, preflight=None):
         super().__init__(tr, tr("nav.devices"), tr("device.serial_note"))
         device = Section("OpenBCI Cyton · AUTO")
         device.layout.addWidget(KeyValues([
@@ -452,6 +455,10 @@ class DevicesPage(Page):
         mapping.layout.addWidget(label("CH 1–4: Fp1 · Fp2 · C3 · C4\nCH 5–8: P7 · P8 · O1 · O2"))
         mapping.layout.addWidget(label(tr("device.mapping_note"), "muted"))
         self.layout.addWidget(mapping)
+        self.preflight_status = label(tr("device.preflight_idle"), "muted")
+        self.layout.addWidget(self.preflight_status)
+        if preflight is not None:
+            self.layout.addWidget(action(tr("action.preflight"), preflight, True))
         self.layout.addWidget(action(tr("action.live"), lambda: navigate("live"), True))
         self.layout.addStretch()
 
@@ -540,6 +547,7 @@ class SSVEPPage(Page):
     def __init__(self, tr, config: CaptureConfig, navigate, users=()):
         super().__init__(tr, "SSVEP", tr("ssvep.subtitle"))
         self.layout.addWidget(action(tr("action.back_apps"), lambda: navigate("apps")))
+        self.layout.addWidget(label(tr("ssvep.workflow_steps"), "estimate"))
         self.layout.addWidget(label(tr("ssvep.description"), "muted"))
         self.layout.addWidget(label(tr("ssvep.defaults"), "muted"))
         self.layout.addWidget(label(tr("ssvep.safety"), "notice"))
@@ -607,6 +615,7 @@ class SSVEPPage(Page):
         self.acknowledge.setChecked(config.acknowledge_flicker_risk)
         self.allow_draft = QCheckBox(tr("ssvep.allow_draft"))
         self.allow_draft.setChecked(config.allow_draft_hardware_config)
+        form.addRow(label(tr("ssvep.step_identity"), "sectionTitle"), QWidget())
         for key, widget in (("field.user", self.user_picker), ("field.participant", self.participant), ("field.name", self.name),
                             ("field.mode", self.mode), ("field.port", port_picker),
                             ("field.screen", self.screen),
@@ -615,9 +624,11 @@ class SSVEPPage(Page):
                             ("field.speed", self.speed), ("field.save", picker),
                             ("field.channel_config", channel_controls)):
             form.addRow(tr(key), widget)
+        form.addRow(label(tr("ssvep.step_device"), "sectionTitle"), QWidget())
         form.addRow("", self.channel_manual)
         form.addRow("", self.acknowledge)
         form.addRow("", self.allow_draft)
+        section.layout.addWidget(label(tr("ssvep.step_protocol"), "sectionTitle"))
         section.layout.addLayout(form)
         section.layout.addWidget(self.port_status)
         section.layout.addWidget(label(tr("ssvep.refresh_note"), "muted"))
@@ -789,6 +800,9 @@ class TaskPage(Page):
         self.countdown_section.layout.addWidget(self.countdown)
         self.layout.addWidget(self.countdown_section)
         self.run_section = Section(tr("task.running"))
+        self.trial_banner = label(tr("task.trial_idle"), "estimate")
+        self.trial_banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.run_section.layout.addWidget(self.trial_banner)
         self.progress = QProgressBar()
         self.progress.setRange(0, 1000)
         self.progress.setFormat("%p%")
@@ -815,6 +829,10 @@ class TaskPage(Page):
         phase_key = "task.rest" if snapshot.resting else (
             "task.stimulus" if config.mode == CaptureMode.DEMO else "task.stimulus_visual"
         )
+        if snapshot.trial_count and snapshot.trial:
+            self.trial_banner.setText(self.tr("task.trial_banner", trial=snapshot.trial, total=snapshot.trial_count, frequency=snapshot.frequency))
+        else:
+            self.trial_banner.setText(self.tr("task.trial_idle"))
         values = [format_duration(snapshot.elapsed), format_duration(math.ceil(snapshot.remaining)),
             f"{snapshot.trial} / {snapshot.trial_count}", f"{snapshot.target} / {snapshot.frequency} Hz",
             self.tr(phase_key),
@@ -883,6 +901,12 @@ class ResultPage(Page):
             (tr(sample_key), f"{result.samples_per_channel:,}"),
             (tr(values_key), f"{result.sample_values:,}"),
             (tr("result.events"), str(result.event_count)),
+            (tr("result.validation_mode"), tr("result.validation." + result.validation_mode)),
+            (tr("result.protocol_status"), result.protocol_status or "—"),
+            (tr("result.quality_status"), tr("result.quality." + result.quality_status)),
+            (tr("result.timestamp_gaps"), str(result.timestamp_gap_count)),
+            (tr("result.dropped_frames"), str(result.dropped_frame_count)),
+            (tr("result.flat_channels"), str(result.flat_channel_count)),
         ]))
         path = Section(tr(path_key))
         path_value = tr("result.capture_test_memory") if capture_test else str(result.path)
@@ -1026,9 +1050,11 @@ class DatasetSummaryPage(Page):
 
 class DatasetsPage(Page):
     import_requested = Signal(object)
+    filter_changed = Signal(str, str, str)
 
     def __init__(self, tr, datasets: tuple[Dataset, ...], latest: str | None, show_result, navigate,
-                 import_busy: bool = False, import_status: str = "", import_directory: str = ""):
+                 import_busy: bool = False, import_status: str = "", import_directory: str = "",
+                 search_text: str = "", source_value: str = "", status_value: str = ""):
         super().__init__(tr, tr("app.datasets"), tr("datasets.subtitle"))
         controls = QHBoxLayout()
         controls.addWidget(action(tr("nav.apps"), lambda: navigate("apps")))
@@ -1037,48 +1063,105 @@ class DatasetsPage(Page):
         self.import_button.setEnabled(not import_busy)
         controls.addWidget(self.import_button)
         self.layout.addLayout(controls)
+        filters = QHBoxLayout()
+        self.search = QLineEdit()
+        self.search.setPlaceholderText(tr("datasets.search_placeholder"))
+        self.search.setClearButtonEnabled(True)
+        self.search.setText(search_text)
+        self.search.textChanged.connect(self._apply_filters)
+        filters.addWidget(self.search, 2)
+        self.source_filter = QComboBox()
+        self.source_filter.addItem(tr("datasets.filter_all_sources"), "")
+        for value in ("demo", "preview", "synthetic", "cyton", "imported_openbci"):
+            self.source_filter.addItem(tr("mode." + value), value)
+        source_index = self.source_filter.findData(source_value)
+        if source_index >= 0:
+            self.source_filter.setCurrentIndex(source_index)
+        self.source_filter.currentIndexChanged.connect(self._apply_filters)
+        filters.addWidget(self.source_filter, 1)
+        self.status_filter = QComboBox()
+        self.status_filter.addItem(tr("datasets.filter_all_statuses"), "")
+        for value in ("completed", "aborted", "error"):
+            self.status_filter.addItem(value, value)
+        status_index = self.status_filter.findData(status_value)
+        if status_index >= 0:
+            self.status_filter.setCurrentIndex(status_index)
+        self.status_filter.currentIndexChanged.connect(self._apply_filters)
+        filters.addWidget(self.status_filter, 1)
+        self.layout.addLayout(filters)
         self.import_status = label(import_status, "muted")
         self.import_status.setVisible(bool(import_status))
         self.layout.addWidget(self.import_status)
         self.import_directory = import_directory
-        if not datasets:
-            self.layout.addWidget(label(tr("datasets.empty"), "muted"))
-        for dataset in reversed(datasets):
+        self._datasets = tuple(datasets)
+        self._latest = latest
+        self._show_result = show_result
+        self._records_start = self.layout.count()
+        self._records_widgets: list[QWidget] = []
+        self._render_records()
+        self.layout.addStretch()
+
+    def _render_records(self):
+        # Remove only record widgets while keeping title, controls and filters.
+        for widget in self._records_widgets:
+            self.layout.removeWidget(widget)
+            widget.deleteLater()
+        self._records_widgets = []
+        query = self.search.text().strip().casefold()
+        source = str(self.source_filter.currentData() or "")
+        status = str(self.status_filter.currentData() or "")
+        visible = []
+        for dataset in reversed(self._datasets):
+            haystack = " ".join((dataset.name, dataset.participant, dataset.user_id, dataset.user_name)).casefold()
+            if query and query not in haystack:
+                continue
+            if source and dataset.source.value != source:
+                continue
+            if status and dataset.status != status:
+                continue
+            visible.append(dataset)
+        if not visible:
+            empty = label(self.tr("datasets.empty"), "muted")
+            self.layout.insertWidget(self.layout.count() - 1, empty)
+            self._records_widgets.append(empty)
+            return
+        for dataset in visible:
             item = Section(dataset.name)
-            item.setObjectName("latestDataset" if dataset.id == latest else "section")
+            item.setObjectName("latestDataset" if dataset.id == self._latest else "section")
             if dataset.protocol == "manual" or dataset.origin == "capture_test":
                 status_key = "result.capture_test"
-            elif dataset.id == latest:
+            elif dataset.id == self._latest:
                 status_key = "datasets.latest." + dataset.source.value
             elif dataset.source == CaptureMode.DEMO:
                 status_key = "result.simulated_saved" if dataset.persisted else "result.simulated"
             elif dataset.source == CaptureMode.VISUAL_PREVIEW:
-                status_key = (
-                    "result.preview_saved"
-                    if dataset.status == "completed"
-                    else "result." + dataset.status + "_saved"
-                )
+                status_key = "result.preview_saved" if dataset.status == "completed" else "result." + dataset.status + "_saved"
             else:
                 status_key = "result." + dataset.source.value + "_saved"
-            item.layout.addWidget(label(tr(status_key), "muted"))
-            item.layout.addWidget(label(tr("datasets.details", participant=dataset.participant,
+            item.layout.addWidget(label(self.tr(status_key), "muted"))
+            item.layout.addWidget(label(self.tr("datasets.details", participant=dataset.participant,
                 duration=format_duration(dataset.recording_seconds), samples=f"{dataset.samples_per_channel:,}",
                 events=dataset.event_count)))
             item.layout.addWidget(label(
-                tr("datasets.user_details", user_id=dataset.user_id or tr("users.unlinked"),
-                   user_name=dataset.user_name or tr("users.unlinked"),
-                   status=tr("users.link_" + dataset.user_link_status)),
-                "muted",
-            ))
+                self.tr("datasets.user_details", user_id=dataset.user_id or self.tr("users.unlinked"),
+                   user_name=dataset.user_name or self.tr("users.unlinked"),
+                   status=self.tr("users.link_" + dataset.user_link_status)), "muted"))
             item.layout.addWidget(label(
-                tr("result.capture_test_memory")
-                if dataset.protocol == "manual" or dataset.origin == "capture_test"
-                else str(dataset.path),
-                "path",
-            ))
-            item.layout.addWidget(action(tr("action.view_dataset"), lambda _checked=False, d=dataset: show_result(d)))
-            self.layout.addWidget(item)
-        self.layout.addStretch()
+                self.tr("result.capture_test_memory") if dataset.protocol == "manual" or dataset.origin == "capture_test" else str(dataset.path), "path"))
+            item.layout.addWidget(action(self.tr("action.view_dataset"), lambda _checked=False, d=dataset: self._show_result_callback(d)))
+            self.layout.insertWidget(self.layout.count() - 1, item)
+            self._records_widgets.append(item)
+
+    def _show_result_callback(self, dataset):
+        self._show_result(dataset)
+
+    def _apply_filters(self):
+        self.filter_changed.emit(
+            self.search.text(),
+            str(self.source_filter.currentData() or ""),
+            str(self.status_filter.currentData() or ""),
+        )
+        self._render_records()
 
     def _choose_import_directory(self):
         path = QFileDialog.getExistingDirectory(

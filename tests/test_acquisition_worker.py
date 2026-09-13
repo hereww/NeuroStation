@@ -97,6 +97,8 @@ class AcquisitionWorkerTests(unittest.TestCase):
             self.assertEqual(0, session["channel_count"])
             self.assertEqual(0, session["recorded_samples_per_channel"])
             self.assertEqual(10, session["event_count"])
+            self.assertIn("display", session)
+            self.assertEqual({}, session["display"])
             self.assertTrue((session_dir / "quality.json").is_file())
             self.assertTrue((session_dir / "manifest.csv").is_file())
 
@@ -134,6 +136,78 @@ class AcquisitionWorkerTests(unittest.TestCase):
             self.assertEqual(session["channel_count"], quality["channel_count"])
             self.assertEqual(session["recorded_samples_per_channel"], quality["samples_per_channel"])
             self.assertTrue((session_dir / "ssvep_config.json").is_file())
+            self.assertEqual("technical_validation", session["validation_mode"])
+            self.assertEqual(session["protocol_provenance"]["sha256"], session["protocol_provenance"]["sha256"].lower())
+            self.assertEqual(64, len(session["protocol_provenance"]["sha256"]))
+
+
+    def test_cyton_preflight_reports_handshake_samples_and_channel_quality(self) -> None:
+        import numpy as np
+        from eeg_tools.workstation.preflight import run_cyton_preflight
+
+        class FakeIds:
+            CYTON_BOARD = 6
+
+        class FakeBoardShim:
+            @staticmethod
+            def get_eeg_channels(_board_id):
+                return [0, 1]
+
+            @staticmethod
+            def get_timestamp_channel(_board_id):
+                return 2
+
+            @staticmethod
+            def get_sampling_rate(_board_id):
+                return 250
+
+        class FakeBoard:
+            def __init__(self):
+                self.started = False
+
+            def start_stream(self):
+                self.started = True
+
+            def stop_stream(self):
+                self.started = False
+
+            def release_session(self):
+                return None
+
+            def get_board_data(self):
+                return np.array([[1, 2, 3, 4], [4, 4, 4, 4], [0.0, 0.004, 0.008, 0.012]])
+
+        board = FakeBoard()
+        def prepare(_board_id, _params, _requested):
+            return board, "COM5", []
+
+        report = run_cyton_preflight(prepare_board=prepare, board_shim=FakeBoardShim, board_ids=FakeIds, sleep_fn=lambda _seconds: None)
+        self.assertEqual("warning", report.status)
+        self.assertEqual("COM5", report.selected_port)
+        self.assertEqual("passed", report.checks[0].status)
+        self.assertEqual("warning", report.checks[-1].status)
+
+    def test_worker_persists_preflight_report_when_supplied(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "preflight-session"
+            preflight = Path(directory) / "preflight.json"
+            preflight.write_text(json.dumps({"status": "passed", "selected_port": "COM5", "checks": []}), encoding="utf-8")
+            exit_code = worker_main([
+                "--protocol", str(PROTOCOL),
+                "--output-root", str(output),
+                "--participant", "PREFLIGHT",
+                "--session-name", "preflight metadata",
+                "--board", "synthetic", "--headless",
+                "--repetitions", "1", "--stimulus-seconds", "0.01",
+                "--rest-seconds", "0", "--countdown-seconds", "0.01",
+                "--preflight-file", str(preflight),
+            ])
+            self.assertEqual(0, exit_code)
+            session_dir = next(output.glob("session_*"))
+            session = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
+            self.assertEqual("passed", session["preflight"]["status"])
+            self.assertTrue((session_dir / "preflight.json").is_file())
+            self.assertIn("preflight.json", (session_dir / "manifest.csv").read_text(encoding="utf-8"))
 
     def test_process_gateway_cancel_preserves_aborted_session(self) -> None:
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -166,6 +240,10 @@ class AcquisitionWorkerTests(unittest.TestCase):
             self.assertEqual("aborted", cancelled.result.status)
             self.assertTrue(cancelled.result.path.is_dir())
             self.assertTrue((cancelled.result.path / "session.json").is_file())
+            self.assertTrue((cancelled.result.path / "status.final.json").is_file())
+            self.assertTrue((cancelled.result.path / "worker.log").is_file())
+            manifest = (cancelled.result.path / "manifest.csv").read_text(encoding="utf-8")
+            self.assertIn("status.final.json", manifest)
 
     def test_preview_mode_maps_to_demo_worker(self) -> None:
         gateway = AcquisitionProcessGateway(

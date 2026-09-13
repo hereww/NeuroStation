@@ -14,7 +14,7 @@ import time
 from typing import Any, Callable
 
 from eeg_tools.config import ConfigError, validate_channel_config
-from eeg_tools.session_files import iso_now, write_events, write_json, write_manifest
+from eeg_tools.session_files import iso_now, sha256, write_events, write_json, write_manifest
 from neurostation_contract import (
     PRODUCT_DESCRIPTION,
     PRODUCT_NAME,
@@ -496,6 +496,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--allow-draft-channel-config", action="store_true")
     parser.add_argument("--status-file", type=Path)
     parser.add_argument("--cancel-file", type=Path)
+    parser.add_argument("--preflight-file", type=Path)
     return parser
 
 
@@ -515,6 +516,16 @@ def main(argv: list[str] | None = None) -> int:
     except SSVEPProtocolError as error:
         parser.error(str(error))
     protocol_source = json.loads(arguments.protocol.read_text(encoding="utf-8"))
+    preflight_report: dict[str, Any] | None = None
+    if arguments.preflight_file is not None and arguments.preflight_file.is_file():
+        try:
+            loaded_preflight = json.loads(arguments.preflight_file.read_text(encoding="utf-8"))
+            if isinstance(loaded_preflight, dict):
+                preflight_report = loaded_preflight
+        except (OSError, json.JSONDecodeError):
+            preflight_report = None
+    protocol_status = str(protocol_source.get("status", ""))
+    protocol_is_draft = protocol_status.lower().startswith("draft")
     if (
         arguments.board == "cyton"
         and str(protocol_source.get("status", "")).lower().startswith("draft")
@@ -524,11 +535,13 @@ def main(argv: list[str] | None = None) -> int:
 
     channel_config: dict[str, Any] | None = None
     channel_warnings: list[str] = []
+    channel_is_draft = False
     if arguments.board == "cyton":
         try:
             channel_config, channel_warnings = _read_channel_config(arguments.channel_config)
         except ConfigError as error:
             parser.error(str(error))
+        channel_is_draft = bool(channel_warnings)
         if channel_warnings and not arguments.allow_draft_channel_config:
             parser.error(
                 "Cyton acquisition refuses the draft/incomplete channel map: "
@@ -559,6 +572,7 @@ def main(argv: list[str] | None = None) -> int:
     board = None
     selected_port = arguments.port if arguments.board == "cyton" else None
     selected_screen_index = arguments.screen_index
+    display_metadata: dict[str, Any] = {}
     prepared = False
     streaming = False
     application = None
@@ -569,6 +583,31 @@ def main(argv: list[str] | None = None) -> int:
     error_message: str | None = None
     exit_code = 1
     raw_data = np.empty((0, 0))
+    validation_mode = (
+        "technical_validation"
+        if arguments.board in {"demo", "synthetic"}
+        else (
+            "technical_validation_override"
+            if protocol_is_draft or channel_is_draft or arguments.allow_draft_protocol or arguments.allow_draft_channel_config
+            else "formal_candidate"
+        )
+    )
+    protocol_provenance = {
+        "source_path": str(arguments.protocol.resolve()),
+        "protocol_id": protocol_source.get("protocol_id", ""),
+        "schema_version": protocol_source.get("schema_version"),
+        "status": protocol_status,
+        "sha256": sha256(arguments.protocol),
+    }
+    channel_provenance = None
+    if channel_config is not None:
+        channel_provenance = {
+            "source_path": str(arguments.channel_config.resolve()),
+            "config_version": channel_config.get("config_version", ""),
+            "profile_type": channel_config.get("profile_type", ""),
+            "sha256": sha256(arguments.channel_config),
+            "warnings": list(channel_warnings),
+        }
 
     params = BrainFlowInputParams()
     board_id = (
@@ -643,6 +682,26 @@ def main(argv: list[str] | None = None) -> int:
                 if 0 <= arguments.screen_index < len(application.screens())
                 else 0
             )
+            screen = application.screens()[selected_screen_index]
+            geometry = screen.geometry()
+            refresh_rate = float(screen.refreshRate()) if screen.refreshRate() else 0.0
+            display_metadata = {
+                "screen_index": selected_screen_index,
+                "name": str(screen.name()),
+                "geometry": {
+                    "x": int(geometry.x()),
+                    "y": int(geometry.y()),
+                    "width": int(geometry.width()),
+                    "height": int(geometry.height()),
+                },
+                "device_pixel_ratio": float(screen.devicePixelRatio()),
+                "refresh_rate_hz": refresh_rate,
+                "protocol_refresh_rate_hz": int(protocol.refresh_rate_hz),
+                "refresh_rate_status": (
+                    "unknown" if refresh_rate <= 0 else
+                    "matched" if abs(refresh_rate - protocol.refresh_rate_hz) <= 1.0 else "mismatch"
+                ),
+            }
 
         countdown_started = time.perf_counter()
 
@@ -804,6 +863,7 @@ def main(argv: list[str] | None = None) -> int:
                 "rest_seconds": arguments.rest_seconds,
                 "countdown_seconds": arguments.countdown_seconds,
             },
+            "provenance": protocol_provenance,
         },
     )
     quality_path = session_dir / "quality.json"
@@ -838,6 +898,7 @@ def main(argv: list[str] | None = None) -> int:
         "serial_port": selected_port,
         "requested_serial_port": arguments.port if arguments.board == "cyton" else None,
         "screen_index": selected_screen_index,
+        "display": display_metadata,
         "sampling_rate_hz": 0 if board_id is None else int(BoardShim.get_sampling_rate(board_id)),
         "channel_count": 0 if board_id is None else len(BoardShim.get_eeg_channels(board_id)),
         "started_at": started_at,
@@ -853,6 +914,14 @@ def main(argv: list[str] | None = None) -> int:
         "headless": arguments.headless,
         "error": error_message,
         "channel_config_warnings": channel_warnings,
+        "validation_mode": validation_mode,
+        "validation_flags": {
+            "allow_draft_protocol": bool(arguments.allow_draft_protocol),
+            "allow_draft_channel_config": bool(arguments.allow_draft_channel_config),
+        },
+        "protocol_provenance": protocol_provenance,
+        "channel_config_provenance": channel_provenance,
+        "preflight": preflight_report,
         "application": {
             "name": PRODUCT_NAME,
             "version": PRODUCT_VERSION,
@@ -863,6 +932,10 @@ def main(argv: list[str] | None = None) -> int:
     }
     write_json(session_path, session_value)
     output_files.append(session_path)
+    if preflight_report is not None:
+        preflight_path = session_dir / "preflight.json"
+        write_json(preflight_path, preflight_report)
+        output_files.append(preflight_path)
     manifest_path = session_dir / "manifest.csv"
     write_manifest(manifest_path, session_id, output_files)
 

@@ -45,6 +45,33 @@ def _dependency_status(module_name: str) -> dict[str, Any]:
     return {"available": True, "version": str(installed_version) if installed_version else None}
 
 
+def _display_diagnostics() -> list[dict[str, Any]]:
+    """Return Qt display facts when a GUI runtime is available."""
+    try:
+        from PySide6.QtGui import QGuiApplication
+        from PySide6.QtWidgets import QApplication
+        application = QGuiApplication.instance() or QApplication(["neurostation-diagnostics"])
+    except Exception:
+        return []
+    displays: list[dict[str, Any]] = []
+    for index, screen in enumerate(application.screens()):
+        geometry = screen.geometry()
+        refresh = float(screen.refreshRate() or 0.0)
+        displays.append({
+            "index": index,
+            "name": str(screen.name()),
+            "geometry": {
+                "x": int(geometry.x()),
+                "y": int(geometry.y()),
+                "width": int(geometry.width()),
+                "height": int(geometry.height()),
+            },
+            "device_pixel_ratio": float(screen.devicePixelRatio()),
+            "refresh_rate_hz": refresh,
+        })
+    return displays
+
+
 def build_diagnostics() -> dict[str, Any]:
     """Build a JSON-safe preflight report for support and field testing.
 
@@ -112,6 +139,7 @@ def build_diagnostics() -> dict[str, Any]:
                 for name in ("zh-CN.json", "en-US.json")
             ),
         },
+        "displays": _display_diagnostics(),
         "dependencies": {
             "PySide6": _dependency_status("PySide6"),
             "brainflow": _dependency_status("brainflow"),

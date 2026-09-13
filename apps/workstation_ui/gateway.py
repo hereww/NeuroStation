@@ -178,6 +178,28 @@ class MockGateway:
     def purge_user(self, user_id: str) -> None:
         self._users.purge(user_id)
 
+    def export_public_users(self, path: Path) -> Path:
+        output = Path(path).expanduser().resolve()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        def redacted(profile):
+            return {
+                "user_id": profile.user_id,
+                "status": profile.status,
+                "is_demo": profile.is_demo,
+                "created_at": profile.created_at,
+                "updated_at": profile.updated_at,
+                "screening_recorded": bool(profile.medical_conditions),
+            }
+        output.write_text(
+            json.dumps({
+                "schema_version": 1,
+                "users": [redacted(item) for item in self._users.users],
+                "trash": [redacted(item) for item in self._users.trash],
+            }, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return output
+
     @property
     def openbci_status(self) -> OpenBCIWorkspaceStatus:
         return OpenBCIWorkspaceStatus()
@@ -197,6 +219,9 @@ class MockGateway:
     def _ensure_available(self) -> None:
         if self.snapshot.active:
             raise RuntimeError("validation.busy")
+
+    def preflight_cyton(self, seconds: float = 3.0, port: str = "AUTO") -> dict[str, object]:
+        return {"status": "unavailable", "requested_port": "AUTO", "checks": []}
 
     def start_ssvep(self, config: CaptureConfig, speed: float = 8) -> TaskSnapshot:
         self._ensure_available()

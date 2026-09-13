@@ -15,6 +15,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import shutil
 import time
 from typing import Any
 
@@ -28,6 +29,7 @@ from neurostation_contract import (
 )
 
 from .dataset import DatasetRepository
+from eeg_tools.session_files import write_json, write_manifest
 from .ssvep import SSVEPProtocol
 
 
@@ -49,6 +51,8 @@ class AcquisitionProcessGateway:
         self._status_file: Path | None = None
         self._cancel_file: Path | None = None
         self._stderr_file: Path | None = None
+        self._preflight_file: Path | None = None
+        self._preflight_report: dict[str, Any] | None = None
         self._last_status_mtime_ns = -1
         self._last_status: dict[str, Any] = {}
 
@@ -121,7 +125,15 @@ class AcquisitionProcessGateway:
         )
         if config.allow_draft_hardware_config:
             command.extend(["--allow-draft-protocol", "--allow-draft-channel-config"])
+        if self._preflight_file is not None and self._preflight_file.is_file():
+            command.extend(["--preflight-file", str(self._preflight_file)])
         return command
+
+    def preflight_cyton(self, seconds: float = 3.0, port: str = "AUTO") -> dict[str, Any]:
+        from .preflight import run_cyton_preflight
+        report = run_cyton_preflight(port or self.config.port, seconds=seconds)
+        self._preflight_report = report.as_dict()
+        return self._preflight_report
 
     def start_ssvep(self, config: CaptureConfig, speed: float = 1) -> TaskSnapshot:
         if self.snapshot.active:
@@ -161,6 +173,10 @@ class AcquisitionProcessGateway:
         self._status_file = self._runtime_dir / "status.json"
         self._cancel_file = self._runtime_dir / "cancel.request"
         self._stderr_file = self._runtime_dir / "worker.log"
+        self._preflight_file = None
+        if self._preflight_report is not None and mode == CaptureMode.CYTON:
+            self._preflight_file = self._runtime_dir / "preflight.json"
+            write_json(self._preflight_file, self._preflight_report)
         self._last_status_mtime_ns = -1
         self._last_status = {}
         protocol = SSVEPProtocol.load(self.protocol_path).with_runtime_parameters(
@@ -323,11 +339,43 @@ class AcquisitionProcessGateway:
             error=str(value.get("result", {}).get("error") or "") if isinstance(value.get("result"), dict) else "",
         )
 
+    def _persist_diagnostics(self, output: Path) -> tuple[str, ...]:
+        """Copy worker diagnostics into the durable session directory."""
+        if not output.is_dir():
+            return ()
+        copied: list[str] = []
+        for source, name in ((self._stderr_file, "worker.log"), (self._status_file, "status.final.json")):
+            if source is None or not source.is_file():
+                continue
+            target = output / name
+            try:
+                shutil.copyfile(source, target)
+            except OSError:
+                continue
+            copied.append(name)
+        session_path = output / "session.json"
+        if not session_path.is_file():
+            return tuple(copied)
+        try:
+            session = json.loads(session_path.read_text(encoding="utf-8"))
+            if not isinstance(session, dict):
+                return tuple(copied)
+            existing = session.get("diagnostic_files", ())
+            names = list(dict.fromkeys([str(item) for item in existing if isinstance(item, str)] + copied))
+            session["diagnostic_files"] = names
+            write_json(session_path, session)
+            files = [item for item in sorted(output.iterdir()) if item.is_file() and item.name != "manifest.csv"]
+            write_manifest(output / "manifest.csv", str(session.get("session_id") or output.name), files)
+        except (OSError, ValueError, TypeError):
+            return tuple(copied)
+        return tuple(copied)
+
     def _dataset_from_terminal(self, value: dict[str, Any]) -> Dataset | None:
         result = value.get("result")
         if not isinstance(result, dict):
             return None
         output = Path(str(result.get("output_dir", "")))
+        self._persist_diagnostics(output)
         session_path = output / "session.json"
         try:
             session = json.loads(session_path.read_text(encoding="utf-8"))
@@ -338,6 +386,18 @@ class AcquisitionProcessGateway:
             "synthetic": CaptureMode.SYNTHETIC,
             "demo": CaptureMode.VISUAL_PREVIEW,
         }.get(str(session.get("board", "")), CaptureMode.SYNTHETIC)
+        quality: dict[str, Any] = {}
+        try:
+            loaded_quality = json.loads((output / "quality.json").read_text(encoding="utf-8"))
+            if isinstance(loaded_quality, dict):
+                quality = loaded_quality
+        except (OSError, json.JSONDecodeError):
+            pass
+        channels = quality.get("channels", {})
+        flat_channel_count = sum(
+            1 for item in channels.values()
+            if isinstance(item, dict) and float(item.get("flat_fraction", 0.0) or 0.0) >= 0.95
+        ) if isinstance(channels, dict) else 0
         created_at = str(session.get("started_at") or datetime.now(timezone.utc).isoformat())
         return Dataset(
             id=str(session["session_id"]),
@@ -374,4 +434,12 @@ class AcquisitionProcessGateway:
             user_id=str(session.get("user_id") or ""),
             user_name=str(session.get("user_name") or ""),
             user_link_status=str(session.get("user_link_status") or ("active" if session.get("user_id") else "unlinked")),
+            validation_mode=str(session.get("validation_mode") or "technical_validation"),
+            protocol_status=str((session.get("protocol_provenance") or {}).get("status") or ""),
+            protocol_sha256=str((session.get("protocol_provenance") or {}).get("sha256") or ""),
+            channel_config_sha256=str((session.get("channel_config_provenance") or {}).get("sha256") or ""),
+            quality_status=str(quality.get("status") or "unknown"),
+            timestamp_gap_count=int(quality.get("timestamp_gap_count", 0) or 0),
+            dropped_frame_count=int(quality.get("dropped_frame_count", 0) or 0),
+            flat_channel_count=flat_channel_count,
         )

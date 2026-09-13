@@ -7,6 +7,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$isWindowsPlatform = $env:OS -eq "Windows_NT"
+$isMacPlatform = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::MacOSX
 $releaseVersion = "MVP1.0.1"
 $releaseDate = "2026-09-12"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -77,13 +79,13 @@ try {
     }
 
     if (-not $DryRun) {
-        $artifact = if ($IsWindows -and $Mode -eq "standalone") {
+        $artifact = if ($isWindowsPlatform -and $Mode -eq "standalone") {
             Join-Path $stageRoot "dist\NeuroStation.dist"
         }
-        elseif ($IsWindows) {
+        elseif ($isWindowsPlatform) {
             Join-Path $stageRoot "dist\NeuroStation.exe"
         }
-        elseif ($IsMacOS) {
+        elseif ($isMacPlatform) {
             Join-Path $stageRoot "dist/NeuroStation.app"
         }
         elseif ($Mode -eq "standalone") {
@@ -92,10 +94,10 @@ try {
         else {
             Join-Path $stageRoot "dist/NeuroStation.bin"
         }
-        $entry = if ($IsWindows -and $Mode -eq "standalone") {
+        $entry = if ($isWindowsPlatform -and $Mode -eq "standalone") {
             Join-Path $artifact "workstation.exe"
         }
-        elseif (-not $IsWindows -and -not $IsMacOS -and $Mode -eq "standalone") {
+        elseif (-not $isWindowsPlatform -and -not $isMacPlatform -and $Mode -eq "standalone") {
             Join-Path $artifact "workstation.bin"
         }
         else {
@@ -105,7 +107,7 @@ try {
             throw "Deployment returned without creating the expected artifact: $entry"
         }
 
-        if ($IsWindows -and $Mode -eq "standalone") {
+        if ($isWindowsPlatform -and $Mode -eq "standalone") {
             $brainflowSource = Join-Path $venvRoot "Lib\site-packages\brainflow\lib"
             $brainflowDestination = Join-Path $artifact "brainflow\lib"
             if (-not (Test-Path -LiteralPath (Join-Path $brainflowSource "BoardController.dll"))) {
@@ -115,7 +117,7 @@ try {
             Copy-Item -Path (Join-Path $brainflowSource "*") -Destination $brainflowDestination -Force
         }
 
-        if ($IsWindows -and $Mode -eq "standalone") {
+        if ($isWindowsPlatform -and $Mode -eq "standalone") {
             $openbciSource = Join-Path $projectRoot "integrations\openbci_gui\runtime\windows"
             if (Test-Path -LiteralPath (Join-Path $openbciSource "OpenBCI_GUI.exe")) {
                 $openbciDestination = Join-Path $artifact "integrations\openbci_gui\runtime\windows"
@@ -141,6 +143,10 @@ try {
             throw "Release notes are missing: $releaseNotes"
         }
         Copy-Item -LiteralPath $releaseNotes -Destination (Join-Path $destination "RELEASE_NOTES.md") -Force
+        & $buildPython (Join-Path $projectRoot "scripts\generate_sbom.py") -o (Join-Path $destination "SBOM.json")
+        if ($LASTEXITCODE -ne 0) {
+            throw "SBOM generation failed with exit code $LASTEXITCODE"
+        }
         @(
             "NeuroStation"
             "Version: $releaseVersion"

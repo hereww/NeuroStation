@@ -81,6 +81,18 @@ def main() -> int:
         ):
             print(f"Packaged resources are incomplete: {diagnostics_value}", file=sys.stderr)
             return 6
+        sbom_path = entry.parent / "SBOM.json"
+        if not sbom_path.is_file():
+            print(f"Packaged SBOM is missing: {sbom_path}", file=sys.stderr)
+            return 10
+        try:
+            sbom = json.loads(sbom_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            print("Packaged SBOM is not valid JSON", file=sys.stderr)
+            return 11
+        if sbom.get("bomFormat") != "CycloneDX" or not sbom.get("components"):
+            print("Packaged SBOM is incomplete", file=sys.stderr)
+            return 12
         worker = subprocess.run(
             [
                 str(entry),

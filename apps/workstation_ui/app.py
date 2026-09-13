@@ -5,10 +5,10 @@ from dataclasses import replace
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QSettings, QThread, QTimer, Qt, Signal, Slot
-from PySide6.QtGui import QIcon, QPalette
+from PySide6.QtGui import QIcon, QPalette, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QListWidget,
-    QListWidgetItem, QComboBox, QStackedWidget, QScrollArea, QMessageBox,
+    QListWidgetItem, QComboBox, QStackedWidget, QScrollArea, QMessageBox, QFileDialog,
 )
 
 from .components import action, label
@@ -19,6 +19,24 @@ from .pages import (
     ResultPage, DatasetsPage, InfoPage,
     DatasetSummaryPage, UserManagementPage, UserDialog,
 )
+class _PreflightWorker(QObject):
+    finished = Signal(object)
+
+    def __init__(self, gateway: CaptureGateway, port: str = "AUTO"):
+        super().__init__()
+        self.gateway = gateway
+        self.port = port
+
+    @Slot()
+    def run(self):
+        try:
+            report = self.gateway.preflight_cyton(port=self.port)
+        except Exception as error:
+            self.finished.emit(error)
+            return
+        self.finished.emit(report)
+
+
 class _ImportWorker(QObject):
     finished = Signal(object)
 
@@ -46,7 +64,7 @@ def product_stylesheet(dark: bool) -> str:
         if dark else ("#ffffff", "#f5f7f8", "#dfe6e9", "#20313d", "#677781", "#087c88", "#e4f3f3")
     )
     return f"""
-        QWidget {{ color: {ink}; background-color: {background}; font-size: 13px; }}
+        QWidget {{ color: {ink}; background-color: {background}; font-size: 13px; font-family: "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "PingFang SC", sans-serif; }}
         QMainWindow {{ background: {background}; }}
         QLabel {{ background: transparent; }}
         QLabel#pageTitle {{ font-size: 23px; font-weight: 500; }}
@@ -104,6 +122,8 @@ class MainWindow(QMainWindow):
         self.timer = QTimer(self)
         self.timer.setInterval(100)
         self.timer.timeout.connect(self.poll)
+        self.cancel_shortcut = QShortcut(QKeySequence("Esc"), self)
+        self.cancel_shortcut.activated.connect(self.cancel_task)
         self.current_page = "apps"
         self.draft_config = self.gateway.config
         # The desktop preview is an actual worker-driven full-screen visual
@@ -131,7 +151,14 @@ class MainWindow(QMainWindow):
         self.latest_dataset: str | None = None
         self.import_thread: QThread | None = None
         self.import_worker: _ImportWorker | None = None
+        self.preflight_thread: QThread | None = None
+        self.preflight_worker: _PreflightWorker | None = None
+        self._pending_ssvep: tuple[CaptureConfig, float] | None = None
+        self._preflight_ready = False
         self.import_status = ""
+        self._dataset_search = ""
+        self._dataset_source = ""
+        self._dataset_status = ""
         self.pages: dict[str, QWidget] = {}
         self.screens: dict[str, QScrollArea] = {}
         self.sidebar: QWidget | None = None
@@ -227,7 +254,7 @@ class MainWindow(QMainWindow):
         self.pages = {}
         self.screens = {}
         self._replace_page("home", HomePage(self.tr, self.navigate))
-        self._replace_page("devices", DevicesPage(self.tr, self.navigate))
+        self._replace_page("devices", DevicesPage(self.tr, self.navigate, self.preflight_cyton))
         live = LivePage(self.tr, self.draft_config)
         live.start_requested.connect(self.start_manual)
         live.stop_requested.connect(self.stop_manual)
@@ -309,8 +336,12 @@ class MainWindow(QMainWindow):
                 import_busy=self.import_thread is not None,
                 import_status=self.import_status,
                 import_directory=self._last_import_directory(),
+                search_text=self._dataset_search,
+                source_value=self._dataset_source,
+                status_value=self._dataset_status,
             )
             page.import_requested.connect(self._start_import)
+            page.filter_changed.connect(self._dataset_filters_changed)
             self._replace_page(key, page)
         elif key == "users":
             self._replace_page(key, self._build_users_page())
@@ -328,6 +359,11 @@ class MainWindow(QMainWindow):
         self.navigation.blockSignals(False)
         self._update_controls()
 
+    def _dataset_filters_changed(self, search: str, source: str, status: str):
+        self._dataset_search = search
+        self._dataset_source = source
+        self._dataset_status = status
+
     def change_language(self, locale: str):
         if locale == self.tr.locale:
             return
@@ -344,17 +380,70 @@ class MainWindow(QMainWindow):
         if self.timer_enabled and not self.timer.isActive():
             self.timer.start()
 
-    def start_ssvep(self, config: CaptureConfig, speed: float):
+    def start_ssvep(self, config: CaptureConfig, speed: float, *, _preflight_ready: bool = False):
+        if CaptureMode(config.mode) == CaptureMode.CYTON and not _preflight_ready:
+            self._pending_ssvep = (config, speed)
+            self._preflight_ready = False
+            self.preflight_cyton()
+            return
         try:
             self.gateway.start_ssvep(config, speed)
         except (ValueError, RuntimeError) as error:
             self._error(error)
             return
         self.draft_config = config
+        self._preflight_ready = False
         if self.persist_settings:
             self.settings.setValue("capture/save_directory", str(config.save_directory))
         self.navigate("task")
         self._start_timer()
+
+    def preflight_cyton(self):
+        if self.preflight_thread is not None:
+            return
+        page = self.pages.get("devices")
+        if page is not None and hasattr(page, "preflight_status"):
+            page.preflight_status.setText(self.tr("device.preflight_running"))
+        self.preflight_thread = QThread(self)
+        self.preflight_worker = _PreflightWorker(self.gateway, self._pending_ssvep[0].port if self._pending_ssvep else "AUTO")
+        self.preflight_worker.moveToThread(self.preflight_thread)
+        self.preflight_thread.started.connect(self.preflight_worker.run)
+        self.preflight_worker.finished.connect(self._preflight_finished)
+        self.preflight_worker.finished.connect(self.preflight_thread.quit)
+        self.preflight_worker.finished.connect(self.preflight_worker.deleteLater)
+        self.preflight_thread.finished.connect(self.preflight_thread.deleteLater)
+        self.preflight_thread.finished.connect(self._preflight_thread_finished)
+        self.preflight_thread.start()
+        self._update_controls()
+
+    def _preflight_finished(self, result):
+        if isinstance(result, Exception):
+            report = {"status": "failed", "error": str(result), "checks": []}
+        else:
+            report = result if isinstance(result, dict) else {"status": "failed", "error": ""}
+        page = self.pages.get("devices")
+        status = str(report.get("status", "unknown"))
+        detail = str(report.get("error") or "")
+        if page is not None and hasattr(page, "preflight_status"):
+            page.preflight_status.setText(
+                self.tr("device.preflight_result", status=status, detail=detail)
+            )
+        pending = self._pending_ssvep
+        self._pending_ssvep = None
+        if status == "passed":
+            self._preflight_ready = True
+            if pending is not None:
+                config, speed = pending
+                self.start_ssvep(config, speed, _preflight_ready=True)
+        elif pending is not None:
+            self._preflight_ready = False
+            self._error(ValueError("validation.preflight_failed"))
+        self._update_controls()
+
+    def _preflight_thread_finished(self):
+        self.preflight_thread = None
+        self.preflight_worker = None
+        self._update_controls()
 
     def scan_serial_ports(self):
         try:
@@ -376,12 +465,27 @@ class MainWindow(QMainWindow):
             "purge": self.gateway.purge_user,
             "refresh": self.refresh_users,
         }
-        return UserManagementPage(
+        page = UserManagementPage(
             self.tr,
             self.gateway.users,
             self.gateway.trashed_users,
             callbacks,
         )
+        page.export_requested.connect(self.export_public_users)
+        return page
+
+    def export_public_users(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, self.tr("users.export_title"), "public-users.json", "JSON (*.json)"
+        )
+        if not path:
+            return
+        try:
+            output = self.gateway.export_public_users(Path(path))
+        except Exception as error:
+            self._error(error)
+            return
+        QMessageBox.information(self, self.tr("users.export_title"), self.tr("users.export_done", path=str(output)))
 
     def refresh_users(self):
         page = self.pages.get("users")
@@ -446,6 +550,8 @@ class MainWindow(QMainWindow):
         )
 
     def cancel_task(self):
+        if not self.gateway.snapshot.active:
+            return
         self.timer.stop()
         snapshot = self.gateway.cancel()
         if snapshot.result is not None:
@@ -504,7 +610,9 @@ class MainWindow(QMainWindow):
         )
         self.active_banner.setVisible(snapshot.active and self.current_page not in ("task", "live"))
         self.pages["live"].update_snapshot(snapshot)
-        self.pages["ssvep"].start_button.setEnabled(not snapshot.active)
+        self.pages["ssvep"].start_button.setEnabled(
+            not snapshot.active and self.preflight_thread is None
+        )
         self.pages["task"].update_snapshot(snapshot, self.gateway.config)
 
     def closeEvent(self, event):
@@ -512,6 +620,9 @@ class MainWindow(QMainWindow):
         if self.import_thread is not None:
             self.import_thread.quit()
             self.import_thread.wait(2000)
+        if self.preflight_thread is not None:
+            self.preflight_thread.quit()
+            self.preflight_thread.wait(4000)
         self.gateway.cancel()
         if self.persist_settings:
             self.settings.setValue("window/geometry", self.saveGeometry())
