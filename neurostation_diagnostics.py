@@ -46,13 +46,6 @@ def _dependency_status(module_name: str) -> dict[str, Any]:
             "error": f"{type(error).__name__}: {error}",
         }
     installed_version = getattr(module, "__version__", None)
-    if not installed_version and module_name == "brainflow":
-        try:
-            from brainflow.board_shim import BoardShim
-
-            installed_version = BoardShim.get_version()
-        except Exception:  # pragma: no cover - native runtime specific
-            pass
     if not installed_version:
         try:
             installed_version = package_version(module_name)
