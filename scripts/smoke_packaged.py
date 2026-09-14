@@ -35,6 +35,10 @@ def main() -> int:
         return 2
     environment = os.environ.copy()
     environment.setdefault("QT_QPA_PLATFORM", "offscreen")
+    if sys.platform == "darwin":
+        # The macOS offscreen backend can abort inside the packaged Qt runtime;
+        # minimal still avoids a WindowServer dependency for this smoke test.
+        environment["QT_QPA_PLATFORM"] = "minimal"
     with tempfile.TemporaryDirectory(prefix="neurostation-smoke-") as directory:
         dataset_root = Path(directory) / "中文数据集"
         result = subprocess.run(
@@ -46,9 +50,12 @@ def main() -> int:
             ],
             env=environment,
             check=False,
+            capture_output=True,
             timeout=30,
         )
         if result.returncode:
+            if result.stderr:
+                print(result.stderr, file=sys.stderr, end="")
             print(f"Packaged UI smoke test failed with exit code {result.returncode}", file=sys.stderr)
             return result.returncode
         diagnostics = subprocess.run(
