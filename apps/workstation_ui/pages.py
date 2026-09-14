@@ -17,7 +17,17 @@ from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QMessageBox, QTextEdit,
 )
 
-from .components import Page, Section, KeyValues, AppTile, StaticTargets, WaveformWidget, action, label
+from .components import (
+    CHANNEL_NAMES,
+    Page,
+    Section,
+    KeyValues,
+    AppTile,
+    StaticTargets,
+    WaveformWidget,
+    action,
+    label,
+)
 from .gateway import CaptureConfig, CaptureMode, TaskSnapshot, Phase, Dataset, format_duration
 from neurostation_contract import GENDERS, MEDICAL_OPTIONS, UserProfile
 
@@ -194,6 +204,48 @@ def _read_data_preview(path: Path, limit: int = 100) -> tuple[tuple[str, ...], l
         )
     normalized = [row + [""] * (column_count - len(row)) for row in rows]
     return tuple(headers[:column_count]), normalized
+
+
+def _preview_header_labels(tr, headers: tuple[str, ...]) -> tuple[str, ...]:
+    """Return localized display labels while retaining each raw field name."""
+
+    labels: list[str] = []
+    patterns = (
+        (r"eeg_ch(\d+)", "dataset_summary.column.eeg"),
+        (r"analog_ch(\d+)", "dataset_summary.column.analog"),
+        (r"other_ch(\d+)", "dataset_summary.column.other"),
+        (r"board_row_(\d+)", "dataset_summary.column.board_row"),
+    )
+    fixed = {
+        "sample_index": "dataset_summary.column.sample_index",
+        "package_num": "dataset_summary.column.package_num",
+        "timestamp_s": "dataset_summary.column.timestamp",
+        "marker": "dataset_summary.column.marker",
+        "accel_x": "dataset_summary.column.accel_x",
+        "accel_y": "dataset_summary.column.accel_y",
+        "accel_z": "dataset_summary.column.accel_z",
+    }
+    for position, header in enumerate(headers, start=1):
+        raw_name = str(header).strip()
+        if not raw_name:
+            labels.append(tr("dataset_summary.column.unnamed", index=position))
+            continue
+
+        key = fixed.get(raw_name.lower())
+        values: dict[str, object] = {}
+        if key is None:
+            for pattern, candidate in patterns:
+                match = re.fullmatch(pattern, raw_name, re.IGNORECASE)
+                if match:
+                    key = candidate
+                    values["index"] = int(match.group(1))
+                    break
+        if key is None or raw_name.lower().startswith("column "):
+            display = tr("dataset_summary.column.unnamed", index=position)
+        else:
+            display = tr(key, **values)
+        labels.append(tr("dataset_summary.column.with_raw", label=display, raw=raw_name))
+    return tuple(labels)
 
 
 class UserDialog(QDialog):
@@ -579,7 +631,14 @@ class LivePage(Page):
         self.layout.addWidget(settings)
         wave = Section(tr("live.waveform"))
         wave.layout.addWidget(label(tr("live.display"), "muted"))
-        self.waveform = WaveformWidget(tr("live.waveform"), tr("live.waveform_badge"))
+        self.waveform = WaveformWidget(
+            tr("live.waveform"),
+            tr("live.waveform_badge"),
+            empty_text=tr("live.waveform_empty"),
+            channel_names=CHANNEL_NAMES,
+            sample_rate_hz=250,
+            test_signal=True,
+        )
         wave.layout.addWidget(self.waveform)
         wave.layout.addWidget(label(tr("live.filter_note"), "muted"))
         self.layout.addWidget(wave)
@@ -903,6 +962,9 @@ class TaskPage(Page):
         super().__init__(tr, "SSVEP")
         self.cancel_button = action(tr("action.cancel"), self.cancel_requested.emit)
         self.layout.addWidget(self.cancel_button)
+        self.quality_notice = label("", "notice")
+        self.quality_notice.setVisible(False)
+        self.layout.addWidget(self.quality_notice)
         self.countdown_section = Section(tr("task.prepare_note"))
         self.countdown = label("5", "countdown")
         self.countdown.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -925,11 +987,27 @@ class TaskPage(Page):
         self.speed_label = label("", "muted")
         self.run_section.layout.addWidget(self.speed_label)
         self.layout.addWidget(self.run_section)
+        waveform_section = Section(tr("task.waveform"))
+        waveform_section.layout.addWidget(label(tr("task.waveform_note"), "muted"))
+        self.waveform = WaveformWidget(
+            tr("task.waveform"),
+            tr("task.waveform_badge"),
+            empty_text=tr("task.waveform_empty"),
+        )
+        waveform_section.layout.addWidget(self.waveform)
+        self.layout.addWidget(waveform_section)
         self.layout.addWidget(StaticTargets(tr))
         self.layout.addStretch()
 
+    def set_quality_warning(self, text: str = ""):
+        self.quality_notice.setText(text)
+        self.quality_notice.setVisible(bool(text))
+
     def update_snapshot(self, snapshot: TaskSnapshot, config: CaptureConfig):
         countdown = snapshot.phase == Phase.COUNTDOWN
+        self.waveform.set_active(
+            snapshot.active and config.mode in {CaptureMode.SYNTHETIC, CaptureMode.CYTON}
+        )
         self.title_label.setText("SSVEP · "+self.tr("task.preparing" if countdown else "task.running"))
         self.countdown_section.setVisible(countdown)
         self.run_section.setVisible(not countdown)
@@ -1146,7 +1224,14 @@ class DatasetSummaryPage(Page):
         table.setSortingEnabled(False)
         table.clearContents()
         table.setColumnCount(len(headers) or 1)
-        table.setHorizontalHeaderLabels(list(headers) or [self.tr("dataset_summary.no_columns")])
+        display_headers = _preview_header_labels(self.tr, headers)
+        table.setHorizontalHeaderLabels(
+            list(display_headers) or [self.tr("dataset_summary.no_columns")]
+        )
+        for index, raw_name in enumerate(headers):
+            header_item = table.horizontalHeaderItem(index)
+            if header_item is not None:
+                header_item.setToolTip(str(raw_name))
         table.setRowCount(0)
         for values_row in values:
             row = table.rowCount()

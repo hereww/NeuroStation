@@ -1,5 +1,6 @@
-"""Reusable Qt presentation components. All stimuli here are deliberately static."""
-from math import sin, exp
+"""Reusable Qt presentation components."""
+from collections import deque
+from math import cos, exp, isfinite, pi, sin
 
 from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
@@ -102,26 +103,273 @@ class StaticTargets(Section):
         self.layout.addWidget(label(tr("ssvep.production"), "muted"))
 
 
+CHANNEL_NAMES = ("Fp1", "Fp2", "C3", "C4", "P7", "P8", "O1", "O2")
+CHANNEL_COLORS = (
+    (8, 124, 136),
+    (47, 118, 183),
+    (107, 92, 165),
+    (155, 91, 142),
+    (189, 109, 74),
+    (181, 144, 49),
+    (92, 143, 84),
+    (92, 125, 143),
+)
+
+
+class _Biquad:
+    """Small stateful second-order section for the display-only filter."""
+
+    def __init__(self, coefficients: tuple[float, float, float, float, float]):
+        self.b0, self.b1, self.b2, self.a1, self.a2 = coefficients
+        self.x1 = self.x2 = 0.0
+        self.y1 = self.y2 = 0.0
+
+    def reset(self) -> None:
+        self.x1 = self.x2 = 0.0
+        self.y1 = self.y2 = 0.0
+
+    def process(self, value: float) -> float:
+        output = (
+            self.b0 * value
+            + self.b1 * self.x1
+            + self.b2 * self.x2
+            - self.a1 * self.y1
+            - self.a2 * self.y2
+        )
+        self.x2, self.x1 = self.x1, value
+        self.y2, self.y1 = self.y1, output
+        return output
+
+
+def _biquad_coefficients(
+    kind: str,
+    frequency_hz: float,
+    sample_rate_hz: float,
+    quality: float,
+) -> tuple[float, float, float, float, float]:
+    """Return normalized RBJ coefficients for one second-order section."""
+
+    omega = 2.0 * pi * frequency_hz / sample_rate_hz
+    sine = sin(omega)
+    cosine = cos(omega)
+    alpha = sine / (2.0 * quality)
+    if kind == "lowpass":
+        b0, b1, b2 = (1.0 - cosine) / 2.0, 1.0 - cosine, (1.0 - cosine) / 2.0
+    elif kind == "highpass":
+        b0, b1, b2 = (1.0 + cosine) / 2.0, -(1.0 + cosine), (1.0 + cosine) / 2.0
+    elif kind == "notch":
+        b0, b1, b2 = 1.0, -2.0 * cosine, 1.0
+    else:
+        raise ValueError(f"unsupported biquad kind: {kind}")
+    a0, a1, a2 = 1.0 + alpha, -2.0 * cosine, 1.0 - alpha
+    return b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0
+
+
+class _OpenBCIDisplayFilter:
+    """Causal 4th-order 5-50 Hz Butterworth path plus 50/60 Hz notches."""
+
+    _BUTTERWORTH_Q = (0.5411961001461971, 1.3065629648763766)
+
+    def __init__(self, sample_rate_hz: int):
+        self.sample_rate_hz = sample_rate_hz
+        self.sections = [
+            _Biquad(_biquad_coefficients("highpass", 5.0, sample_rate_hz, quality))
+            for quality in self._BUTTERWORTH_Q
+        ]
+        self.sections.extend(
+            _Biquad(_biquad_coefficients("lowpass", 50.0, sample_rate_hz, quality))
+            for quality in self._BUTTERWORTH_Q
+        )
+        self.sections.append(
+            _Biquad(_biquad_coefficients("notch", 50.0, sample_rate_hz, 25.0))
+        )
+        self.sections.append(
+            _Biquad(_biquad_coefficients("notch", 60.0, sample_rate_hz, 30.0))
+        )
+
+    def reset(self) -> None:
+        for section in self.sections:
+            section.reset()
+
+    def process(self, values: list[float]) -> list[float]:
+        output: list[float] = []
+        for value in values:
+            current = value if isfinite(value) else 0.0
+            for section in self.sections:
+                current = section.process(current)
+            output.append(current)
+        return output
+
+
+class WaveformDisplayModel:
+    """OpenBCI-style rolling raw/display buffers for the in-memory test signal."""
+
+    CHANNEL_NAMES = CHANNEL_NAMES
+    CHANNEL_COUNT = len(CHANNEL_NAMES)
+    SAMPLE_RATE_HZ = 250
+    UPDATE_MILLIS = 40
+    SAMPLES_PER_UPDATE = SAMPLE_RATE_HZ * UPDATE_MILLIS // 1000
+    BUFFER_SECONDS = 22
+    DISPLAY_SECONDS = 5
+    RAW_CAPACITY = SAMPLE_RATE_HZ * BUFFER_SECONDS
+    DISPLAY_SAMPLES = SAMPLE_RATE_HZ * DISPLAY_SECONDS
+    Y_LIMIT_UV = 200
+
+    def __init__(self, channel_names: tuple[str, ...] | list[str] | None = None, sample_rate_hz: int = SAMPLE_RATE_HZ):
+        names = tuple(channel_names or CHANNEL_NAMES)
+        if not names:
+            raise ValueError("waveform channel names")
+        if sample_rate_hz <= 0:
+            raise ValueError("waveform sample rate")
+        self.CHANNEL_NAMES = names
+        self.CHANNEL_COUNT = len(names)
+        self.SAMPLE_RATE_HZ = int(sample_rate_hz)
+        self.SAMPLES_PER_UPDATE = max(1, round(self.SAMPLE_RATE_HZ * self.UPDATE_MILLIS / 1000))
+        self.RAW_CAPACITY = self.SAMPLE_RATE_HZ * self.BUFFER_SECONDS
+        self.DISPLAY_SAMPLES = self.SAMPLE_RATE_HZ * self.DISPLAY_SECONDS
+        self.raw_buffers: list[deque[float]] = []
+        self.filtered_buffers: list[deque[float]] = []
+        self._filters: list[_OpenBCIDisplayFilter] = []
+        self.sample_index = 0
+        self.invalid_sample_count = 0
+        self.reset()
+
+    def reset(self):
+        self.raw_buffers = [deque(maxlen=self.RAW_CAPACITY) for _ in range(self.CHANNEL_COUNT)]
+        self.filtered_buffers = [deque(maxlen=self.DISPLAY_SAMPLES) for _ in range(self.CHANNEL_COUNT)]
+        self._filters = [
+            _OpenBCIDisplayFilter(self.SAMPLE_RATE_HZ)
+            for _ in range(self.CHANNEL_COUNT)
+        ]
+        self.sample_index = 0
+        self.invalid_sample_count = 0
+
+    def configure(self, channel_names: tuple[str, ...] | list[str], sample_rate_hz: int) -> None:
+        names = tuple(channel_names)
+        if not names:
+            raise ValueError("waveform channel names")
+        if sample_rate_hz <= 0:
+            raise ValueError("waveform sample rate")
+        if names == self.CHANNEL_NAMES and int(sample_rate_hz) == self.SAMPLE_RATE_HZ:
+            return
+        self.__init__(names, int(sample_rate_hz))
+
+    def append(self, samples: list[list[float]]):
+        if len(samples) != self.CHANNEL_COUNT:
+            raise ValueError("waveform channel count")
+        sample_count = len(samples[0]) if samples else 0
+        if any(len(channel) != sample_count for channel in samples):
+            raise ValueError("waveform sample lengths")
+        if sample_count == 0:
+            return
+
+        for channel_index, values in enumerate(samples):
+            converted = []
+            for value in values:
+                number = float(value)
+                if not isfinite(number):
+                    self.invalid_sample_count += 1
+                converted.append(number)
+            self.raw_buffers[channel_index].extend(converted)
+            self.filtered_buffers[channel_index].extend(
+                self._filters[channel_index].process(converted)
+            )
+        self.sample_index += sample_count
+
+    def visible_samples(self, channel_index: int) -> tuple[float, ...]:
+        if not 0 <= channel_index < self.CHANNEL_COUNT:
+            raise IndexError("waveform channel index")
+        values = list(self.filtered_buffers[channel_index])
+        if len(values) < self.DISPLAY_SAMPLES:
+            values = [0.0] * (self.DISPLAY_SAMPLES - len(values)) + values
+        return tuple(values)
+
+    @property
+    def visible_sample_count(self) -> int:
+        return len(self.filtered_buffers[0]) if self.filtered_buffers else 0
+
+    @property
+    def visible_duration_s(self) -> float:
+        return self.visible_sample_count / self.SAMPLE_RATE_HZ
+
+
 class WaveformWidget(QWidget):
-    """Animated illustrative traces for the in-memory acquisition test."""
-    def __init__(self, accessible_name: str, badge_text: str = ""):
+    """Stacked EEG traces fed by a sample provider or an explicit test source."""
+
+    def __init__(
+        self,
+        accessible_name: str,
+        badge_text: str = "",
+        *,
+        empty_text: str = "No valid samples",
+        channel_names: tuple[str, ...] | list[str] | None = None,
+        sample_rate_hz: int = WaveformDisplayModel.SAMPLE_RATE_HZ,
+        test_signal: bool = False,
+    ):
         super().__init__()
-        self.setMinimumSize(280, 345)
+        self.setMinimumSize(280, 390)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setAccessibleName(accessible_name)
-        self._phase = 0.0
         self._active = False
         self._badge_text = badge_text
+        self._empty_text = empty_text
+        self._test_signal_enabled = bool(test_signal)
+        self._sample_provider = None
+        self._model = WaveformDisplayModel(channel_names, sample_rate_hz)
         self._timer = QTimer(self)
-        self._timer.setInterval(50)
+        self._timer.setInterval(self._model.UPDATE_MILLIS)
         self._timer.timeout.connect(self._advance)
 
+    @property
+    def model(self) -> WaveformDisplayModel:
+        return self._model
+
+    def configure(self, channel_names: tuple[str, ...] | list[str], sample_rate_hz: int) -> None:
+        self._model.configure(channel_names, sample_rate_hz)
+        self.update()
+
+    def set_sample_provider(self, provider) -> None:
+        self._sample_provider = provider
+
+    def set_test_signal(self, enabled: bool) -> None:
+        self._test_signal_enabled = bool(enabled)
+
+    def _generate_test_samples(self, count: int) -> list[list[float]]:
+        start = self._model.sample_index
+        samples = [[] for _ in self._model.CHANNEL_NAMES]
+        for offset in range(count):
+            time_s = (start + offset) / self._model.SAMPLE_RATE_HZ
+            for channel in range(self._model.CHANNEL_COUNT):
+                signal = (
+                    16.0 * sin(2.0 * pi * (9.0 + channel * 0.15) * time_s + channel * 0.47)
+                    + 7.0 * sin(2.0 * pi * (21.0 + channel * 0.2) * time_s + channel * 0.91)
+                    + 3.0 * sin(2.0 * pi * 42.0 * time_s + channel * 0.23)
+                )
+                burst = 6.0 * exp(-((time_s % 4.0 - (0.6 + channel * 0.08)) / 0.035) ** 2)
+                samples[channel].append(signal + burst)
+        return samples
+
     def _advance(self):
-        self._phase = (self._phase + 0.035) % 1.0
+        if self._active:
+            samples = None
+            if self._sample_provider is not None:
+                samples = self._sample_provider(self._model.SAMPLES_PER_UPDATE)
+            elif self._test_signal_enabled:
+                samples = self._generate_test_samples(self._model.SAMPLES_PER_UPDATE)
+            if samples:
+                self._model.append(samples)
+        self.update()
+
+    def push_samples(self, samples: list[list[float]]) -> None:
+        if self._active:
+            self._model.append(samples)
         self.update()
 
     def set_active(self, active: bool):
-        self._active = active
+        active = bool(active)
+        if active != self._active:
+            self._active = active
+            self._model.reset()
         self.update()
 
     def showEvent(self, event):
@@ -133,46 +381,67 @@ class WaveformWidget(QWidget):
         self._timer.stop()
         super().hideEvent(event)
 
+    def _colors(self, dark: bool) -> tuple[QColor, ...]:
+        colors = []
+        for red, green, blue in CHANNEL_COLORS:
+            if dark:
+                colors.append(QColor(min(255, red + 50), min(255, green + 50), min(255, blue + 50)))
+            else:
+                colors.append(QColor(red, green, blue))
+        return tuple(colors)
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         dark = self.palette().window().color().lightness() < 128
-        grid = QColor("#34434e" if dark else "#e0e7ea")
+        grid = QColor("#34434e" if dark else "#dfe6e9")
         ink = QColor("#e0e9ef" if dark else "#263c48")
-        accent = QColor("#69c8d3" if dark else "#087c88")
-        if not self._active:
-            accent.setAlpha(185)
-        left, right = 58, self.width()-14
-        top, bottom = 12, self.height()-32
-        step = (bottom-top)/8
-        painter.setPen(QPen(grid, 1))
-        for tick in range(6):
-            x = left+(right-left)*tick/5
-            painter.drawLine(int(x), top, int(x), bottom)
-            painter.setPen(ink)
-            painter.drawText(int(x)-14, self.height()-10, f"{tick-5} s")
+        muted = QColor("#a6b6c1" if dark else "#677781")
+        colors = self._colors(dark)
+        left, right = 58, max(60, self.width() - 14)
+        top, bottom = 8, max(10, self.height() - 30)
+        gap = 2
+        names = self._model.CHANNEL_NAMES
+        bar_height = max(20, (bottom - top - gap * (len(names) - 1)) / len(names))
+
+        for channel, name in enumerate(names):
+            bar_top = top + channel * (bar_height + gap)
+            bar_bottom = bar_top + bar_height
+            center = (bar_top + bar_bottom) / 2.0
             painter.setPen(QPen(grid, 1))
-        for channel, name in enumerate(("Fp1", "Fp2", "C3", "C4", "P7", "P8", "O1", "O2")):
-            center = top+step*(channel+.5)
-            painter.setPen(QPen(grid, 1))
-            painter.drawLine(left, int(center), right, int(center))
+            painter.drawRect(int(left), int(bar_top), int(right - left), int(bar_height))
+            painter.drawLine(int(left), int(center), int(right), int(center))
+            for tick in range(1, 5):
+                x = left + (right - left) * tick / 5.0
+                painter.drawLine(int(x), int(bar_top), int(x), int(bar_bottom))
+
             painter.setPen(ink)
-            painter.drawText(9, int(center), name)
+            painter.drawText(7, int(center + 4), name)
+            painter.setPen(QPen(muted, 1))
+            painter.drawText(7, int(bar_top + 11), f"+{self._model.Y_LIMIT_UV} uV")
+            painter.drawText(7, int(bar_bottom - 3), f"-{self._model.Y_LIMIT_UV} uV")
+
+            values = self._model.visible_samples(channel)
             path = QPainterPath()
-            samples = max(240, right-left)
-            for j in range(samples+1):
-                u = j/samples
-                shift = self._phase * 2.0 * 3.14159
-                amplitude = (sin(u*147+channel*.81-shift)*.39+sin(u*323+channel*1.21-shift*1.4)*.19
-                    +sin(u*67+channel*2.18-shift*.6)*.22+sin(u*829+channel*3.1-shift*2.2)*.11)*11
-                amplitude += exp(-((u-(.22+channel*.055))/.024)**2)*(9 if channel < 2 else 3)
-                x, y = left+(right-left)*u, center+amplitude
-                path.lineTo(x, y) if j else path.moveTo(x, y)
-            painter.setPen(QPen(accent, 1.2))
+            scale = (bar_height * 0.46) / self._model.Y_LIMIT_UV
+            for index, value in enumerate(values):
+                normalized = max(-self._model.Y_LIMIT_UV, min(self._model.Y_LIMIT_UV, value))
+                x = left + (right - left) * index / max(1, len(values) - 1)
+                y = center - normalized * scale
+                if index == 0:
+                    path.moveTo(x, y)
+                else:
+                    path.lineTo(x, y)
+            pen = QPen(colors[channel], 1.1)
+            if not self._active:
+                pen.setColor(QColor(colors[channel].red(), colors[channel].green(), colors[channel].blue(), 100))
+            painter.setPen(pen)
             painter.drawPath(path)
-        scan_x = left + (right-left) * self._phase
-        painter.setPen(QPen(QColor("#d9a441" if not dark else "#f2c66d"), 1.5))
-        painter.drawLine(int(scan_x), top, int(scan_x), bottom)
+
+        painter.setPen(QPen(muted, 1))
+        for tick in range(6):
+            x = left + (right - left) * tick / 5.0
+            painter.drawText(int(x - 12), self.height() - 8, f"-{5 - tick} s" if tick < 5 else "0 s")
         if self._badge_text:
-            painter.setPen(QPen(ink, 1))
-            painter.drawText(right - 150, top + 14, self._badge_text)
+            painter.setPen(ink)
+            painter.drawText(int(right - 130), 14, self._badge_text)

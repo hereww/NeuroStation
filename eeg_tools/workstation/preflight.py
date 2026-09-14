@@ -180,11 +180,37 @@ def run_cyton_preflight(
                     "packet_sequence_available": True,
                     "packet_loss_count": lost_count,
                     "packet_loss_ratio": float(
-                        lost_count / (len(package_numbers) - 1)
-                    ),
+                        lost_count / (lost_count + len(package_numbers))
+                    ) if lost_count + len(package_numbers) else 0.0,
                     "packet_sequence_mismatch_count": mismatch_count,
                     "packet_duplicate_count": duplicate_count,
                 }
+        # BrainFlow timestamps can reflect bursty host delivery even when the
+        # Cyton packet/sample index is perfectly continuous. OpenBCI GUI uses
+        # that board sequence as its loss signal, so downgrade a timestamp-only
+        # degraded result to a warning when no packets are missing, duplicated,
+        # or out of order. Keep non-finite/reversed timestamps and extreme
+        # failures as hard failures.
+        packet_sequence_clean = (
+            bool(packet_metrics.get("packet_sequence_available"))
+            and int(packet_metrics.get("packet_loss_count", 0) or 0) == 0
+            and int(packet_metrics.get("packet_sequence_mismatch_count", 0) or 0) == 0
+            and int(packet_metrics.get("packet_duplicate_count", 0) or 0) == 0
+        )
+        if (
+            timestamp_status in {"degraded", "failed"}
+            and packet_sequence_clean
+            and not timestamp_missing
+            and not non_monotonic
+            and max_gap_s < 1.0
+        ):
+            # BrainFlow host timestamps can arrive in bursts even when the
+            # Cyton board sequence is continuous. OpenBCI GUI keeps streaming
+            # in this case and reports the quality separately. Treat the same
+            # bounded, timestamp-only condition as a warning so a transient
+            # USB/radio delivery burst cannot block acquisition.
+            timestamp_status = "warning"
+
         timestamp_detail = (
             "Timestamp stream is continuous."
             if timestamp_status == "passed" else

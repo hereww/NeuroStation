@@ -577,6 +577,77 @@ def _annotate_event_samples(
             event["recording_time_s"] = round(sample_time - session_start_time, 9)
 
 
+class _LiveWaveformWriter:
+    """Write a bounded-latency EEG preview without draining BrainFlow's buffer."""
+
+    def __init__(self, path: Path, board: Any, board_id: int) -> None:
+        from brainflow.board_shim import BoardShim
+
+        self.path = path
+        self.board = board
+        self.eeg_rows = tuple(int(value) for value in BoardShim.get_eeg_channels(board_id))
+        self.timestamp_row = int(BoardShim.get_timestamp_channel(board_id))
+        try:
+            self.marker_row = int(BoardShim.get_marker_channel(board_id))
+        except Exception:
+            self.marker_row = -1
+        self.sample_index = 0
+        self.last_timestamp: float | None = None
+        self.handle = path.open("w", encoding="utf-8", newline="")
+        self.handle.write(
+            "\t".join(
+                ["sample_index", "timestamp_s", "marker"]
+                + [f"eeg_ch{index}" for index in range(1, len(self.eeg_rows) + 1)]
+            )
+            + "\n"
+        )
+        self.handle.flush()
+
+    def pump(self, maximum_samples: int = 512) -> int:
+        import numpy as np
+
+        getter = getattr(self.board, "get_current_board_data", None)
+        if getter is None:
+            return 0
+        try:
+            data = getter(maximum_samples)
+        except Exception:
+            return 0
+        if getattr(data, "ndim", 0) != 2 or data.shape[1] == 0:
+            return 0
+        if self.timestamp_row < 0 or self.timestamp_row >= data.shape[0]:
+            return 0
+        timestamps = np.asarray(data[self.timestamp_row, :], dtype=float)
+        valid = np.isfinite(timestamps)
+        if self.last_timestamp is not None:
+            valid &= timestamps > self.last_timestamp + 1e-9
+        indexes = np.flatnonzero(valid)
+        if indexes.size == 0:
+            return 0
+        for column in indexes:
+            timestamp = float(timestamps[column])
+            marker = (
+                float(data[self.marker_row, column])
+                if 0 <= self.marker_row < data.shape[0]
+                else 0.0
+            )
+            eeg = [
+                float(data[row, column]) if 0 <= row < data.shape[0] else float("nan")
+                for row in self.eeg_rows
+            ]
+            values = [self.sample_index, f"{timestamp:.10g}", f"{marker:.10g}"]
+            values.extend(f"{value:.10g}" for value in eeg)
+            self.handle.write("\t".join(str(value) for value in values) + "\n")
+            self.sample_index += 1
+            self.last_timestamp = timestamp
+        self.handle.flush()
+        return int(indexes.size)
+
+    def close(self) -> None:
+        if not self.handle.closed:
+            self.handle.close()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--protocol", type=Path, default=DEFAULT_PROTOCOL)
@@ -682,6 +753,10 @@ def main(argv: list[str] | None = None) -> int:
     window = None
     recording_started: float | None = None
     acquisition_started: float | None = None
+    live_waveform_path = (
+        status_file.parent / "live_waveform.tsv" if status_file is not None else None
+    )
+    live_waveform_writer: _LiveWaveformWriter | None = None
     completed_trials = 0
     status = "error"
     error_message: str | None = None
@@ -724,6 +799,10 @@ def main(argv: list[str] | None = None) -> int:
 
     def elapsed_recording() -> float:
         return 0.0 if recording_started is None else time.perf_counter() - recording_started
+
+    def pump_live_waveform() -> None:
+        if live_waveform_writer is not None:
+            live_waveform_writer.pump()
 
     def add_event(
         name: str,
@@ -835,6 +914,10 @@ def main(argv: list[str] | None = None) -> int:
         if board is not None:
             board.start_stream()
             streaming = True
+            if live_waveform_path is not None:
+                live_waveform_writer = _LiveWaveformWriter(
+                    live_waveform_path, board, int(board_id)
+                )
             acquisition_started = time.perf_counter()
             add_event(
                 "acquisition_start",
@@ -846,6 +929,7 @@ def main(argv: list[str] | None = None) -> int:
         countdown_started = time.perf_counter()
 
         def countdown_update(elapsed: float) -> None:
+            pump_live_waveform()
             remaining = max(0, math.ceil(countdown_s - elapsed))
             if window is not None:
                 window.show_message(str(remaining), flash=True)
@@ -879,6 +963,7 @@ def main(argv: list[str] | None = None) -> int:
             )
 
             def stimulus_progress(within: float) -> None:
+                pump_live_waveform()
                 emit(
                     "running",
                     trial_index=trial.index,
@@ -940,6 +1025,7 @@ def main(argv: list[str] | None = None) -> int:
                     window.show_message("+")
 
                 def rest_progress(within: float) -> None:
+                    pump_live_waveform()
                     emit(
                         "running",
                         trial_index=trial.index,
@@ -976,6 +1062,9 @@ def main(argv: list[str] | None = None) -> int:
             pass
         status = "error"
     finally:
+        pump_live_waveform()
+        if live_waveform_writer is not None:
+            live_waveform_writer.close()
         if window is not None:
             window.close()
         if board is not None:

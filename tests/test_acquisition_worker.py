@@ -236,11 +236,14 @@ class AcquisitionWorkerTests(unittest.TestCase):
                 return None
 
             def get_board_data(self):
+                timestamps = np.arange(101, dtype=float) * 0.004
+                timestamps[30:] += 0.3506
+                timestamps[70:] += 0.3506
                 return np.array([
-                    [1, 2, 3, 4],
-                    [4, 5, 6, 7],
-                    [0.0, 0.004, 0.012, 0.016],
-                    [10, 11, 12, 13],
+                    np.arange(101, dtype=float),
+                    np.arange(101, dtype=float) + 4,
+                    timestamps,
+                    np.arange(101, dtype=float) + 10,
                 ])
 
         report = run_cyton_preflight(
@@ -255,8 +258,47 @@ class AcquisitionWorkerTests(unittest.TestCase):
         self.assertTrue(packet_sequence["packet_sequence_available"])
         self.assertEqual(0, packet_sequence["packet_loss_count"])
         self.assertEqual(0, packet_sequence["packet_sequence_mismatch_count"])
-        self.assertEqual(1, timestamps["timestamp_gap_count"])
+        self.assertEqual(2, timestamps["timestamp_gap_count"])
 
+    def test_cyton_preflight_downgrades_bounded_timestamp_jitter_with_clean_packets(self) -> None:
+        import numpy as np
+        from eeg_tools.workstation.preflight import run_cyton_preflight
+
+        class Ids:
+            CYTON_BOARD = 6
+
+        class Shim:
+            get_eeg_channels = staticmethod(lambda _: [0])
+            get_timestamp_channel = staticmethod(lambda _: 1)
+            get_package_num_channel = staticmethod(lambda _: 2)
+            get_sampling_rate = staticmethod(lambda _: 250)
+
+        class Board:
+            start_stream = lambda self: None
+            stop_stream = lambda self: None
+            release_session = lambda self: None
+
+            def get_board_data(self):
+                timestamps = np.arange(101, dtype=float) * 0.004
+                timestamps[20:] += 0.250
+                timestamps[60:] += 0.250
+                return np.array([
+                    np.arange(101, dtype=float),
+                    timestamps,
+                    np.arange(101, dtype=float) % 256,
+                ])
+
+        report = run_cyton_preflight(
+            prepare_board=lambda *_: (Board(), "COM5", []),
+            board_shim=Shim,
+            board_ids=Ids,
+            sleep_fn=lambda _: None,
+        )
+        timestamp_check = next(c for c in report.checks if c.name == "timestamps")
+        self.assertEqual("warning", report.status)
+        self.assertEqual("warning", timestamp_check.status)
+        self.assertEqual(0, timestamp_check.metrics["packet_loss_count"])
+        self.assertEqual(0, timestamp_check.metrics["packet_sequence_mismatch_count"])
     def test_cyton_preflight_classifies_large_timestamp_gaps(self) -> None:
         import numpy as np
         from eeg_tools.workstation.preflight import run_cyton_preflight
@@ -269,7 +311,11 @@ class AcquisitionWorkerTests(unittest.TestCase):
             start_stream = lambda self: None
             stop_stream = lambda self: None
             release_session = lambda self: None
-            get_board_data = lambda self: np.array([[1, 2, 3], [0.0, 0.6, 1.2]])
+
+            def get_board_data(self):
+                timestamps = np.arange(101, dtype=float) * 0.004
+                timestamps[50:] += 0.596
+                return np.array([np.arange(101, dtype=float), timestamps])
         report = run_cyton_preflight(prepare_board=lambda *_: (Board(), "COM5", []), board_shim=Shim, board_ids=Ids, sleep_fn=lambda _: None)
         self.assertEqual("degraded", next(c for c in report.checks if c.name == "timestamps").status)
 

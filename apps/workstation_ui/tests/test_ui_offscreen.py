@@ -1,5 +1,6 @@
 """Optional real-Qt smoke tests; automatically skipped when PySide6 is absent."""
 import importlib.util
+import math
 import os
 from pathlib import Path
 import tempfile
@@ -85,7 +86,54 @@ class QtOffscreenTests(unittest.TestCase):
         self.assertIsNotNone(self.window.result)
         self.assertFalse(self.window.result.persisted)
 
-    def test_live_page_is_non_persistent_capture_test_with_animated_waveform(self):
+    def test_openbci_waveform_model_uses_rolling_buffers_and_display_copy(self):
+        from apps.workstation_ui.components import WaveformDisplayModel
+
+        model = WaveformDisplayModel()
+        self.assertEqual(
+            ("Fp1", "Fp2", "C3", "C4", "P7", "P8", "O1", "O2"),
+            model.CHANNEL_NAMES,
+        )
+        self.assertEqual(8, model.CHANNEL_COUNT)
+        self.assertEqual(10, model.SAMPLES_PER_UPDATE)
+        self.assertEqual(1250, model.DISPLAY_SAMPLES)
+        self.assertEqual(5500, model.RAW_CAPACITY)
+        self.assertEqual(200, model.Y_LIMIT_UV)
+
+        source = [[float(sample + channel) for sample in range(6000)] for channel in range(8)]
+        original_first_channel = list(source[0])
+        model.append(source)
+
+        self.assertEqual(6000, model.sample_index)
+        self.assertTrue(all(len(channel) == model.RAW_CAPACITY for channel in model.raw_buffers))
+        self.assertTrue(all(len(channel) == model.DISPLAY_SAMPLES for channel in model.filtered_buffers))
+        self.assertEqual(original_first_channel, source[0])
+        self.assertEqual(tuple(source[0][-model.RAW_CAPACITY:]), tuple(model.raw_buffers[0]))
+        self.assertEqual(model.DISPLAY_SAMPLES, len(model.visible_samples(0)))
+        self.assertNotEqual(tuple(source[0][-model.DISPLAY_SAMPLES:]), model.visible_samples(0))
+
+    def test_openbci_display_filter_has_requested_bandpass_and_notches(self):
+        from apps.workstation_ui.components import _OpenBCIDisplayFilter
+
+        sample_rate = 250
+        sample_count = 5_000
+
+        def gain(frequency_hz: float) -> float:
+            display_filter = _OpenBCIDisplayFilter(sample_rate)
+            output = []
+            for index in range(sample_count):
+                value = math.sin(2.0 * math.pi * frequency_hz * index / sample_rate)
+                output.extend(display_filter.process([value]))
+            tail = output[-1_000:]
+            return math.sqrt(2.0 * sum(value * value for value in tail) / len(tail))
+
+        self.assertAlmostEqual(0.707, gain(5.0), delta=0.03)
+        self.assertGreater(gain(10.0), 0.95)
+        self.assertLess(gain(50.0), 0.02)
+        self.assertLess(gain(60.0), 0.02)
+        self.assertLess(gain(100.0), 0.02)
+
+    def test_live_page_is_non_persistent_capture_test_with_openbci_waveform(self):
         from apps.workstation_ui.gateway import CaptureMode
 
         page = self.window.pages["live"]
@@ -94,12 +142,26 @@ class QtOffscreenTests(unittest.TestCase):
         self.application.processEvents()
         self.assertEqual("采集测试", page.title_label.text())
         self.assertTrue(page.waveform._timer.isActive())
-        phase = page.waveform._phase
+        self.assertEqual(40, page.waveform._timer.interval())
+        self.assertEqual(8, page.waveform.model.CHANNEL_COUNT)
+        self.assertEqual(
+            ("Fp1", "Fp2", "C3", "C4", "P7", "P8", "O1", "O2"),
+            page.waveform.model.CHANNEL_NAMES,
+        )
+        self.assertEqual(0, page.waveform.model.sample_index)
+        self.assertEqual(
+            (0.0,) * page.waveform.model.DISPLAY_SAMPLES,
+            page.waveform.model.visible_samples(0),
+        )
         page.waveform._advance()
-        self.assertNotEqual(phase, page.waveform._phase)
+        self.assertEqual(0, page.waveform.model.sample_index)
 
         page._start()
         self.assertIs(CaptureMode.DEMO, self.gateway.config.mode)
+        page.waveform._advance()
+        self.assertEqual(10, page.waveform.model.sample_index)
+        self.assertEqual(1250, len(page.waveform.model.visible_samples(0)))
+        self.assertEqual(10, len(page.waveform.model.raw_buffers[0]))
         self.now = 3
         self.window.poll()
         self.window.stop_manual()
@@ -251,6 +313,33 @@ class QtOffscreenTests(unittest.TestCase):
                 break
         self.assertEqual(Phase.COUNTDOWN, self.gateway.snapshot.phase)
         self.assertIn("继续", self.window.pages["ssvep"].error.text())
+        task_page = self.window.pages["task"]
+        self.assertFalse(task_page.quality_notice.isHidden())
+        self.assertIn("继续", task_page.quality_notice.text())
+
+    def test_cyton_preflight_degraded_requires_review(self):
+        from apps.workstation_ui.gateway import CaptureConfig, CaptureMode, Phase
+        from neurostation_contract import UserProfile
+        self.gateway.add_user(UserProfile(
+            user_id="U0005", name="Degraded", age=30, medical_conditions=("none",)
+        ))
+        config = CaptureConfig(
+            mode=CaptureMode.CYTON,
+            port="COM5",
+            user_id="U0005",
+            participant="U0005",
+            acknowledge_flicker_risk=True,
+        )
+        self.window._pending_ssvep = (config, 1)
+        self.window._preflight_finished({
+            "status": "degraded",
+            "error": "",
+            "selected_port": "COM5",
+            "checks": [{"name": "timestamps", "status": "degraded", "detail": "large gap"}],
+        })
+        self.assertFalse(self.gateway.snapshot.active)
+        self.assertNotEqual(Phase.COUNTDOWN, self.gateway.snapshot.phase)
+        self.assertIn("复核", self.window.pages["ssvep"].error.text())
 
     def test_ssvep_mode_selector_preserves_enum_and_requires_risk_ack(self):
         from apps.workstation_ui.gateway import CaptureMode

@@ -293,6 +293,7 @@ class MainWindow(QMainWindow):
         task = TaskPage(self.tr)
         task.cancel_requested.connect(self.cancel_task)
         self._replace_page("task", task)
+        task.waveform.set_sample_provider(self._read_live_waveform)
         self._replace_page(
             "openbci",
             InfoPage(
@@ -473,6 +474,9 @@ class MainWindow(QMainWindow):
         self._preflight_ready = False
         if self.persist_settings:
             self.settings.setValue("capture/save_directory", str(config.save_directory))
+        task_page = self.pages.get("task")
+        if task_page is not None and hasattr(task_page, "set_quality_warning"):
+            task_page.set_quality_warning("")
         self.navigate("task")
         self._start_timer()
         self._record("capture", "ssvep task started", mode=CaptureMode(config.mode).value)
@@ -599,13 +603,14 @@ class MainWindow(QMainWindow):
                 self.start_ssvep(config, speed, _preflight_ready=True)
         elif pending is not None:
             self._preflight_ready = False
-            if status in {"warning", "degraded"}:
+            if status == "warning":
                 warning_detail = detail or self.tr(f"device.preflight_status.{status}")
                 # OpenBCI GUI keeps streaming when packet/timestamp quality is
                 # imperfect and surfaces loss statistics while acquisition
-                # continues. Match that behavior here: only a failed
-                # handshake, empty stream, or invalid data remains a hard
-                # stop. Draft protocol/channel validation is enforced by the
+                # continues. Match that behavior for timestamp-only warnings.
+                # More severe degraded results still require review; failed
+                # handshake, empty stream, or invalid data remain hard stops.
+                # Draft protocol/channel validation is enforced by the
                 # gateway independently of this quality-warning path.
                 message_key = (
                     "validation.preflight_warning_allowed"
@@ -630,6 +635,23 @@ class MainWindow(QMainWindow):
                     technical_validation=bool(config.allow_draft_hardware_config),
                 )
                 self.start_ssvep(config, speed, _preflight_ready=True)
+                task_page = self.pages.get("task")
+                if task_page is not None and hasattr(task_page, "set_quality_warning"):
+                    task_page.set_quality_warning(message)
+                if ssvep_page is not None and hasattr(ssvep_page, "error"):
+                    ssvep_page.error.setText(message)
+            elif status == "degraded":
+                message = self.tr(
+                    "validation.preflight_degraded_blocked",
+                    port=selected_port or "AUTO",
+                    detail=detail or self.tr("device.preflight_status.degraded"),
+                )
+                self._record(
+                    "preflight",
+                    "degraded quality requires review before acquisition",
+                    port=selected_port or "AUTO",
+                    detail=detail,
+                )
                 if ssvep_page is not None and hasattr(ssvep_page, "error"):
                     ssvep_page.error.setText(message)
             else:
@@ -848,6 +870,31 @@ class MainWindow(QMainWindow):
             not snapshot.active and self.preflight_thread is None
         )
         self.pages["task"].update_snapshot(snapshot, self.gateway.config)
+
+    def _read_live_waveform(self, maximum_rows: int = 1000):
+        reader = getattr(self.gateway, "read_live_waveform", None)
+        if reader is None:
+            return None
+        payload = reader(maximum_rows)
+        if not isinstance(payload, dict):
+            return None
+        samples = payload.get("samples")
+        names = payload.get("channel_names")
+        rate = payload.get("sample_rate_hz")
+        if not isinstance(samples, list) or not samples:
+            return None
+        try:
+            channel_names = tuple(str(item) for item in names)
+            sample_rate = int(rate)
+        except (TypeError, ValueError):
+            return None
+        task_page = self.pages.get("task")
+        if task_page is not None and hasattr(task_page, "waveform"):
+            try:
+                task_page.waveform.configure(channel_names, sample_rate)
+            except ValueError:
+                return None
+        return samples
 
     def closeEvent(self, event):
         self._record("ui", "workstation window closing")

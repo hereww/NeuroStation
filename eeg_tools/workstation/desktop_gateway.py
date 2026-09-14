@@ -270,6 +270,9 @@ class MetadataSimulationGateway:
             self._remember(self._snapshot.result)
         return self._snapshot
 
+    def read_live_waveform(self, maximum_rows: int = 1000):
+        return None
+
     def _map_snapshot(self, core, speed: float) -> TaskSnapshot:
         phase = {
             TaskPhase.READY: Phase.IDLE,
@@ -553,6 +556,11 @@ class DesktopGateway:
 
     def tick(self) -> TaskSnapshot:
         return self._active.tick()
+
+    def read_live_waveform(self, maximum_rows: int = 1000):
+        if self._active is self._acquisition:
+            return self._acquisition.read_live_waveform(maximum_rows)
+        return None
 
     def launch_openbci_workspace(self, locale: str) -> int:
         self._ensure_available()

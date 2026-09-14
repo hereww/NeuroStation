@@ -330,6 +330,9 @@ class MockGateway:
         )
         return self.snapshot
 
+    def read_live_waveform(self, maximum_rows: int = 1000):
+        return None
+
     def add_marker(self) -> int:
         if self.snapshot.phase != Phase.RUNNING or self.snapshot.protocol != "manual":
             raise RuntimeError("validation.manual_marker")

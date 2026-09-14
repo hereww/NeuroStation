@@ -73,12 +73,38 @@ class OpenBCIImportUiTests(unittest.TestCase):
             self.assertEqual(24, raw_table.columnCount())
             self.assertEqual(3, raw_table.rowCount())
             self.assertFalse(raw_table.item(0, 0).flags() & self.qt.ItemFlag.ItemIsEditable)
+            raw_headers = [
+                raw_table.horizontalHeaderItem(column).text()
+                for column in range(raw_table.columnCount())
+            ]
+            self.assertIn("未命名列 1", raw_headers[0])
+            self.assertIn("Column 1", raw_headers[0])
             window.navigate("datasets")
             buttons = window.pages["datasets"].findChildren(QPushButton)
             open_button = next(button for button in buttons if button.text() == "打开数据集")
             open_button.click()
             self.assertEqual("DatasetSummaryPage", type(window.pages["result"]).__name__)
             window.close()
+
+    def test_standard_brainflow_preview_headers_have_chinese_meanings(self):
+        from apps.workstation_ui.i18n import Translator
+        from apps.workstation_ui.pages import _preview_header_labels
+
+        labels = _preview_header_labels(
+            Translator("zh-CN"),
+            (
+                "sample_index",
+                "eeg_ch1",
+                "package_num",
+                "timestamp_s",
+                "marker",
+                "accel_x",
+            ),
+        )
+        self.assertEqual("样本序号（sample_index）", labels[0])
+        self.assertEqual("EEG 通道 1（eeg_ch1）", labels[1])
+        self.assertEqual("设备时间戳（秒）（timestamp_s）", labels[3])
+        self.assertEqual("事件标记码（marker）", labels[4])
 
 
 if __name__ == "__main__":

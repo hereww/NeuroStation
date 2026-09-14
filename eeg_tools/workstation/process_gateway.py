@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime, timezone
+import csv
 import json
 import os
 from pathlib import Path
@@ -31,6 +32,7 @@ from neurostation_contract import (
 from .dataset import DatasetRepository
 from eeg_tools.session_files import write_json, write_manifest
 from .ssvep import SSVEPProtocol
+from eeg_tools.waveform import channel_labels_from_path
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -55,6 +57,10 @@ class AcquisitionProcessGateway:
         self._preflight_report: dict[str, Any] | None = None
         self._last_status_mtime_ns = -1
         self._last_status: dict[str, Any] = {}
+        self._live_waveform_path: Path | None = None
+        self._live_waveform_position = 0
+        self._live_waveform_header: list[str] = []
+        self._live_channel_names: tuple[str, ...] = ()
 
     @property
     def snapshot(self) -> TaskSnapshot:
@@ -72,15 +78,66 @@ class AcquisitionProcessGateway:
             or (main_module is not None and hasattr(main_module, "__compiled__"))
         )
 
-    def _command(self, config: CaptureConfig) -> list[str]:
+    @staticmethod
+    def _bundled_executable() -> Path:
+        """Return the real standalone executable used for worker relaunches.
+
+        Nuitka embeds Python modules, so ``__file__`` inside this module may
+        point at a source-like path that is not present on disk.  Conversely,
+        a launcher can report a relative or stale ``sys.executable``.  Resolve
+        the executable from a small set of concrete candidates and fail with a
+        useful diagnostic before ``Popen`` gets a cryptic WinError 2.
+        """
+
+        candidates: list[Path] = []
+        executable = str(getattr(sys, "executable", "") or "").strip()
+        if executable:
+            candidates.append(Path(executable).expanduser())
+        try:
+            module_root = Path(__file__).resolve().parents[2]
+        except OSError:
+            module_root = None
+        if module_root is not None:
+            candidates.append(module_root / "workstation.exe")
+            candidates.append(module_root / "workstation.bin")
+        candidates.append(Path.cwd() / "workstation.exe")
+        candidates.append(Path.cwd() / "workstation.bin")
+
+        seen: set[str] = set()
+        for candidate in candidates:
+            try:
+                resolved = candidate.resolve()
+            except OSError:
+                continue
+            key = os.path.normcase(str(resolved))
+            if key in seen:
+                continue
+            seen.add(key)
+            if resolved.is_file():
+                return resolved
+        rendered = ", ".join(str(item) for item in candidates) or "<none>"
+        raise FileNotFoundError(
+            f"Standalone worker executable was not found; checked: {rendered}"
+        )
+
+    def _launch_context(self) -> tuple[list[str], str | None]:
+        """Build a worker command and a safe working directory.
+
+        All worker arguments are absolute.  A bundled process therefore does
+        not need a ``cwd`` at all; omitting it avoids failures when Nuitka's
+        embedded ``__file__`` resolves to a virtual source path.
+        """
+
         if self._is_bundled_executable():
-            command = [sys.executable, "--acquisition-worker"]
-        else:
-            command = [
-                sys.executable,
-                "-m",
-                "eeg_tools.workstation.acquisition_worker",
-            ]
+            return [str(self._bundled_executable()), "--acquisition-worker"], None
+        return [
+            sys.executable,
+            "-m",
+            "eeg_tools.workstation.acquisition_worker",
+        ], str(ROOT) if ROOT.is_dir() else None
+
+    def _command(self, config: CaptureConfig) -> list[str]:
+        command, _ = self._launch_context()
         mode = CaptureMode(config.mode)
         board = {
             CaptureMode.CYTON: "cyton",
@@ -179,6 +236,11 @@ class AcquisitionProcessGateway:
             write_json(self._preflight_file, self._preflight_report)
         self._last_status_mtime_ns = -1
         self._last_status = {}
+        self._live_waveform_path = None
+        self._live_waveform_position = 0
+        self._live_waveform_header = []
+        channel_config = Path(config.channel_config or self.channel_config_path).resolve()
+        self._live_channel_names = channel_labels_from_path(channel_config, self.device.channels)
         protocol = SSVEPProtocol.load(self.protocol_path).with_runtime_parameters(
             repetitions=config.repetitions,
             stimulus_s=config.stimulus_seconds,
@@ -193,10 +255,12 @@ class AcquisitionProcessGateway:
         )
         creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
         try:
+            command = self._command(config)
+            _, working_directory = self._launch_context()
             with self._stderr_file.open("wb") as stderr_stream:
                 self._process = subprocess.Popen(
-                    self._command(config),
-                    cwd=str(ROOT),
+                    command,
+                    cwd=working_directory,
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,
                     stderr=stderr_stream,
@@ -204,7 +268,10 @@ class AcquisitionProcessGateway:
                 )
         except OSError as error:
             self._snapshot = TaskSnapshot(phase=Phase.FAILED, error=str(error))
-            raise RuntimeError(f"validation.worker_start: {error}") from error
+            rendered_command = locals().get("command", [])
+            rendered_cwd = locals().get("working_directory")
+            detail = f"{error}; command={rendered_command!r}; cwd={rendered_cwd!r}"
+            raise RuntimeError(f"validation.worker_start: {detail}") from error
         return self._snapshot
 
     def tick(self) -> TaskSnapshot:
@@ -232,6 +299,71 @@ class AcquisitionProcessGateway:
                     error=detail or f"Acquisition worker exited with code {return_code}",
                 )
         return self._snapshot
+
+    def read_live_waveform(self, maximum_rows: int = 1000) -> dict[str, Any] | None:
+        """Read only newly flushed samples from the worker's live preview file."""
+
+        if maximum_rows <= 0:
+            return None
+        if self._runtime_dir is None:
+            return None
+        path = self._runtime_dir / "live_waveform.tsv"
+        if not path.is_file():
+            return None
+        try:
+            if self._live_waveform_path != path or path.stat().st_size < self._live_waveform_position:
+                self._live_waveform_path = path
+                self._live_waveform_position = 0
+                self._live_waveform_header = []
+            with path.open("r", encoding="utf-8", newline="") as handle:
+                if not self._live_waveform_header:
+                    header_line = handle.readline()
+                    if not header_line:
+                        return None
+                    self._live_waveform_header = next(csv.reader([header_line.rstrip("\r\n")], delimiter="\t"), [])
+                    self._live_waveform_position = handle.tell()
+                handle.seek(self._live_waveform_position)
+                rows: list[list[str]] = []
+                while len(rows) < maximum_rows:
+                    line_position = handle.tell()
+                    line = handle.readline()
+                    if not line:
+                        break
+                    if not line.endswith(("\n", "\r")):
+                        handle.seek(line_position)
+                        break
+                    rows.append(next(csv.reader([line.rstrip("\r\n")], delimiter="\t"), []))
+                self._live_waveform_position = handle.tell()
+        except (OSError, UnicodeError, csv.Error):
+            return None
+        if not rows:
+            return None
+
+        eeg_columns = sorted(
+            (
+                (index, name)
+                for index, name in enumerate(self._live_waveform_header)
+                if name.casefold().startswith("eeg_ch")
+            ),
+            key=lambda item: int(item[1][6:]) if item[1][6:].isdigit() else 0,
+        )
+        if not eeg_columns:
+            return None
+        samples = [[] for _ in eeg_columns]
+        for row in rows:
+            for output_index, (column_index, _name) in enumerate(eeg_columns):
+                try:
+                    samples[output_index].append(float(row[column_index]))
+                except (IndexError, TypeError, ValueError):
+                    samples[output_index].append(float("nan"))
+        channel_names = self._live_channel_names or channel_labels_from_path(
+            self.channel_config_path, len(eeg_columns)
+        )
+        return {
+            "channel_names": channel_names[: len(eeg_columns)],
+            "sample_rate_hz": int(self.device.sample_rate or 250),
+            "samples": samples,
+        }
 
     def cancel(self) -> TaskSnapshot:
         if self._process is None or not self.snapshot.active:
