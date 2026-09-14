@@ -38,4 +38,8 @@ if [ "$mode" = "standalone" ]; then
     mkdir -p "$openbci_destination"
     cp -R "$openbci_source/." "$openbci_destination/"
   fi
+
+  # Keep the packaged smoke contract identical on every desktop platform.
+  "$python_command" "$project_root/scripts/generate_sbom.py" \
+    --output "$artifact_root/SBOM.json"
 fi

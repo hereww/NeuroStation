@@ -9,6 +9,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import sys
 import time
 from typing import Any, Callable
@@ -257,6 +258,18 @@ def _prepare_cyton_board(
     """
 
     from brainflow.board_shim import BoardShim
+
+    requested_value = (requested_port or "AUTO").strip()
+    if (
+        os.name == "nt"
+        and requested_value
+        and requested_value.upper() != "AUTO"
+        and not re.fullmatch(r"(?:\\\\\.\\)?COM\d+", requested_value, re.IGNORECASE)
+    ):
+        raise RuntimeError(
+            f"Invalid Windows serial port '{requested_value}'. "
+            "Use a COM port such as COM5."
+        )
 
     candidates = candidate_serial_ports(requested_port)
     if not candidates:
