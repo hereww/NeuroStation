@@ -49,6 +49,11 @@ class OpenBCIImportUiTests(unittest.TestCase):
             window.navigate("datasets")
             self.assertEqual(1, len(gateway.datasets))
             self.assertTrue(gateway.datasets[0].imported)
+            from PySide6.QtWidgets import QFrame, QPushButton
+
+            buttons = window.pages["datasets"].findChildren(QPushButton)
+            self.assertTrue(any(button.text() == "删除数据集" for button in buttons))
+            self.assertIsNotNone(window.pages["datasets"].findChild(QFrame, "datasetsTrashSection"))
             window.show_result(gateway.datasets[0])
             self.assertEqual("result", window.current_page)
             self.assertEqual("DatasetSummaryPage", type(window.pages["result"]).__name__)

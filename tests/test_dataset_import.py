@@ -127,6 +127,48 @@ class DatasetImportTests(unittest.TestCase):
             self.assertEqual(500, record.recorded_samples_per_channel)
             self.assertEqual(250, record.sampling_rate_hz)
 
+    def test_dataset_delete_restore_and_purge_manage_the_whole_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "Datasets"
+            session = root / "session_delete"
+            session.mkdir(parents=True)
+            (session / "raw.tsv").write_text("sample\n", encoding="utf-8")
+            (session / "session.json").write_text(
+                json.dumps(
+                    {
+                        "session_id": "session_delete",
+                        "session_name": "Delete me",
+                        "duration_s": 1,
+                        "recorded_samples_per_channel": 250,
+                        "sampling_rate_hz": 250,
+                        "simulated": False,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            repository = DatasetRepository(root)
+
+            deleted = repository.delete_record("session_delete")
+            trash_path = root / "Trash" / "Datasets" / "session_delete"
+            self.assertFalse(session.exists())
+            self.assertTrue(trash_path.is_dir())
+            self.assertEqual(trash_path, deleted.output_dir)
+            self.assertEqual([], repository.list_records())
+            self.assertEqual(["session_delete"], [item.session_id for item in repository.list_trashed_records()])
+            metadata = json.loads((trash_path / "session.json").read_text(encoding="utf-8"))
+            self.assertEqual(str(session.resolve()), metadata["trash_original_path"])
+            self.assertTrue(metadata["deleted_at"])
+
+            restored = repository.restore_record("session_delete")
+            self.assertTrue(session.is_dir())
+            self.assertEqual(session, restored.output_dir)
+            self.assertEqual([], repository.list_trashed_records())
+
+            repository.delete_record("session_delete")
+            repository.purge_record("session_delete")
+            self.assertFalse(session.exists())
+            self.assertFalse(trash_path.exists())
+
     def test_unknown_legacy_source_remains_visible_in_desktop_gateway(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

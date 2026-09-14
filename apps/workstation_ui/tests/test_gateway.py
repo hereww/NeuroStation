@@ -89,6 +89,28 @@ class GatewayTests(unittest.TestCase):
             self.gateway.tick()
             self.assertEqual(len(self.gateway.datasets), 1)
 
+    def test_dataset_delete_restore_and_purge_use_the_mock_recycle_bin(self):
+        self.gateway.start_ssvep(self.config, 8)
+        self.clock.now = 5
+        self.gateway.tick()
+        self.clock.now = 16.625
+        result = self.gateway.tick().result
+
+        deleted = self.gateway.delete_dataset(result.id)
+        self.assertEqual((), self.gateway.datasets)
+        self.assertEqual((result.id,), tuple(item.id for item in self.gateway.trashed_datasets))
+        self.assertTrue(deleted.deleted_at)
+
+        restored = self.gateway.restore_dataset(result.id)
+        self.assertEqual((result.id,), tuple(item.id for item in self.gateway.datasets))
+        self.assertEqual("", restored.deleted_at)
+        self.assertEqual((), self.gateway.trashed_datasets)
+
+        self.gateway.delete_dataset(result.id)
+        self.gateway.purge_dataset(result.id)
+        self.assertEqual((), self.gateway.datasets)
+        self.assertEqual((), self.gateway.trashed_datasets)
+
     def test_duplicate_start_and_manual_device_conflict_rejected(self):
         self.gateway.start_ssvep(self.config)
         with self.assertRaisesRegex(RuntimeError, "validation.busy"):

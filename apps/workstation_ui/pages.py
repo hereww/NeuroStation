@@ -1249,8 +1249,10 @@ class DatasetsPage(Page):
 
     def __init__(self, tr, datasets: tuple[Dataset, ...], latest: str | None, show_result, navigate,
                  import_busy: bool = False, import_status: str = "", import_directory: str = "",
-                 search_text: str = "", source_value: str = "", status_value: str = ""):
+                 search_text: str = "", source_value: str = "", status_value: str = "",
+                 trashed_datasets: tuple[Dataset, ...] = (), callbacks: dict[str, Any] | None = None):
         super().__init__(tr, tr("app.datasets"), tr("datasets.subtitle"))
+        self._callbacks = callbacks or {}
         controls = QHBoxLayout()
         controls.addWidget(action(tr("nav.apps"), lambda: navigate("apps")))
         self.import_button = action(tr("datasets.import_openbci"), self._choose_import_directory, True)
@@ -1289,63 +1291,141 @@ class DatasetsPage(Page):
         self.layout.addWidget(self.import_status)
         self.import_directory = import_directory
         self._datasets = tuple(datasets)
+        self._trashed_datasets = tuple(trashed_datasets)
         self._latest = latest
         self._show_result = show_result
-        self._records_start = self.layout.count()
+        self._records_host = QWidget()
+        self._records_layout = QVBoxLayout(self._records_host)
+        self._records_layout.setContentsMargins(0, 0, 0, 0)
+        self._records_layout.setSpacing(16)
+        self.layout.addWidget(self._records_host)
         self._records_widgets: list[QWidget] = []
         self._render_records()
         self.layout.addStretch()
 
     def _render_records(self):
-        # Remove only record widgets while keeping title, controls and filters.
         for widget in self._records_widgets:
-            self.layout.removeWidget(widget)
+            self._records_layout.removeWidget(widget)
             widget.deleteLater()
         self._records_widgets = []
         query = self.search.text().strip().casefold()
         source = str(self.source_filter.currentData() or "")
         status = str(self.status_filter.currentData() or "")
-        visible = []
-        for dataset in reversed(self._datasets):
-            haystack = " ".join((dataset.name, dataset.participant, dataset.user_id, dataset.user_name)).casefold()
-            if query and query not in haystack:
-                continue
-            if source and dataset.source.value != source:
-                continue
-            if status and dataset.status != status:
-                continue
-            visible.append(dataset)
+        visible = tuple(dataset for dataset in reversed(self._datasets)
+                        if self._matches(dataset, query, source, status))
         if not visible:
             empty = label(self.tr("datasets.empty"), "muted")
-            self.layout.insertWidget(self.layout.count() - 1, empty)
+            self._records_layout.addWidget(empty)
             self._records_widgets.append(empty)
+        else:
+            for dataset in visible:
+                item = self._dataset_section(dataset, trashed=False)
+                self._records_layout.addWidget(item)
+                self._records_widgets.append(item)
+
+        trash = Section(self.tr("datasets.trash"))
+        trash.setObjectName("datasetsTrashSection")
+        trash_visible = tuple(dataset for dataset in reversed(self._trashed_datasets)
+                              if self._matches(dataset, query, source, status))
+        if not trash_visible:
+            trash.layout.addWidget(label(self.tr("datasets.empty_trash"), "muted"))
+        else:
+            for dataset in trash_visible:
+                trash.layout.addWidget(self._dataset_section(dataset, trashed=True))
+        self._records_layout.addWidget(trash)
+        self._records_widgets.append(trash)
+
+    def _matches(self, dataset: Dataset, query: str, source: str, status: str) -> bool:
+        haystack = " ".join((dataset.name, dataset.participant, dataset.user_id, dataset.user_name)).casefold()
+        return (
+            (not query or query in haystack)
+            and (not source or dataset.source.value == source)
+            and (not status or dataset.status == status)
+        )
+
+    def _dataset_section(self, dataset: Dataset, *, trashed: bool) -> Section:
+        item = Section(dataset.name)
+        item.setObjectName(
+            "datasetTrashItem" if trashed else
+            "latestDataset" if dataset.id == self._latest else "section"
+        )
+        if trashed:
+            item.layout.addWidget(label(self.tr("datasets.deleted_at", value=dataset.deleted_at or "—"), "muted"))
+        elif dataset.protocol == "manual" or dataset.origin == "capture_test":
+            item.layout.addWidget(label(self.tr("result.capture_test"), "muted"))
+        elif dataset.id == self._latest:
+            item.layout.addWidget(label(self.tr("datasets.latest." + dataset.source.value), "muted"))
+        elif dataset.source == CaptureMode.DEMO:
+            item.layout.addWidget(label(self.tr("result.simulated_saved") if dataset.persisted else self.tr("result.simulated"), "muted"))
+        elif dataset.source == CaptureMode.VISUAL_PREVIEW:
+            item.layout.addWidget(label(self.tr("result.preview_saved") if dataset.status == "completed" else self.tr("result." + dataset.status + "_saved"), "muted"))
+        else:
+            item.layout.addWidget(label(self.tr("result." + dataset.source.value + "_saved"), "muted"))
+        item.layout.addWidget(label(self.tr("datasets.details", participant=dataset.participant,
+            duration=format_duration(dataset.recording_seconds), samples=f"{dataset.samples_per_channel:,}",
+            events=dataset.event_count)))
+        item.layout.addWidget(label(
+            self.tr("datasets.user_details", user_id=dataset.user_id or self.tr("users.unlinked"),
+               user_name=dataset.user_name or self.tr("users.unlinked"),
+               status=self.tr("users.link_" + dataset.user_link_status)), "muted"))
+        item.layout.addWidget(label(
+            self.tr("result.capture_test_memory") if dataset.protocol == "manual" or dataset.origin == "capture_test" else str(dataset.path), "path"))
+        controls = QHBoxLayout()
+        if not trashed:
+            controls.addWidget(action(self.tr("action.view_dataset"), lambda _checked=False, d=dataset: self._show_result_callback(d)))
+            controls.addWidget(action(self.tr("datasets.delete"), lambda _checked=False, d=dataset: self._delete_dataset(d)))
+        else:
+            controls.addWidget(action(self.tr("datasets.restore"), lambda _checked=False, d=dataset: self._restore_dataset(d)))
+            controls.addWidget(action(self.tr("datasets.purge"), lambda _checked=False, d=dataset: self._purge_dataset(d)))
+        controls.addStretch()
+        item.layout.addLayout(controls)
+        return item
+
+    def _run_callback(self, name: str, dataset_id: str):
+        callback = self._callbacks.get(name)
+        if callback is None:
             return
-        for dataset in visible:
-            item = Section(dataset.name)
-            item.setObjectName("latestDataset" if dataset.id == self._latest else "section")
-            if dataset.protocol == "manual" or dataset.origin == "capture_test":
-                status_key = "result.capture_test"
-            elif dataset.id == self._latest:
-                status_key = "datasets.latest." + dataset.source.value
-            elif dataset.source == CaptureMode.DEMO:
-                status_key = "result.simulated_saved" if dataset.persisted else "result.simulated"
-            elif dataset.source == CaptureMode.VISUAL_PREVIEW:
-                status_key = "result.preview_saved" if dataset.status == "completed" else "result." + dataset.status + "_saved"
-            else:
-                status_key = "result." + dataset.source.value + "_saved"
-            item.layout.addWidget(label(self.tr(status_key), "muted"))
-            item.layout.addWidget(label(self.tr("datasets.details", participant=dataset.participant,
-                duration=format_duration(dataset.recording_seconds), samples=f"{dataset.samples_per_channel:,}",
-                events=dataset.event_count)))
-            item.layout.addWidget(label(
-                self.tr("datasets.user_details", user_id=dataset.user_id or self.tr("users.unlinked"),
-                   user_name=dataset.user_name or self.tr("users.unlinked"),
-                   status=self.tr("users.link_" + dataset.user_link_status)), "muted"))
-            item.layout.addWidget(label(
-                self.tr("result.capture_test_memory") if dataset.protocol == "manual" or dataset.origin == "capture_test" else str(dataset.path), "path"))
-            item.layout.addWidget(action(self.tr("action.view_dataset"), lambda _checked=False, d=dataset: self._show_result_callback(d)))
-            self.layout.insertWidget(self.layout.count() - 1, item)
-            self._records_widgets.append(item)
+        callback(dataset_id)
+        refresh = self._callbacks.get("refresh")
+        if refresh is not None:
+            refresh()
+
+    def _delete_dataset(self, dataset: Dataset):
+        answer = QMessageBox.question(
+            self,
+            self.tr("datasets.delete_title"),
+            self.tr("datasets.delete_prompt", name=dataset.name),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._run_callback("delete", dataset.id)
+        except (ValueError, RuntimeError) as error:
+            self.import_status.setText(self.tr(str(error)))
+            self.import_status.setVisible(True)
+
+    def _restore_dataset(self, dataset: Dataset):
+        try:
+            self._run_callback("restore", dataset.id)
+        except (ValueError, RuntimeError) as error:
+            self.import_status.setText(self.tr(str(error)))
+            self.import_status.setVisible(True)
+
+    def _purge_dataset(self, dataset: Dataset):
+        answer = QMessageBox.question(
+            self,
+            self.tr("datasets.purge_title"),
+            self.tr("datasets.purge_prompt", name=dataset.name),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._run_callback("purge", dataset.id)
+        except (ValueError, RuntimeError) as error:
+            self.import_status.setText(self.tr(str(error)))
+            self.import_status.setVisible(True)
 
     def _show_result_callback(self, dataset):
         self._show_result(dataset)

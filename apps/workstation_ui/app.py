@@ -373,6 +373,13 @@ class MainWindow(QMainWindow):
                 search_text=self._dataset_search,
                 source_value=self._dataset_source,
                 status_value=self._dataset_status,
+                trashed_datasets=self.gateway.trashed_datasets,
+                callbacks={
+                    "delete": self.gateway.delete_dataset,
+                    "restore": self.gateway.restore_dataset,
+                    "purge": self.gateway.purge_dataset,
+                    "refresh": self.refresh_datasets,
+                },
             )
             page.import_requested.connect(self._start_import)
             page.filter_changed.connect(self._dataset_filters_changed)
@@ -399,6 +406,11 @@ class MainWindow(QMainWindow):
         self._dataset_search = search
         self._dataset_source = source
         self._dataset_status = status
+
+    def refresh_datasets(self):
+        self.gateway.refresh_datasets()
+        if self.current_page == "datasets":
+            self.navigate("datasets")
 
     def change_language(self, locale: str):
         if locale == self.tr.locale:

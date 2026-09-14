@@ -51,6 +51,7 @@ class DatasetRecord:
     user_id: str = ""
     user_name: str = ""
     user_link_status: str = "unlinked"
+    deleted_at: str = ""
 
 
 @dataclass(frozen=True)
@@ -64,7 +65,11 @@ class _RawFileStatistics:
 
 class DatasetRepository:
     def __init__(self, root: Path):
-        self.root = root
+        self.root = Path(root).expanduser().resolve()
+
+    @property
+    def trash_root(self) -> Path:
+        return self.root / "Trash" / "Datasets"
 
     @staticmethod
     def default_root() -> Path:
@@ -226,76 +231,224 @@ class DatasetRepository:
     def list_records(self) -> list[DatasetRecord]:
         if not self.root.exists():
             return []
-        records: list[DatasetRecord] = []
-        session_paths = list(self.root.glob("session_*/session.json"))
-        session_paths.extend((self.root / "imports").glob("*/session.json"))
-        for session_path in session_paths:
-            try:
-                value = json.loads(session_path.read_text(encoding="utf-8"))
-                output_dir = Path(value.get("output_dir") or session_path.parent)
-                duration = float(
-                    value.get("duration_s", value.get("recording_duration_s", 0))
-                )
-                sampling_rate = int(value.get("sampling_rate_hz", 250))
-                expected_duration = float(value.get("expected_duration_s", duration))
-                if value.get("source"):
-                    source = str(value["source"])
-                elif value.get("board") == "synthetic":
-                    source = "synthetic"
-                elif value.get("board") == "cyton":
-                    source = "cyton"
-                else:
-                    source = "demo" if value.get("simulated", False) else "cyton"
-                imported = bool(
-                    value.get("imported", False)
-                    or value.get("origin") == "imported_openbci"
-                    or source == "imported_openbci"
-                )
-                records.append(
-                    DatasetRecord(
-                        session_id=str(value.get("session_id") or session_path.parent.name),
-                        status=str(value.get("status") or "completed"),
-                        participant_id=str(value.get("participant_id") or ""),
-                        session_name=str(value.get("session_name") or session_path.parent.name),
-                        output_dir=output_dir,
-                        duration_s=duration,
-                        completed_trials=int(value.get("completed_trials", 0)),
-                        expected_samples_per_channel=int(
-                            value.get(
-                                "expected_samples_per_channel",
-                                round(expected_duration * sampling_rate),
-                            )
-                        ),
-                        recorded_samples_per_channel=int(
-                            value.get("recorded_samples_per_channel", 0)
-                        ),
-                        event_count=int(value.get("event_count", 0)),
-                        simulated=bool(value.get("simulated", False)),
-                        source=source,
-                        sampling_rate_hz=sampling_rate,
-                        channel_count=int(value.get("channel_count", 8) or 8),
-                        files=DatasetRepository._record_file_names(value),
-                        source_path=str(
-                            value.get("source_path")
-                            or value.get("source_directory")
-                            or ""
-                        ),
-                        imported=imported,
-                        origin=str(
-                            value.get(
-                                "origin",
-                                "imported_openbci" if imported else "acquired",
-                            )
-                        ),
-                        fingerprint=str(value.get("fingerprint") or ""),
-                        user_id=str(value.get("user_id") or ""),
-                        user_name=str(value.get("user_name") or ""),
-                        user_link_status=str(value.get("user_link_status") or ("active" if value.get("user_id") else "unlinked")),
-                    )
-                )
-            except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
-                continue
+        records = [
+            record
+            for path in self._active_session_paths()
+            if (record := self._read_record(path, force_path=path.parent)) is not None
+        ]
         return sorted(records, key=lambda item: item.session_id, reverse=True)
+
+    def list_trashed_records(self) -> list[DatasetRecord]:
+        """Return dataset directories moved to the recoverable trash."""
+
+        if not self.trash_root.is_dir():
+            return []
+        records = [
+            record
+            for path in sorted(self.trash_root.glob("*/session.json"))
+            if (record := self._read_record(path, force_path=path.parent)) is not None
+        ]
+        return sorted(
+            records, key=lambda item: item.deleted_at or item.session_id, reverse=True
+        )
+
+    def delete_record(self, session_id: str) -> DatasetRecord:
+        source = self._find_active_session_path(session_id)
+        if source is None:
+            raise ValueError("validation.dataset_not_found")
+        source = self._checked_path(source, self.root)
+        target = self.trash_root / source.name
+        if target.exists():
+            raise RuntimeError("validation.dataset_trash_exists")
+        self.trash_root.mkdir(parents=True, exist_ok=True)
+        session_path = source / "session.json"
+        value = self._read_session_value(session_path)
+        now = datetime.now().astimezone().isoformat(timespec="milliseconds")
+        value["trash_original_path"] = str(source)
+        value["output_dir"] = str(target)
+        value["deleted_at"] = now
+        self._write_session_value(session_path, value)
+        try:
+            shutil.move(str(source), str(target))
+        except OSError:
+            # Restore metadata when the move itself fails so a retry does not
+            # leave an active record looking like it is already trashed.
+            value["output_dir"] = str(source)
+            value.pop("trash_original_path", None)
+            value.pop("deleted_at", None)
+            try:
+                self._write_session_value(session_path, value)
+            except OSError:
+                pass
+            raise
+        record = self._read_record(target / "session.json", force_path=target)
+        if record is None:
+            raise RuntimeError("validation.dataset_invalid")
+        return record
+
+    def restore_record(self, session_id: str) -> DatasetRecord:
+        source = self._find_trashed_session_path(session_id)
+        if source is None:
+            raise ValueError("validation.dataset_not_found")
+        source = self._checked_path(source, self.trash_root)
+        value = self._read_session_value(source / "session.json")
+        original_value = str(value.get("trash_original_path") or "").strip()
+        if not original_value:
+            raise RuntimeError("validation.dataset_restore_path")
+        original = self._checked_path(Path(original_value), self.root)
+        if original.is_relative_to(self.trash_root.resolve()):
+            raise RuntimeError("validation.dataset_restore_path")
+        if original.exists():
+            raise RuntimeError("validation.dataset_restore_conflict")
+        original.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(source), str(original))
+        value["output_dir"] = str(original)
+        value.pop("trash_original_path", None)
+        value.pop("deleted_at", None)
+        self._write_session_value(original / "session.json", value)
+        record = self._read_record(original / "session.json", force_path=original)
+        if record is None:
+            raise RuntimeError("validation.dataset_invalid")
+        return record
+
+    def purge_record(self, session_id: str) -> None:
+        source = self._find_trashed_session_path(session_id)
+        if source is None:
+            raise ValueError("validation.dataset_not_found")
+        source = self._checked_path(source, self.trash_root)
+        shutil.rmtree(source)
+
+    def delete_dataset(self, dataset_id: str) -> DatasetRecord:
+        return self.delete_record(dataset_id)
+
+    def restore_dataset(self, dataset_id: str) -> DatasetRecord:
+        return self.restore_record(dataset_id)
+
+    def purge_dataset(self, dataset_id: str) -> None:
+        self.purge_record(dataset_id)
+
+    def _active_session_paths(self) -> list[Path]:
+        paths = list(self.root.glob("session_*/session.json"))
+        paths.extend((self.root / "imports").glob("*/session.json"))
+        return paths
+
+    def _find_active_session_path(self, session_id: str) -> Path | None:
+        wanted = str(session_id)
+        for path in self._active_session_paths():
+            if path.parent.name == wanted:
+                return path.parent
+            try:
+                value = self._read_session_value(path)
+            except (OSError, ValueError, json.JSONDecodeError):
+                continue
+            if str(value.get("session_id") or "") == wanted:
+                return path.parent
+        return None
+
+    def _find_trashed_session_path(self, session_id: str) -> Path | None:
+        wanted = str(session_id)
+        for path in self.trash_root.glob("*/session.json"):
+            if path.parent.name == wanted:
+                return path.parent
+            try:
+                value = self._read_session_value(path)
+            except (OSError, ValueError, json.JSONDecodeError):
+                continue
+            if str(value.get("session_id") or "") == wanted:
+                return path.parent
+        return None
+
+    @staticmethod
+    def _checked_path(path: Path, parent: Path) -> Path:
+        resolved = path.expanduser().resolve()
+        root = parent.expanduser().resolve()
+        if resolved == root or not resolved.is_relative_to(root):
+            raise RuntimeError("validation.dataset_path")
+        return resolved
+
+    @staticmethod
+    def _read_session_value(path: Path) -> dict[str, Any]:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(value, dict):
+            raise ValueError("session metadata must be an object")
+        return value
+
+    @staticmethod
+    def _write_session_value(path: Path, value: dict[str, Any]) -> None:
+        pending = path.with_name(path.name + ".pending")
+        pending.write_text(
+            json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        pending.replace(path)
+
+    @classmethod
+    def _read_record(
+        cls, session_path: Path, *, force_path: Path | None = None
+    ) -> DatasetRecord | None:
+        try:
+            value = cls._read_session_value(session_path)
+            output_dir = (
+                force_path or Path(value.get("output_dir") or session_path.parent)
+            ).resolve()
+            duration = float(
+                value.get("duration_s", value.get("recording_duration_s", 0))
+            )
+            sampling_rate = int(value.get("sampling_rate_hz", 250))
+            expected_duration = float(value.get("expected_duration_s", duration))
+            if value.get("source"):
+                source = str(value["source"])
+            elif value.get("board") == "synthetic":
+                source = "synthetic"
+            elif value.get("board") == "cyton":
+                source = "cyton"
+            else:
+                source = "demo" if value.get("simulated", False) else "cyton"
+            imported = bool(
+                value.get("imported", False)
+                or value.get("origin") == "imported_openbci"
+                or source == "imported_openbci"
+            )
+            return DatasetRecord(
+                session_id=str(value.get("session_id") or session_path.parent.name),
+                status=str(value.get("status") or "completed"),
+                participant_id=str(value.get("participant_id") or ""),
+                session_name=str(value.get("session_name") or session_path.parent.name),
+                output_dir=output_dir,
+                duration_s=duration,
+                completed_trials=int(value.get("completed_trials", 0)),
+                expected_samples_per_channel=int(
+                    value.get(
+                        "expected_samples_per_channel",
+                        round(expected_duration * sampling_rate),
+                    )
+                ),
+                recorded_samples_per_channel=int(
+                    value.get("recorded_samples_per_channel", 0)
+                ),
+                event_count=int(value.get("event_count", 0)),
+                simulated=bool(value.get("simulated", False)),
+                source=source,
+                sampling_rate_hz=sampling_rate,
+                channel_count=int(value.get("channel_count", 8) or 8),
+                files=cls._record_file_names(value),
+                source_path=str(
+                    value.get("source_path") or value.get("source_directory") or ""
+                ),
+                imported=imported,
+                origin=str(
+                    value.get("origin", "imported_openbci" if imported else "acquired")
+                ),
+                fingerprint=str(value.get("fingerprint") or ""),
+                user_id=str(value.get("user_id") or ""),
+                user_name=str(value.get("user_name") or ""),
+                user_link_status=str(
+                    value.get("user_link_status")
+                    or ("active" if value.get("user_id") else "unlinked")
+                ),
+                deleted_at=str(value.get("deleted_at") or ""),
+            )
+        except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
+            return None
 
     @staticmethod
     def _openbci_session_directories(source_root: Path) -> list[Path]:

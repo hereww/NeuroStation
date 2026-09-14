@@ -159,6 +159,21 @@ class WorkstationGateway:
     def list_datasets(self) -> list[dict]:
         return [self._serialize_record(record) for record in self.repository.list_records()]
 
+    def list_trashed_datasets(self) -> list[dict]:
+        return [
+            self._serialize_record(record)
+            for record in self.repository.list_trashed_records()
+        ]
+
+    def delete_dataset(self, dataset_id: str) -> dict:
+        return self._serialize_record(self.repository.delete_record(dataset_id))
+
+    def restore_dataset(self, dataset_id: str) -> dict:
+        return self._serialize_record(self.repository.restore_record(dataset_id))
+
+    def purge_dataset(self, dataset_id: str) -> None:
+        self.repository.purge_record(dataset_id)
+
     def import_openbci_recordings(self, source_root: Path):
         return self.repository.import_openbci_recordings(source_root)
 

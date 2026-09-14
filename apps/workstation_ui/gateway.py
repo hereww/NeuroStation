@@ -139,6 +139,7 @@ class MockGateway:
         self.config = CaptureConfig()
         self._snapshot = TaskSnapshot()
         self._datasets: list[Dataset] = []
+        self._trashed_datasets: list[Dataset] = []
         self._task_start = 0.0
         self._run_start = 0.0
         self._manual_markers = 0
@@ -151,6 +152,10 @@ class MockGateway:
     @property
     def datasets(self) -> tuple[Dataset, ...]:
         return tuple(self._datasets)
+
+    @property
+    def trashed_datasets(self) -> tuple[Dataset, ...]:
+        return tuple(self._trashed_datasets)
 
     @property
     def users(self) -> tuple[UserProfile, ...]:
@@ -212,6 +217,34 @@ class MockGateway:
 
     def refresh_datasets(self) -> None:
         return None
+
+    def delete_dataset(self, dataset_id: str) -> Dataset:
+        self._ensure_available()
+        for index, dataset in enumerate(self._datasets):
+            if dataset.id == dataset_id:
+                deleted = replace(dataset, deleted_at=_now())
+                self._trashed_datasets.append(deleted)
+                self._datasets.pop(index)
+                return deleted
+        raise ValueError("validation.dataset_not_found")
+
+    def restore_dataset(self, dataset_id: str) -> Dataset:
+        self._ensure_available()
+        for index, dataset in enumerate(self._trashed_datasets):
+            if dataset.id == dataset_id:
+                restored = replace(dataset, deleted_at="")
+                self._datasets.append(restored)
+                self._trashed_datasets.pop(index)
+                return restored
+        raise ValueError("validation.dataset_not_found")
+
+    def purge_dataset(self, dataset_id: str) -> None:
+        self._ensure_available()
+        for index, dataset in enumerate(self._trashed_datasets):
+            if dataset.id == dataset_id:
+                self._trashed_datasets.pop(index)
+                return
+        raise ValueError("validation.dataset_not_found")
 
     def scan_serial_ports(self) -> tuple[dict[str, str], ...]:
         return ()

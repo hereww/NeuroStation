@@ -63,6 +63,7 @@ class MetadataSimulationGateway:
         self._service: WorkstationGateway | None = None
         self._manual_markers = 0
         self._datasets: list[Dataset] = []
+        self._trashed_transient: list[Dataset] = []
         self._task_started_at = 0.0
         self._last_result_id: str | None = None
         self._openbci = OpenBCIWorkspaceManager(ROOT)
@@ -76,6 +77,14 @@ class MetadataSimulationGateway:
     @property
     def datasets(self) -> tuple[Dataset, ...]:
         return tuple(self._datasets)
+
+    @property
+    def trashed_datasets(self) -> tuple[Dataset, ...]:
+        persisted = tuple(
+            self._dataset_from_record(record)
+            for record in reversed(self.repository.list_trashed_records())
+        )
+        return persisted + tuple(self._trashed_transient)
 
     @property
     def users(self) -> tuple[UserProfile, ...]:
@@ -347,6 +356,44 @@ class MetadataSimulationGateway:
         for dataset in transient:
             self._remember(dataset)
 
+    def delete_dataset(self, dataset_id: str) -> Dataset:
+        self._ensure_available()
+        for index, dataset in enumerate(self._datasets):
+            if dataset.id == dataset_id and not dataset.persisted:
+                deleted = replace(
+                    dataset,
+                    deleted_at=datetime.now(timezone.utc).astimezone().isoformat(
+                        timespec="milliseconds"
+                    ),
+                )
+                self._trashed_transient.append(deleted)
+                self._datasets.pop(index)
+                return deleted
+        record = self.repository.delete_record(dataset_id)
+        self.refresh_datasets()
+        return self._dataset_from_record(record)
+
+    def restore_dataset(self, dataset_id: str) -> Dataset:
+        self._ensure_available()
+        for index, dataset in enumerate(self._trashed_transient):
+            if dataset.id == dataset_id:
+                restored = replace(dataset, deleted_at="")
+                self._datasets.append(restored)
+                self._trashed_transient.pop(index)
+                return restored
+        record = self.repository.restore_record(dataset_id)
+        self.refresh_datasets()
+        return self._dataset_from_record(record)
+
+    def purge_dataset(self, dataset_id: str) -> None:
+        self._ensure_available()
+        for index, dataset in enumerate(self._trashed_transient):
+            if dataset.id == dataset_id:
+                self._trashed_transient.pop(index)
+                return
+        self.repository.purge_record(dataset_id)
+        self.refresh_datasets()
+
     def _remember(self, dataset: Dataset) -> None:
         if any(existing.id == dataset.id for existing in self._datasets):
             return
@@ -414,6 +461,7 @@ class MetadataSimulationGateway:
             timestamp_gap_count=int(quality.get("timestamp_gap_count", 0) or 0),
             dropped_frame_count=int(quality.get("dropped_frame_count", 0) or 0),
             flat_channel_count=flat_channel_count,
+            deleted_at=record.deleted_at,
         )
 
 
@@ -469,6 +517,10 @@ class DesktopGateway:
     @property
     def trashed_users(self) -> tuple[UserProfile, ...]:
         return self._simulation.trashed_users
+
+    @property
+    def trashed_datasets(self) -> tuple[Dataset, ...]:
+        return self._simulation.trashed_datasets
 
     def next_user_id(self) -> str:
         return self._simulation.next_user_id()
@@ -572,6 +624,23 @@ class DesktopGateway:
 
     def refresh_datasets(self) -> None:
         self._simulation.refresh_datasets()
+
+    def delete_dataset(self, dataset_id: str) -> Dataset:
+        self._ensure_available()
+        result = self._simulation.delete_dataset(dataset_id)
+        self._acquisition.discard_dataset(dataset_id)
+        return result
+
+    def restore_dataset(self, dataset_id: str) -> Dataset:
+        self._ensure_available()
+        result = self._simulation.restore_dataset(dataset_id)
+        self._acquisition.discard_dataset(dataset_id)
+        return result
+
+    def purge_dataset(self, dataset_id: str) -> None:
+        self._ensure_available()
+        self._simulation.purge_dataset(dataset_id)
+        self._acquisition.discard_dataset(dataset_id)
 
     def scan_serial_ports(self) -> tuple[dict[str, str], ...]:
         return tuple(item.as_dict() for item in discover_serial_ports())

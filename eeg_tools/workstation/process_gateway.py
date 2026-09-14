@@ -70,6 +70,11 @@ class AcquisitionProcessGateway:
     def datasets(self) -> tuple[Dataset, ...]:
         return tuple(self._datasets)
 
+    def discard_dataset(self, dataset_id: str) -> None:
+        self._datasets = [
+            dataset for dataset in self._datasets if dataset.id != dataset_id
+        ]
+
     @staticmethod
     def _is_bundled_executable() -> bool:
         main_module = sys.modules.get("__main__")
