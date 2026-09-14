@@ -131,7 +131,9 @@ def main() -> int:
     if arguments.diagnostics:
         report = build_diagnostics(gateway)
         report["root"] = str(ROOT)
-        print(json.dumps(report, ensure_ascii=False, indent=2))
+        # Keep diagnostics machine-readable on Windows consoles and pipes
+        # whose active code page cannot encode the localized report.
+        print(json.dumps(report, ensure_ascii=True, indent=2))
         return 0
     try:
         from PySide6.QtCore import QTimer
