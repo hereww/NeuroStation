@@ -112,11 +112,27 @@ try {
         if ($isWindowsPlatform -and $Mode -eq "standalone") {
             $brainflowSource = Join-Path $venvRoot "Lib\site-packages\brainflow\lib"
             $brainflowDestination = Join-Path $artifact "brainflow\lib"
-            if (-not (Test-Path -LiteralPath (Join-Path $brainflowSource "BoardController.dll"))) {
+            $brainflowLibraries = @(Get-ChildItem -LiteralPath $brainflowSource -Filter "*.dll" -File)
+            if (-not $brainflowLibraries) {
                 throw "BrainFlow native runtime is missing from the build environment."
             }
             New-Item -ItemType Directory -Force -Path $brainflowDestination | Out-Null
-            Copy-Item -Path (Join-Path $brainflowSource "*") -Destination $brainflowDestination -Force
+            $brainflowLibraries | ForEach-Object {
+                Copy-Item -LiteralPath $_.FullName -Destination $brainflowDestination -Force
+            }
+        }
+
+        if ($isMacPlatform -and $Mode -eq "standalone") {
+            $brainflowSource = Join-Path $venvRoot "lib/python$pythonVersion/site-packages/brainflow/lib"
+            $brainflowDestination = Join-Path $artifact "brainflow/lib"
+            $brainflowLibraries = @(Get-ChildItem -LiteralPath $brainflowSource -Filter "*.dylib" -File)
+            if (-not $brainflowLibraries) {
+                throw "BrainFlow native runtime is missing from the build environment."
+            }
+            New-Item -ItemType Directory -Force -Path $brainflowDestination | Out-Null
+            $brainflowLibraries | ForEach-Object {
+                Copy-Item -LiteralPath $_.FullName -Destination $brainflowDestination -Force
+            }
         }
 
         if ($isWindowsPlatform -and $Mode -eq "standalone") {
