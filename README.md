@@ -23,6 +23,7 @@ Windows 包是可直接解压运行的目录，不是 MSI 安装器，也不包�
 - 新增 Windows 用户注册表 DPAPI 保护，并明确非 Windows plaintext fallback；
 - 新增会话验证模式、协议/通道配置 hash、质量状态、掉帧、时间戳间隔和平线通道统计；
 - 新增数据集搜索与来源/状态筛选，以及诊断中的显示器、DPI、刷新率信息；
+- 工作台新增“诊断”页：检查依赖、配置、资源、保存目录和串口，记录 UI/任务/预检/导入事件，并支持导出 JSON 报告；
 - 新增 UI scale matrix、SBOM 生成和 packaged smoke 校验；
 - 修复 Windows 构建平台检测、正式 Cyton 绕过预检、草稿配置阻断和发布包证据缺失问题。
 
@@ -63,6 +64,8 @@ python workstation.py
 ```
 
 默认界面为中文。英文界面使用 `--language en-US`；测试或隔离数据时可使用 `--dataset-root` 指定输出目录。
+
+开发调试时可从左侧“诊断”页刷新检查、查看最近事件、清空事件或导出报告。持久化事件日志默认位于 `Documents\NeuroStation\Diagnostics\workstation-events.jsonl`；命令行 `--diagnostics` 使用同一套报告生成逻辑，适合无界面环境和打包后检查。
 
 独立 UI 入口也可以直接运行：
 
@@ -126,6 +129,7 @@ python run_ssvep_session.py `
 | 文件 | 内容 |
 | --- | --- |
 | `raw_brainflow.tsv` | BrainFlow 原始矩阵，包括 EEG、时间戳和 marker 通道 |
+| `raw_columns.tsv` | 原始矩阵列头、BrainFlow row、单位、角色和意义 |
 | `events.tsv` | 试次、目标、频率、marker 和本机时间 |
 | `session.json` | 状态、设备、采样数、参与者标识和版本信息 |
 | `ssvep_config.json` | 本次实际使用的协议副本 |
@@ -133,6 +137,19 @@ python run_ssvep_session.py `
 | `quality.json` | 有效比例、RMS、采样数、时间戳和掉帧摘要 |
 | `frame_timing.tsv` | 视觉预览/刺激帧的计划时间和实际时间 |
 | `manifest.csv` | 输出文件大小和 SHA-256 清单 |
+
+新采集会话中的 `events.tsv` 会区分 `presented_target_id`（软件呈现目标）、
+`gaze_target_id`（人工/自报标记）和 `eeg_predicted_target_id`（离线算法推断）。
+其中只有第一项是软件流程事实，后两项不能冒充眼动真值。完整的列定义、同步模型、
+理论依据和离线分析流程见 [`docs/离线分析与目标标记审计.md`](docs/离线分析与目标标记审计.md)。
+
+对已有会话运行透明的 NumPy FFT 基线：
+
+```powershell
+python analyze_ssvep_session.py .\path\to\session_YYYYMMDD_HHMMSS_mmm
+```
+
+分析只生成 `analysis.json` 和 `trial_features.tsv`，不会改写原始 EEG。
 
 原始 EEG 和通道配置可能包含敏感信息。录制目录、会话目录以及本地正式通道配置已加入 `.gitignore`，不要把真实参与者数据提交到 Git 仓库。
 
@@ -201,6 +218,7 @@ GitHub Actions 的职责分工如下：
 ```text
 .
 ├── workstation.py                 # 集成桌面工作站入口
+├── neurostation_diagnostics.py    # 诊断检查、事件日志和报告导出
 ├── apps/workstation_ui/           # PySide6 UI、页面和中英文词条
 ├── eeg_tools/workstation/          # 协议、worker、网关、设备和数据集逻辑
 ├── configs/                        # SSVEP 协议和 Cyton 通道配置

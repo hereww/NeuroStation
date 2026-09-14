@@ -293,7 +293,7 @@ class MetadataSimulationGateway:
             resting = within >= protocol.pre_trial_rest_s + protocol.stimulus_s
         event_count = 0
         if phase is Phase.RUNNING and trial_index is not None:
-            event_count = 2 + trial_index * 2 + int(resting)
+            event_count = 3 + trial_index * 2 + int(resting)
         elif phase is Phase.COMPLETED and protocol:
             event_count = protocol.expected_event_count
         result = None

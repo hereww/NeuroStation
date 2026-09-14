@@ -54,10 +54,12 @@ class SSVEPProtocol:
     repetitions: int
     random_seed: int
     session_start_marker: int
+    acquisition_start_marker: int
     session_end_marker: int
     abort_marker: int
     onset_marker_base: int
     offset_marker_base: int
+    gaze_marker_base: int
     source: Path | None = None
 
     @classmethod
@@ -156,6 +158,9 @@ class SSVEPProtocol:
             session_start_marker=_positive_integer(
                 events.get("session_start"), "events.session_start"
             ),
+            acquisition_start_marker=_positive_integer(
+                events.get("acquisition_start"), "events.acquisition_start"
+            ),
             session_end_marker=_positive_integer(
                 events.get("session_end"), "events.session_end"
             ),
@@ -165,6 +170,9 @@ class SSVEPProtocol:
             ),
             offset_marker_base=_positive_integer(
                 events.get("stimulus_offset_base"), "events.stimulus_offset_base"
+            ),
+            gaze_marker_base=_positive_integer(
+                events.get("gaze_target_base"), "events.gaze_target_base"
             ),
             source=source,
         )
@@ -200,7 +208,7 @@ class SSVEPProtocol:
 
     @property
     def expected_event_count(self) -> int:
-        return 2 + self.trial_count * 2
+        return 3 + self.trial_count * 2
 
     def build_trials(self) -> tuple[SSVEPTrial, ...]:
         ordered = list(self.targets) * self.repetitions

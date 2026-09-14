@@ -31,11 +31,13 @@
     "random_seed": 20260910
   },
   "events": {
+    "acquisition_start": 10,
     "session_start": 1,
     "session_end": 2,
     "abort": 99,
     "stimulus_onset_base": 100,
-    "stimulus_offset_base": 200
+    "stimulus_offset_base": 200,
+    "gaze_target_base": 300
   },
   "status": "draft_for_workstation_mvp"
 }

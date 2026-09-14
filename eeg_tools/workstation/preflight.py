@@ -59,7 +59,8 @@ def run_cyton_preflight(
     if params is None:
         from brainflow.board_shim import BrainFlowInputParams
         params = BrainFlowInputParams()
-    if prepare_board is None:
+    default_prepare = prepare_board is None
+    if default_prepare:
         from .acquisition_worker import _prepare_cyton_board
         prepare_board = _prepare_cyton_board
 
@@ -69,13 +70,45 @@ def run_cyton_preflight(
     streaming = False
     selected_port = ""
     try:
-        board, selected_port, failures = prepare_board(
-            board_ids.CYTON_BOARD, params, requested_port
-        )
+        # A Cyton radio link can miss the first welcome window immediately
+        # after a previous session is released. The production prepare helper
+        # retries each candidate itself; injected test adapters use this small
+        # wrapper so transient failures remain covered without coupling the
+        # test contract to the production helper's optional arguments.
+        prepare_failures: list[dict[str, str]] = []
+        failures: list[dict[str, str]] = []
+        if default_prepare:
+            board, selected_port, failures = prepare_board(
+                board_ids.CYTON_BOARD, params, requested_port
+            )
+        else:
+            for attempt in range(3):
+                failures = []
+                try:
+                    board, selected_port, failures = prepare_board(
+                        board_ids.CYTON_BOARD, params, requested_port
+                    )
+                    break
+                except Exception as error:
+                    prepare_failures.extend(
+                        [{**item, "attempt": str(attempt + 1)} for item in failures]
+                        if failures
+                        else [{
+                            "port": str(requested_port),
+                            "error": f"{type(error).__name__}: {error}",
+                            "attempt": str(attempt + 1),
+                        }]
+                    )
+                    if attempt == 2:
+                        raise
+                    sleep_fn(0.5)
         prepared = True
         checks.append(PreflightCheck(
             "handshake", "passed", "Cyton handshake succeeded.",
-            {"attempt_failures": failures, "selected_port": selected_port},
+            {
+                "attempt_failures": prepare_failures + failures,
+                "selected_port": selected_port,
+            },
         ))
         board.start_stream()
         streaming = True
@@ -96,28 +129,141 @@ def run_cyton_preflight(
         timestamps = data[timestamp_channel, :]
         finite_timestamps = timestamps[np.isfinite(timestamps)]
         diffs = np.diff(finite_timestamps)
-        gaps = int(np.sum(diffs > (1.5 / sampling_rate))) if len(diffs) else 0
+        positive_diffs = diffs[diffs > 0]
+        gap_threshold_s = 1.5 / sampling_rate
+        gaps = int(np.sum(diffs > gap_threshold_s)) if len(diffs) else 0
+        gap_ratio = float(gaps / len(diffs)) if len(diffs) else 0.0
+        max_gap_s = float(np.max(positive_diffs)) if len(positive_diffs) else 0.0
+        non_monotonic = int(np.sum(diffs <= 0)) if len(diffs) else 0
+        timestamp_missing = len(finite_timestamps) != len(timestamps)
+        if timestamp_missing or non_monotonic:
+            timestamp_status = "failed"
+        elif gap_ratio >= 0.05 or max_gap_s >= 1.0:
+            timestamp_status = "failed"
+        elif gap_ratio >= 0.01 or max_gap_s >= 0.5:
+            timestamp_status = "degraded"
+        elif gaps:
+            timestamp_status = "warning"
+        else:
+            timestamp_status = "passed"
+
+        # OpenBCI GUI tracks Cyton packet loss from the board's sample index,
+        # not from host arrival timestamps. BrainFlow exposes that value as
+        # package_num; keep it separate so bursty delivery does not get
+        # misreported as dropped EEG samples.
+        packet_metrics: dict[str, Any] = {
+            "packet_sequence_available": False,
+            "packet_loss_count": 0,
+            "packet_loss_ratio": 0.0,
+            "packet_sequence_mismatch_count": 0,
+            "packet_duplicate_count": 0,
+        }
+        try:
+            package_channel = int(
+                board_shim.get_package_num_channel(board_ids.CYTON_BOARD)
+            )
+        except (AttributeError, TypeError, ValueError):
+            package_channel = -1
+        if 0 <= package_channel < data.shape[0]:
+            package_values = np.asarray(data[package_channel, :], dtype=float)
+            finite_packages = package_values[np.isfinite(package_values)]
+            if len(finite_packages) > 1:
+                package_numbers = np.rint(finite_packages).astype(int) % 256
+                deltas = (package_numbers[1:] - package_numbers[:-1]) % 256
+                expected = (package_numbers[:-1] + 1) % 256
+                mismatches = package_numbers[1:] != expected
+                positive_jumps = deltas[mismatches][deltas[mismatches] > 0]
+                lost_count = int(np.sum(positive_jumps - 1)) if len(positive_jumps) else 0
+                duplicate_count = int(np.sum(deltas == 0))
+                mismatch_count = int(np.sum(mismatches))
+                packet_metrics = {
+                    "packet_sequence_available": True,
+                    "packet_loss_count": lost_count,
+                    "packet_loss_ratio": float(
+                        lost_count / (len(package_numbers) - 1)
+                    ),
+                    "packet_sequence_mismatch_count": mismatch_count,
+                    "packet_duplicate_count": duplicate_count,
+                }
+        timestamp_detail = (
+            "Timestamp stream is continuous."
+            if timestamp_status == "passed" else
+            f"Detected {gaps} timestamp gaps ({gap_ratio:.1%}); "
+            f"maximum interval {max_gap_s * 1000:.1f} ms."
+        )
+        if timestamp_missing:
+            timestamp_detail += f" {len(timestamps) - len(finite_timestamps)} non-finite timestamps."
+        if non_monotonic:
+            timestamp_detail += f" {non_monotonic} non-monotonic intervals."
         checks.append(PreflightCheck(
-            "timestamps", "passed" if gaps == 0 else "warning",
-            "Timestamp stream is continuous." if gaps == 0 else f"Detected {gaps} timestamp gaps.",
-            {"timestamp_gap_count": gaps},
+            "timestamps", timestamp_status,
+            timestamp_detail,
+            {
+                "timestamp_gap_count": gaps,
+                "timestamp_gap_ratio": gap_ratio,
+                "timestamp_gap_threshold_s": gap_threshold_s,
+                "timestamp_diff_max_s": max_gap_s,
+                "timestamp_non_monotonic_count": non_monotonic,
+                "timestamp_missing": timestamp_missing,
+                **packet_metrics,
+            },
         ))
+        if packet_metrics["packet_sequence_available"]:
+            packet_loss_count = int(packet_metrics["packet_loss_count"])
+            packet_mismatch_count = int(packet_metrics["packet_sequence_mismatch_count"])
+            packet_duplicate_count = int(packet_metrics["packet_duplicate_count"])
+            packet_warning = bool(packet_loss_count or packet_mismatch_count or packet_duplicate_count)
+            packet_detail = (
+                "Packet sequence is continuous."
+                if not packet_warning
+                else (
+                    f"Detected {packet_loss_count} lost samples, "
+                    f"{packet_mismatch_count} sequence mismatches, "
+                    f"and {packet_duplicate_count} duplicates."
+                )
+            )
+            checks.append(PreflightCheck(
+                "packet_sequence",
+                "warning" if packet_warning else "passed",
+                packet_detail,
+                packet_metrics,
+            ))
         channel_metrics = []
         quality_warning = False
-        for index in eeg_channels:
+        warning_channels: list[int] = []
+        for channel_number, index in enumerate(eeg_channels, start=1):
             values = data[index, :]
             finite = values[np.isfinite(values)]
             differences = np.diff(finite)
             flat_fraction = float(np.mean(np.abs(differences) < 1e-9)) if len(differences) else 1.0
-            if flat_fraction >= 0.95:
+            saturation_fraction = (
+                float(np.mean(finite <= -187000.0)) if len(finite) else 0.0
+            )
+            if flat_fraction >= 0.95 or saturation_fraction >= 0.95:
                 quality_warning = True
-            channel_metrics.append({"flat_fraction": flat_fraction, "finite_fraction": float(np.mean(np.isfinite(values)))})
+                warning_channels.append(channel_number)
+            channel_metrics.append({
+                "channel": channel_number,
+                "flat_fraction": flat_fraction,
+                "saturation_fraction": saturation_fraction,
+                "finite_fraction": float(np.mean(np.isfinite(values))),
+            })
         checks.append(PreflightCheck(
             "channels", "warning" if quality_warning else "passed",
-            "At least one channel appears mostly flat." if quality_warning else "Channel samples are finite and changing.",
-            {"channel_count": len(eeg_channels), "channels": channel_metrics},
+            "At least one channel appears mostly flat or saturated." if quality_warning else "Channel samples are finite and changing.",
+            {
+                "channel_count": len(eeg_channels),
+                "warning_channels": warning_channels,
+                "channels": channel_metrics,
+            },
         ))
-        overall = "warning" if any(item.status == "warning" for item in checks) else "passed"
+        statuses = {item.status for item in checks}
+        overall = (
+            "failed" if "failed" in statuses else
+            "degraded" if "degraded" in statuses else
+            "warning" if "warning" in statuses else
+            "passed"
+        )
         return PreflightReport(overall, requested_port, selected_port, tuple(checks))
     except Exception as error:
         checks.append(PreflightCheck("connection", "failed", f"{type(error).__name__}: {error}"))

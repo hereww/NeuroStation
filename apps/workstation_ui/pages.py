@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import math
 import re
+from typing import Any
 
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtWidgets import (
@@ -463,6 +464,92 @@ class DevicesPage(Page):
         self.layout.addStretch()
 
 
+class DiagnosticsPage(Page):
+    """Developer-facing runtime checks and recent metadata-only events."""
+
+    def __init__(
+        self,
+        tr,
+        report_provider,
+        events_provider,
+        refresh_callback,
+        export_callback,
+        clear_callback,
+    ):
+        super().__init__(tr, tr("nav.diagnostics"), tr("diagnostics.subtitle"))
+        controls = QHBoxLayout()
+        controls.addWidget(action(tr("diagnostics.refresh"), refresh_callback, True))
+        controls.addWidget(action(tr("diagnostics.export"), export_callback))
+        controls.addWidget(action(tr("diagnostics.clear"), clear_callback))
+        controls.addStretch()
+        self.layout.addLayout(controls)
+
+        self.status = label("", "muted")
+        self.layout.addWidget(self.status)
+        self.checks = _readonly_table((
+            tr("diagnostics.check"),
+            tr("diagnostics.status"),
+            tr("diagnostics.detail"),
+        ))
+        self.checks.setObjectName("diagnosticsChecksTable")
+        self.checks.setAccessibleName(tr("diagnostics.checks_table"))
+        self.checks.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.checks.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.checks.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.layout.addWidget(self.checks)
+
+        events = Section(tr("diagnostics.events"))
+        self.events = QTextEdit()
+        self.events.setObjectName("diagnosticsEvents")
+        self.events.setReadOnly(True)
+        self.events.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        self.events.setMinimumHeight(220)
+        events.layout.addWidget(self.events)
+        self.layout.addWidget(events)
+        self.refresh(report_provider(), events_provider())
+
+    def refresh(self, report: dict[str, Any], events: tuple[dict[str, Any], ...]) -> None:
+        checks = report.get("checks", []) if isinstance(report, dict) else []
+        self.checks.setRowCount(0)
+        failures = 0
+        warnings = 0
+        for check in checks:
+            if not isinstance(check, dict):
+                continue
+            status = str(check.get("status", "unknown"))
+            failures += status == "failed"
+            warnings += status in {"warning", "draft"}
+            row = self.checks.rowCount()
+            self.checks.insertRow(row)
+            self.checks.setItem(row, 0, _table_item(self.tr("diagnostics.check." + str(check.get("name", "unknown")))))
+            self.checks.setItem(row, 1, _table_item(self.tr("diagnostics.status." + status)))
+            detail = str(check.get("detail") or "")
+            if not detail and check.get("detail_key"):
+                detail = self.tr(str(check["detail_key"]), **(check.get("values") or {}))
+            self.checks.setItem(row, 2, _table_item(detail))
+        self.checks.resizeRowsToContents()
+        generated = str(report.get("generated_at") or "") if isinstance(report, dict) else ""
+        self.status.setText(self.tr(
+            "diagnostics.summary",
+            failed=failures,
+            warning=warnings,
+            generated=generated,
+        ))
+        lines = []
+        for event in reversed(events):
+            if not isinstance(event, dict):
+                continue
+            context = event.get("context")
+            context_text = ""
+            if isinstance(context, dict) and context:
+                context_text = " | " + json.dumps(context, ensure_ascii=False, separators=(",", ":"))
+            lines.append(
+                f"{event.get('timestamp', '')} [{event.get('level', 'INFO')}] "
+                f"{event.get('source', '')}: {event.get('message', '')}{context_text}"
+            )
+        self.events.setPlainText("\n".join(lines) or self.tr("diagnostics.no_events"))
+
+
 class LivePage(Page):
     start_requested = Signal(object)
     stop_requested = Signal()
@@ -637,8 +724,9 @@ class SSVEPPage(Page):
         section.layout.addWidget(label(tr("ssvep.formula"), "muted"))
         self.layout.addWidget(section)
         self.layout.addWidget(StaticTargets(tr))
-        self.layout.addWidget(KeyValues([(tr("device.channels"), "OpenBCI Cyton · AUTO · 8 CH / 250 Hz"),
-            (tr("ssvep.frequencies"), "10 / 12 / 15 / 20 Hz"), ("Marker", tr("ssvep.marker_map"))]))
+        self.device_summary = KeyValues([(tr("device.channels"), "OpenBCI Cyton · AUTO · 8 CH / 250 Hz"),
+            (tr("ssvep.frequencies"), "10 / 12 / 15 / 20 Hz"), ("Marker", tr("ssvep.marker_map"))])
+        self.layout.addWidget(self.device_summary)
         self.error = label("", "error")
         self.layout.addWidget(self.error)
         self.layout.addWidget(label(tr("ssvep.countdown_note"), "muted"))
@@ -648,6 +736,7 @@ class SSVEPPage(Page):
         for spin in (self.stimulus, self.rest, self.repetitions):
             spin.valueChanged.connect(self._update_estimate)
         self.mode.currentIndexChanged.connect(self._mode_changed)
+        self.port.textChanged.connect(lambda _text: self._update_device_summary())
         self.user.currentIndexChanged.connect(self._user_changed)
         self.channel_manual.toggled.connect(self._channel_manual_changed)
         self.set_users(users, selected_id=config.user_id)
@@ -730,11 +819,31 @@ class SSVEPPage(Page):
     def set_detected_ports(self, ports: tuple[dict[str, str], ...] | list[dict[str, str]]) -> None:
         devices = [str(item.get("device", "")).strip() for item in ports if item.get("device")]
         if devices:
-            self.port.setText("AUTO")
-            self.port_status.setText(self.tr("field.port_detected", ports=", ".join(devices)))
+            current = self.port.text().strip()
+            selected = current if current in devices else devices[0]
+            self.port.setText(selected)
+            self.port_status.setText(self.tr(
+                "field.port_detected",
+                ports=", ".join(devices),
+                selected=selected,
+            ))
         else:
             self.port.setText("AUTO")
             self.port_status.setText(self.tr("field.port_none"))
+        self._update_device_summary()
+
+    def _update_device_summary(self):
+        if not hasattr(self, "device_summary"):
+            return
+        mode = CaptureMode(self.mode.currentData())
+        if mode is CaptureMode.CYTON:
+            port = self.port.text().strip() or "AUTO"
+            value = f"OpenBCI Cyton · {port} · 8 CH / 250 Hz"
+        elif mode is CaptureMode.VISUAL_PREVIEW:
+            value = "Full-screen visual preview · no EEG"
+        else:
+            value = "BrainFlow Synthetic · — · 16 CH / 250 Hz"
+        self.device_summary.values[0].setText(value)
 
     def _mode_changed(self):
         mode = CaptureMode(self.mode.currentData())
@@ -764,6 +873,7 @@ class SSVEPPage(Page):
             self.speed.setCurrentIndex(self.speed.findData(1))
         if preview:
             self.port.clear()
+        self._update_device_summary()
 
     def _channel_manual_changed(self, checked: bool):
         cyton = CaptureMode(self.mode.currentData()) == CaptureMode.CYTON

@@ -27,7 +27,7 @@ class SSVEPProtocolTests(unittest.TestCase):
         self.assertEqual(93.0, protocol.recording_duration_s)
         self.assertEqual(98.0, protocol.total_duration_s)
         self.assertEqual(23_250, protocol.expected_samples_per_channel)
-        self.assertEqual(26, protocol.expected_event_count)
+        self.assertEqual(27, protocol.expected_event_count)
         self.assertEqual(12, len(protocol.build_trials()))
         self.assertEqual(0, protocol.pre_session_rest_s)
         self.assertEqual(0, protocol.pre_trial_rest_s)

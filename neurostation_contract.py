@@ -186,7 +186,7 @@ class CaptureConfig:
 
     @property
     def expected_events(self) -> int:
-        return 2 + 2 * self.trials
+        return 3 + 2 * self.trials
 
 
 class Phase(str, Enum):

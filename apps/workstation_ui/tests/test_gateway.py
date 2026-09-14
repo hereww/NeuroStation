@@ -24,7 +24,7 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(self.config.trials, 12)
         self.assertEqual(self.config.recording_seconds, 93)
         self.assertEqual(self.config.total_seconds, 98)
-        self.assertEqual(self.config.expected_events, 26)
+        self.assertEqual(self.config.expected_events, 27)
         self.assertEqual(format_duration(98), "00:01:38")
 
     def test_no_rest_after_final_stimulus(self):
@@ -43,7 +43,7 @@ class GatewayTests(unittest.TestCase):
         snapshot = self.gateway.tick()
         self.assertEqual(snapshot.phase, Phase.RUNNING)
         self.assertEqual(snapshot.elapsed, 0)
-        self.assertEqual(snapshot.event_count, 2)
+        self.assertEqual(snapshot.event_count, 3)
 
     def test_delayed_countdown_processing_does_not_skip_recording(self):
         self.gateway.start_ssvep(self.config)
@@ -60,13 +60,13 @@ class GatewayTests(unittest.TestCase):
         first_rest = self.gateway.tick()
         self.assertTrue(first_rest.resting)
         self.assertEqual(first_rest.trial, 1)
-        self.assertEqual(first_rest.event_count, 3)
+        self.assertEqual(first_rest.event_count, 4)
         self.clock.now = 13
         second_stimulus = self.gateway.tick()
         self.assertFalse(second_stimulus.resting)
         self.assertEqual(second_stimulus.target, 2)
         self.assertEqual(second_stimulus.frequency, 12)
-        self.assertEqual(second_stimulus.event_count, 4)
+        self.assertEqual(second_stimulus.event_count, 5)
 
     def test_accelerated_completion_is_once_and_does_not_write(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -81,7 +81,7 @@ class GatewayTests(unittest.TestCase):
             self.assertEqual(completed.progress, 100)
             self.assertEqual(completed.result.samples_per_channel, 23250)
             self.assertEqual(completed.result.sample_values, 186000)
-            self.assertEqual(completed.result.event_count, 26)
+            self.assertEqual(completed.result.event_count, 27)
             self.assertTrue(completed.result.path.is_absolute())
             self.assertFalse(completed.result.persisted)
             self.assertFalse(target.exists())

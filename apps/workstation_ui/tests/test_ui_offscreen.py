@@ -19,9 +19,15 @@ class QtOffscreenTests(unittest.TestCase):
     def setUp(self):
         from apps.workstation_ui.app import MainWindow
         from apps.workstation_ui.gateway import MockGateway
+        from neurostation_diagnostics import DiagnosticStore
         self.now = 0.0
         self.gateway = MockGateway(lambda: self.now)
-        self.window = MainWindow(self.gateway, timer_enabled=False)
+        self.diagnostic_store = DiagnosticStore(persist=False)
+        self.window = MainWindow(
+            self.gateway,
+            timer_enabled=False,
+            diagnostic_store=self.diagnostic_store,
+        )
 
     def tearDown(self):
         self.window.close()
@@ -163,6 +169,89 @@ class QtOffscreenTests(unittest.TestCase):
         self.assertEqual(1, len(errors))
         self.assertIsInstance(errors[0], ValueError)
 
+    def test_cyton_preflight_warning_surfaces_check_detail(self):
+        page = self.window.pages["devices"]
+        self.window._preflight_finished({
+            "status": "warning",
+            "error": "",
+            "checks": [{
+                "name": "timestamps",
+                "status": "warning",
+                "detail": "Detected 9 timestamp gaps.",
+                "metrics": {
+                    "timestamp_gap_count": 9,
+                    "timestamp_gap_ratio": 9 / 208,
+                    "timestamp_diff_max_s": 0.012,
+                },
+            }],
+        })
+        self.assertIn("时间戳", page.preflight_status.text())
+        self.assertIn("9", page.preflight_status.text())
+        self.assertIn("12.0", page.preflight_status.text())
+
+    def test_cyton_preflight_warning_continues_in_technical_validation(self):
+        from apps.workstation_ui.gateway import CaptureConfig, CaptureMode, Phase
+        from neurostation_contract import UserProfile
+        self.gateway.add_user(UserProfile(
+            user_id="U0003", name="Technical", age=30, medical_conditions=("none",)
+        ))
+        config = CaptureConfig(
+            mode=CaptureMode.CYTON,
+            port="COM7",
+            user_id="U0003",
+            participant="U0003",
+            acknowledge_flicker_risk=True,
+            allow_draft_hardware_config=True,
+        )
+        self.window._pending_ssvep = (config, 1)
+        self.window._preflight_finished({
+            "status": "warning",
+            "error": "",
+            "selected_port": "COM7",
+            "checks": [{"name": "channels", "status": "warning", "metrics": {"warning_channels": [2]}}],
+        })
+        for _ in range(50):
+            self.application.processEvents()
+            if self.gateway.snapshot.phase == Phase.COUNTDOWN:
+                break
+        self.assertEqual(Phase.COUNTDOWN, self.gateway.snapshot.phase)
+
+    def test_cyton_preflight_warning_does_not_block_formal_candidate(self):
+        from apps.workstation_ui.gateway import CaptureConfig, CaptureMode, Phase
+        from neurostation_contract import UserProfile
+        self.gateway.add_user(UserProfile(
+            user_id="U0004", name="Formal candidate", age=30, medical_conditions=("none",)
+        ))
+        config = CaptureConfig(
+            mode=CaptureMode.CYTON,
+            port="COM5",
+            user_id="U0004",
+            participant="U0004",
+            acknowledge_flicker_risk=True,
+            allow_draft_hardware_config=False,
+        )
+        self.window._pending_ssvep = (config, 1)
+        self.window._preflight_finished({
+            "status": "warning",
+            "error": "",
+            "selected_port": "COM5",
+            "checks": [{"name": "timestamps", "status": "warning", "metrics": {
+                "timestamp_gap_count": 22,
+                "timestamp_gap_ratio": 0.031,
+                "timestamp_diff_max_s": 0.3546,
+                "packet_sequence_available": True,
+                "packet_loss_count": 0,
+                "packet_sequence_mismatch_count": 0,
+                "packet_duplicate_count": 0,
+            }}],
+        })
+        for _ in range(50):
+            self.application.processEvents()
+            if self.gateway.snapshot.phase == Phase.COUNTDOWN:
+                break
+        self.assertEqual(Phase.COUNTDOWN, self.gateway.snapshot.phase)
+        self.assertIn("继续", self.window.pages["ssvep"].error.text())
+
     def test_ssvep_mode_selector_preserves_enum_and_requires_risk_ack(self):
         from apps.workstation_ui.gateway import CaptureMode
 
@@ -206,14 +295,35 @@ class QtOffscreenTests(unittest.TestCase):
         page.channel.setText(str(channel_path))
         self.assertEqual(channel_path, page.config().channel_config)
 
-    def test_serial_scan_updates_auto_status(self):
+    def test_serial_scan_selects_detected_port(self):
         page = self.window.pages["ssvep"]
         self.window.gateway.scan_serial_ports = lambda: (
             {"device": "COM5", "description": "USB serial"},
         )
         self.window.scan_serial_ports()
-        self.assertEqual("AUTO", page.port.text())
+        self.assertEqual("COM5", page.port.text())
         self.assertIn("COM5", page.port_status.text())
+
+    def test_diagnostics_page_navigates_refreshes_and_shows_events(self):
+        self.diagnostic_store.warning(
+            "test",
+            "diagnostic event visible",
+            context={"attempt": 1},
+        )
+        self.window.navigate("diagnostics")
+        page = self.window.pages["diagnostics"]
+
+        self.assertGreater(page.checks.rowCount(), 0)
+        self.assertIn("diagnostic event visible", page.events.toPlainText())
+        self.assertIn("test", page.events.toPlainText())
+
+        self.diagnostic_store.error("test", "second diagnostic event")
+        self.window._refresh_diagnostics()
+        self.assertIn("second diagnostic event", page.events.toPlainText())
+
+        self.window.change_language("en-US")
+        self.window.navigate("diagnostics")
+        self.assertEqual("Diagnostics", self.window.pages["diagnostics"].title_label.text())
 
     def test_language_storage_and_window_geometry_persist(self):
         from PySide6.QtCore import QSettings

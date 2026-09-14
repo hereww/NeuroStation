@@ -17,8 +17,9 @@ from .i18n import Translator
 from .pages import (
     HomePage, DevicesPage, LivePage, AppsPage, SSVEPPage, TaskPage,
     ResultPage, DatasetsPage, InfoPage,
-    DatasetSummaryPage, UserManagementPage, UserDialog,
+    DatasetSummaryPage, UserManagementPage, UserDialog, DiagnosticsPage,
 )
+from neurostation_diagnostics import DiagnosticStore
 class _PreflightWorker(QObject):
     finished = Signal(object)
 
@@ -55,7 +56,10 @@ class _ImportWorker(QObject):
         self.finished.emit(report)
 
 
-NAVIGATION = ("home", "devices", "users", "live", "apps", "datasets", "openbci", "integrations")
+NAVIGATION = (
+    "home", "devices", "users", "live", "apps", "datasets", "openbci",
+    "integrations", "diagnostics",
+)
 
 
 def product_stylesheet(dark: bool) -> str:
@@ -109,9 +113,19 @@ class MainWindow(QMainWindow):
         save_directory_override: Path | None = None,
         settings: QSettings | None = None,
         preview_mode: bool = False,
+        initial_mode: CaptureMode | None = None,
+        initial_port: str | None = None,
+        diagnostic_store: DiagnosticStore | None = None,
     ):
         super().__init__()
         self.gateway = gateway or MockGateway()
+        self.diagnostic_store = diagnostic_store or DiagnosticStore()
+        self.diagnostic_store.install_exception_hook()
+        self.diagnostic_store.info(
+            "ui",
+            "workstation window initialized",
+            context={"gateway": type(self.gateway).__name__},
+        )
         self.persist_settings = persist_settings
         self.settings = settings or QSettings("NeuroStation", "NeuroStation")
         chosen_locale = locale
@@ -133,6 +147,12 @@ class MainWindow(QMainWindow):
             self.draft_config = replace(
                 self.draft_config,
                 mode=CaptureMode.VISUAL_PREVIEW,
+            )
+        elif initial_mode is not None:
+            self.draft_config = replace(
+                self.draft_config,
+                mode=CaptureMode(initial_mode),
+                port=(initial_port or self.draft_config.port),
             )
         if save_directory_override is not None:
             self.draft_config = replace(
@@ -267,6 +287,8 @@ class MainWindow(QMainWindow):
         detail.serial_scan_requested.connect(self.scan_serial_ports)
         detail.create_user_requested.connect(self.create_user_from_capture)
         detail.refresh_users_requested.connect(self.refresh_users)
+        detail.mode.currentIndexChanged.connect(lambda _index: self._capture_form_changed())
+        detail.port.textChanged.connect(lambda _text: self._capture_form_changed())
         self._replace_page("ssvep", detail)
         task = TaskPage(self.tr)
         task.cancel_requested.connect(self.cancel_task)
@@ -281,6 +303,17 @@ class MainWindow(QMainWindow):
             ),
         )
         self._replace_page("integrations", InfoPage(self.tr, "integrations"))
+        self._replace_page(
+            "diagnostics",
+            DiagnosticsPage(
+                self.tr,
+                lambda: self.diagnostic_store.build_report(self.gateway),
+                lambda: self.diagnostic_store.events(200),
+                self._refresh_diagnostics,
+                self._export_diagnostics,
+                self._clear_diagnostics,
+            ),
+        )
         self.navigate(self.current_page)
         self._apply_compact_layout()
         self._update_controls()
@@ -351,6 +384,8 @@ class MainWindow(QMainWindow):
             else:
                 page = DatasetSummaryPage if self._showing_dataset_summary else ResultPage
                 self._replace_page(key, page(self.tr, self.result, self.navigate))
+        elif key == "diagnostics":
+            self._refresh_diagnostics()
         self.current_page = key
         self.stack.setCurrentWidget(self.screens[key])
         nav_key = "apps" if key in ("ssvep", "task", "result") else key
@@ -374,13 +409,56 @@ class MainWindow(QMainWindow):
         self._build_shell()
 
     def _error(self, error: Exception):
+        self.diagnostic_store.exception(error, source="ui")
         QMessageBox.warning(self, self.tr("error.title"), self.tr(str(error)))
+
+    def _refresh_diagnostics(self):
+        page = self.pages.get("diagnostics")
+        if isinstance(page, DiagnosticsPage):
+            page.refresh(
+                self.diagnostic_store.build_report(self.gateway),
+                self.diagnostic_store.events(200),
+            )
+
+    def _export_diagnostics(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            self.tr("diagnostics.export_title"),
+            "neurostation-diagnostics.json",
+            "JSON (*.json)",
+        )
+        if not path:
+            return
+        try:
+            output = self.diagnostic_store.export_report(Path(path), self.gateway)
+        except Exception as error:
+            self._error(error)
+            return
+        QMessageBox.information(
+            self,
+            self.tr("diagnostics.export_title"),
+            self.tr("diagnostics.export_done", path=str(output)),
+        )
+
+    def _clear_diagnostics(self):
+        self.diagnostic_store.clear()
+        self._refresh_diagnostics()
+
+    def _record(self, source: str, message: str, **context):
+        self.diagnostic_store.info(source, message, context=context)
 
     def _start_timer(self):
         if self.timer_enabled and not self.timer.isActive():
             self.timer.start()
 
     def start_ssvep(self, config: CaptureConfig, speed: float, *, _preflight_ready: bool = False):
+        self._record(
+            "capture",
+            "ssvep start requested",
+            mode=CaptureMode(config.mode).value,
+            participant=config.participant,
+            preflight_ready=_preflight_ready,
+        )
         if CaptureMode(config.mode) == CaptureMode.CYTON and not _preflight_ready:
             self._pending_ssvep = (config, speed)
             self._preflight_ready = False
@@ -397,6 +475,7 @@ class MainWindow(QMainWindow):
             self.settings.setValue("capture/save_directory", str(config.save_directory))
         self.navigate("task")
         self._start_timer()
+        self._record("capture", "ssvep task started", mode=CaptureMode(config.mode).value)
 
     def preflight_cyton(self):
         if self.preflight_thread is not None:
@@ -404,8 +483,15 @@ class MainWindow(QMainWindow):
         page = self.pages.get("devices")
         if page is not None and hasattr(page, "preflight_status"):
             page.preflight_status.setText(self.tr("device.preflight_running"))
+        requested_port = "AUTO"
+        if self._pending_ssvep is not None:
+            requested_port = self._pending_ssvep[0].port or "AUTO"
+        else:
+            ssvep_page = self.pages.get("ssvep")
+            if ssvep_page is not None and hasattr(ssvep_page, "port"):
+                requested_port = ssvep_page.port.text().strip() or "AUTO"
         self.preflight_thread = QThread(self)
-        self.preflight_worker = _PreflightWorker(self.gateway, self._pending_ssvep[0].port if self._pending_ssvep else "AUTO")
+        self.preflight_worker = _PreflightWorker(self.gateway, requested_port)
         self.preflight_worker.moveToThread(self.preflight_thread)
         self.preflight_thread.started.connect(self.preflight_worker.run)
         self.preflight_worker.finished.connect(self._preflight_finished)
@@ -421,12 +507,85 @@ class MainWindow(QMainWindow):
             report = {"status": "failed", "error": str(result), "checks": []}
         else:
             report = result if isinstance(result, dict) else {"status": "failed", "error": ""}
+        self._record(
+            "preflight",
+            "cyton preflight finished",
+            status=report.get("status", "unknown"),
+            checks=len(report.get("checks", [])) if isinstance(report.get("checks"), list) else 0,
+        )
         page = self.pages.get("devices")
         status = str(report.get("status", "unknown"))
         detail = str(report.get("error") or "")
+        if not detail:
+            checks = report.get("checks", [])
+            if isinstance(checks, list):
+                details: list[str] = []
+                for check in checks:
+                    if not isinstance(check, dict) or str(check.get("status")) == "passed":
+                        continue
+                    name = str(check.get("name") or "")
+                    metrics = check.get("metrics")
+                    if name == "timestamps" and isinstance(metrics, dict):
+                        try:
+                            details.append(self.tr(
+                                "device.preflight_warning_timestamps",
+                                count=int(metrics.get("timestamp_gap_count", 0) or 0),
+                                ratio=round(float(metrics.get("timestamp_gap_ratio", 0.0) or 0.0) * 100, 1),
+                                max_ms=round(float(metrics.get("timestamp_diff_max_s", 0.0) or 0.0) * 1000, 1),
+                            ))
+                            if metrics.get("packet_sequence_available"):
+                                lost = int(metrics.get("packet_loss_count", 0) or 0)
+                                mismatch = int(metrics.get("packet_sequence_mismatch_count", 0) or 0)
+                                duplicate = int(metrics.get("packet_duplicate_count", 0) or 0)
+                                if lost or mismatch or duplicate:
+                                    details.append(self.tr(
+                                        "device.preflight_packet_loss",
+                                        lost=lost,
+                                        mismatch=mismatch,
+                                        duplicate=duplicate,
+                                    ))
+                                else:
+                                    details.append(self.tr("device.preflight_packet_sequence_ok"))
+                            continue
+                        except (TypeError, ValueError):
+                            pass
+                    if name == "packet_sequence" and isinstance(metrics, dict):
+                        try:
+                            details.append(self.tr(
+                                "device.preflight_packet_loss",
+                                lost=int(metrics.get("packet_loss_count", 0) or 0),
+                                mismatch=int(metrics.get("packet_sequence_mismatch_count", 0) or 0),
+                                duplicate=int(metrics.get("packet_duplicate_count", 0) or 0),
+                            ))
+                            continue
+                        except (TypeError, ValueError):
+                            pass
+                    if name == "channels":
+                        warning_channels = metrics.get("warning_channels") if isinstance(metrics, dict) else None
+                        channels = ", ".join(
+                            f"CH{int(channel)}" for channel in warning_channels
+                        ) if isinstance(warning_channels, list) and warning_channels else ""
+                        details.append(self.tr(
+                            "device.preflight_warning_channels",
+                            channels=channels,
+                        ))
+                        continue
+                    if check.get("detail"):
+                        details.append(str(check["detail"]))
+                detail = ("；" if self.tr.locale == "zh-CN" else "; ").join(details)
+        status_text = self.tr(f"device.preflight_status.{status}")
+        selected_port = str(report.get("selected_port") or "").strip()
+        ssvep_page = self.pages.get("ssvep")
+        if selected_port and ssvep_page is not None and hasattr(ssvep_page, "port"):
+            ssvep_page.port.setText(selected_port)
+            ssvep_page.port_status.setText(self.tr(
+                "field.port_detected",
+                ports=selected_port,
+                selected=selected_port,
+            ))
         if page is not None and hasattr(page, "preflight_status"):
             page.preflight_status.setText(
-                self.tr("device.preflight_result", status=status, detail=detail)
+                self.tr("device.preflight_result", status=status_text, detail=detail)
             )
         pending = self._pending_ssvep
         self._pending_ssvep = None
@@ -434,10 +593,47 @@ class MainWindow(QMainWindow):
             self._preflight_ready = True
             if pending is not None:
                 config, speed = pending
+                if selected_port:
+                    config = replace(config, port=selected_port)
+                    self.draft_config = config
                 self.start_ssvep(config, speed, _preflight_ready=True)
         elif pending is not None:
             self._preflight_ready = False
-            self._error(ValueError("validation.preflight_failed"))
+            if status in {"warning", "degraded"}:
+                warning_detail = detail or self.tr(f"device.preflight_status.{status}")
+                # OpenBCI GUI keeps streaming when packet/timestamp quality is
+                # imperfect and surfaces loss statistics while acquisition
+                # continues. Match that behavior here: only a failed
+                # handshake, empty stream, or invalid data remains a hard
+                # stop. Draft protocol/channel validation is enforced by the
+                # gateway independently of this quality-warning path.
+                message_key = (
+                    "validation.preflight_warning_allowed"
+                    if pending[0].allow_draft_hardware_config
+                    else "validation.preflight_warning_started"
+                )
+                message = self.tr(
+                    message_key,
+                    port=selected_port or "AUTO",
+                    detail=warning_detail,
+                )
+                self._preflight_ready = True
+                config, speed = pending
+                if selected_port:
+                    config = replace(config, port=selected_port)
+                    self.draft_config = config
+                self._record(
+                    "preflight",
+                    "quality warning accepted; acquisition continues",
+                    port=selected_port or "AUTO",
+                    detail=warning_detail,
+                    technical_validation=bool(config.allow_draft_hardware_config),
+                )
+                self.start_ssvep(config, speed, _preflight_ready=True)
+                if ssvep_page is not None and hasattr(ssvep_page, "error"):
+                    ssvep_page.error.setText(message)
+            else:
+                self._error(ValueError("validation.preflight_failed"))
         self._update_controls()
 
     def _preflight_thread_finished(self):
@@ -451,9 +647,23 @@ class MainWindow(QMainWindow):
         except Exception as error:
             self._error(error)
             return
+        self._record("hardware", "serial ports scanned", count=len(ports))
         page = self.pages.get("ssvep")
         if page is not None and hasattr(page, "set_detected_ports"):
             page.set_detected_ports(ports)
+            self._capture_form_changed()
+
+    def _capture_form_changed(self):
+        if self.gateway.snapshot.active:
+            return
+        page = self.pages.get("ssvep")
+        if page is None or not hasattr(page, "config"):
+            return
+        try:
+            self.draft_config = page.config()
+        except (TypeError, ValueError):
+            return
+        self._update_controls()
 
     def _build_users_page(self):
         callbacks = {
@@ -512,6 +722,7 @@ class MainWindow(QMainWindow):
         self.pages["ssvep"].set_users(self.gateway.users, selected_id=profile.user_id)
 
     def start_manual(self, config: CaptureConfig):
+        self._record("capture", "manual capture test requested")
         try:
             self.gateway.start_manual(config)
         except (ValueError, RuntimeError) as error:
@@ -529,6 +740,7 @@ class MainWindow(QMainWindow):
         self.timer.stop()
         self.latest_dataset = result.id
         self.show_result(result)
+        self._record("capture", "manual capture test completed", dataset_id=result.id)
 
     def add_marker(self):
         try:
@@ -554,6 +766,7 @@ class MainWindow(QMainWindow):
             return
         self.timer.stop()
         snapshot = self.gateway.cancel()
+        self._record("capture", "task cancelled", phase=snapshot.phase.value)
         if snapshot.result is not None:
             self.latest_dataset = snapshot.result.id
             self.show_result(snapshot.result)
@@ -585,6 +798,11 @@ class MainWindow(QMainWindow):
             self.latest_dataset = snapshot.result.id
             self.show_result(snapshot.result)
         elif snapshot.phase == Phase.FAILED:
+            self.diagnostic_store.error(
+                "capture",
+                snapshot.error or "task failed",
+                context={"protocol": snapshot.protocol},
+            )
             self.timer.stop()
             if snapshot.result is not None:
                 self.latest_dataset = snapshot.result.id
@@ -604,9 +822,25 @@ class MainWindow(QMainWindow):
             self.gateway.config.mode if snapshot.active else self.draft_config.mode
         )
         self.mode_banner_label.setText(self.tr("mode.banner", mode=self.tr("mode." + mode.value)))
-        device = self.gateway.device
+        if snapshot.active:
+            device = self.gateway.device
+            device_name, device_port, device_channels, device_rate = (
+                device.name, device.port, device.channels, device.sample_rate
+            )
+        elif mode is CaptureMode.CYTON:
+            device_name, device_port, device_channels, device_rate = (
+                "OpenBCI Cyton", self.draft_config.port or "AUTO", 8, 250
+            )
+        elif mode is CaptureMode.VISUAL_PREVIEW:
+            device_name, device_port, device_channels, device_rate = (
+                "Full-screen visual preview", "—", 0, 0
+            )
+        else:
+            device_name, device_port, device_channels, device_rate = (
+                "BrainFlow Synthetic", "—", 16, 250
+            )
         self.device_summary.setText(
-            f"{device.name}\n{device.port} · {device.channels} CH · {device.sample_rate} Hz"
+            f"{device_name}\n{device_port} · {device_channels} CH · {device_rate} Hz"
         )
         self.active_banner.setVisible(snapshot.active and self.current_page not in ("task", "live"))
         self.pages["live"].update_snapshot(snapshot)
@@ -616,6 +850,7 @@ class MainWindow(QMainWindow):
         self.pages["task"].update_snapshot(snapshot, self.gateway.config)
 
     def closeEvent(self, event):
+        self._record("ui", "workstation window closing")
         self.timer.stop()
         if self.import_thread is not None:
             self.import_thread.quit()
@@ -647,6 +882,7 @@ class MainWindow(QMainWindow):
         if self.import_thread is not None:
             return
         source = Path(source_root).expanduser().resolve()
+        self._record("datasets", "OpenBCI import started", source_root=str(source), automatic=automatic)
         if self.persist_settings:
             self.settings.setValue("datasets/openbci_directory", str(source))
         self.import_thread = QThread(self)
@@ -670,8 +906,20 @@ class MainWindow(QMainWindow):
 
     def _import_finished(self, result):
         if isinstance(result, Exception):
+            self.diagnostic_store.exception(
+                result,
+                source="datasets",
+                message="OpenBCI import failed",
+            )
             self.import_status = self.tr("datasets.import_failed", reason=str(result))
         else:
+            self._record(
+                "datasets",
+                "OpenBCI import finished",
+                imported=result.imported_count,
+                skipped=result.skipped_count,
+                failed=result.failed_count,
+            )
             self.import_status = self.tr(
                 "datasets.import_status",
                 imported=result.imported_count,

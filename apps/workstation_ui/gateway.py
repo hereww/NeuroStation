@@ -241,6 +241,7 @@ class MockGateway:
             speed=speed,
             trial_count=config.trials,
             remaining=config.recording_seconds,
+            event_count=1,
         )
         return self.snapshot
 
@@ -275,7 +276,7 @@ class MockGateway:
             # Begin when the UI actually processes the deadline. A suspended UI
             # must not silently skip an entire task while no run screen is shown.
             self._run_start = now
-            previous = TaskSnapshot(phase=Phase.RUNNING, speed=previous.speed)
+            previous = TaskSnapshot(phase=Phase.RUNNING, speed=previous.speed, event_count=2)
         if previous.phase != Phase.RUNNING:
             return self.snapshot
         elapsed = max(0.0, (now - self._run_start) * previous.speed)
@@ -324,7 +325,7 @@ class MockGateway:
             target=index % 4 + 1,
             frequency=FREQUENCIES[index % 4],
             resting=resting,
-            event_count=2 + index * 2 + int(resting),
+                event_count=3 + index * 2 + int(resting),
             speed=previous.speed,
         )
         return self.snapshot

@@ -33,7 +33,9 @@ $sourceItems = @(
     "configs",
     "eeg_tools",
     "neurostation_contract.py",
+    "analyze_ssvep_session.py",
     "workstation.py",
+    "neurostation_diagnostics.py",
     "pysidedeploy.spec",
     "pyproject.toml"
 )

@@ -127,9 +127,16 @@ class AcquisitionWorkerTests(unittest.TestCase):
             self.assertEqual("completed", session["status"])
             self.assertTrue(session["simulated"])
             self.assertEqual(4, session["completed_trials"])
-            self.assertEqual(10, session["event_count"])
+            self.assertEqual(11, session["event_count"])
             self.assertGreater(session["recorded_samples_per_channel"], 0)
             self.assertGreater((session_dir / "raw_brainflow.tsv").stat().st_size, 0)
+            raw_header = (session_dir / "raw_brainflow.tsv").read_text(encoding="utf-8").splitlines()[0]
+            self.assertIn("sample_index", raw_header)
+            self.assertIn("timestamp_s", raw_header)
+            self.assertTrue((session_dir / "raw_columns.tsv").is_file())
+            event_header = (session_dir / "events.tsv").read_text(encoding="utf-8").splitlines()[0]
+            self.assertIn("sample_index", event_header)
+            self.assertIn("presented_target_id", event_header)
             self.assertTrue((session_dir / "manifest.csv").is_file())
             quality = json.loads((session_dir / "quality.json").read_text(encoding="utf-8"))
             self.assertEqual("ok", quality["status"])
@@ -178,7 +185,11 @@ class AcquisitionWorkerTests(unittest.TestCase):
                 return np.array([[1, 2, 3, 4], [4, 4, 4, 4], [0.0, 0.004, 0.008, 0.012]])
 
         board = FakeBoard()
+        attempts = []
         def prepare(_board_id, _params, _requested):
+            attempts.append(True)
+            if len(attempts) == 1:
+                raise RuntimeError("transient handshake miss")
             return board, "COM5", []
 
         report = run_cyton_preflight(prepare_board=prepare, board_shim=FakeBoardShim, board_ids=FakeIds, sleep_fn=lambda _seconds: None)
@@ -186,6 +197,98 @@ class AcquisitionWorkerTests(unittest.TestCase):
         self.assertEqual("COM5", report.selected_port)
         self.assertEqual("passed", report.checks[0].status)
         self.assertEqual("warning", report.checks[-1].status)
+        self.assertEqual([2], report.checks[-1].metrics["warning_channels"])
+        self.assertEqual(2, len(attempts))
+        self.assertEqual("1", report.checks[0].metrics["attempt_failures"][0]["attempt"])
+
+    def test_cyton_preflight_separates_timestamp_jitter_from_packet_loss(self) -> None:
+        import numpy as np
+        from eeg_tools.workstation.preflight import run_cyton_preflight
+
+        class FakeIds:
+            CYTON_BOARD = 6
+
+        class FakeBoardShim:
+            @staticmethod
+            def get_eeg_channels(_board_id):
+                return [0, 1]
+
+            @staticmethod
+            def get_timestamp_channel(_board_id):
+                return 2
+
+            @staticmethod
+            def get_package_num_channel(_board_id):
+                return 3
+
+            @staticmethod
+            def get_sampling_rate(_board_id):
+                return 250
+
+        class FakeBoard:
+            def start_stream(self):
+                return None
+
+            def stop_stream(self):
+                return None
+
+            def release_session(self):
+                return None
+
+            def get_board_data(self):
+                return np.array([
+                    [1, 2, 3, 4],
+                    [4, 5, 6, 7],
+                    [0.0, 0.004, 0.012, 0.016],
+                    [10, 11, 12, 13],
+                ])
+
+        report = run_cyton_preflight(
+            prepare_board=lambda *_args: (FakeBoard(), "COM5", []),
+            board_shim=FakeBoardShim,
+            board_ids=FakeIds,
+            sleep_fn=lambda _seconds: None,
+        )
+        timestamps = next(item for item in report.checks if item.name == "timestamps").metrics
+        packet_sequence = next(item for item in report.checks if item.name == "packet_sequence").metrics
+        self.assertEqual("warning", report.status)
+        self.assertTrue(packet_sequence["packet_sequence_available"])
+        self.assertEqual(0, packet_sequence["packet_loss_count"])
+        self.assertEqual(0, packet_sequence["packet_sequence_mismatch_count"])
+        self.assertEqual(1, timestamps["timestamp_gap_count"])
+
+    def test_cyton_preflight_classifies_large_timestamp_gaps(self) -> None:
+        import numpy as np
+        from eeg_tools.workstation.preflight import run_cyton_preflight
+        class Ids: CYTON_BOARD = 6
+        class Shim:
+            get_eeg_channels = staticmethod(lambda _: [0])
+            get_timestamp_channel = staticmethod(lambda _: 1)
+            get_sampling_rate = staticmethod(lambda _: 250)
+        class Board:
+            start_stream = lambda self: None
+            stop_stream = lambda self: None
+            release_session = lambda self: None
+            get_board_data = lambda self: np.array([[1, 2, 3], [0.0, 0.6, 1.2]])
+        report = run_cyton_preflight(prepare_board=lambda *_: (Board(), "COM5", []), board_shim=Shim, board_ids=Ids, sleep_fn=lambda _: None)
+        self.assertEqual("degraded", next(c for c in report.checks if c.name == "timestamps").status)
+
+    def test_cyton_preflight_fails_on_timestamp_reversal(self) -> None:
+        import numpy as np
+        from eeg_tools.workstation.preflight import run_cyton_preflight
+        class Ids: CYTON_BOARD = 6
+        class Shim:
+            get_eeg_channels = staticmethod(lambda _: [0])
+            get_timestamp_channel = staticmethod(lambda _: 1)
+            get_sampling_rate = staticmethod(lambda _: 250)
+        class Board:
+            start_stream = lambda self: None
+            stop_stream = lambda self: None
+            release_session = lambda self: None
+            get_board_data = lambda self: np.array([[1, 2, 3], [0.0, 0.004, 0.002]])
+        report = run_cyton_preflight(prepare_board=lambda *_: (Board(), "COM5", []), board_shim=Shim, board_ids=Ids, sleep_fn=lambda _: None)
+        self.assertEqual("failed", report.status)
+        self.assertEqual("failed", next(c for c in report.checks if c.name == "timestamps").status)
 
     def test_worker_persists_preflight_report_when_supplied(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

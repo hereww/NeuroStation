@@ -94,7 +94,7 @@ class DatasetRepository:
         output_dir = self.root / session_id
         output_dir.mkdir(parents=True, exist_ok=False)
         completed = protocol.trial_count if completed_trials is None else completed_trials
-        event_count = 2 + completed * 2
+        event_count = 3 + completed * 2
         record = DatasetRecord(
             session_id=session_id,
             status=status,
@@ -133,6 +133,7 @@ class DatasetRepository:
 
         events_path = output_dir / "events.tsv"
         event_lines = ["event_name\ttrial_index\ttarget_id\tfrequency_hz\tmarker_code"]
+        event_lines.append(f"acquisition_start\t-1\t\t\t{protocol.acquisition_start_marker}")
         event_lines.append(f"session_start\t-1\t\t\t{protocol.session_start_marker}")
         for trial in protocol.build_trials()[:completed]:
             event_lines.append(

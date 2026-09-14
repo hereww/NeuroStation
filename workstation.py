@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 import argparse
-from importlib.metadata import PackageNotFoundError, version as package_version
 import json
-import platform
 import sys
 from pathlib import Path
-from typing import Any
 
 from neurostation_contract import (
     PRODUCT_DESCRIPTION,
@@ -16,72 +13,18 @@ from neurostation_contract import (
     PRODUCT_SEMVER,
     PRODUCT_VERSION,
     RELEASE_DATE,
+    CaptureMode,
 )
+from neurostation_diagnostics import DiagnosticStore
 
 
 ROOT = Path(__file__).resolve().parent
 
 
-def _dependency_status(module_name: str) -> dict[str, Any]:
-    """Return import status without making diagnostics depend on optional packages."""
-
-    try:
-        module = __import__(module_name)
-    except Exception as error:  # pragma: no cover - platform/package specific
-        return {"available": False, "error": f"{type(error).__name__}: {error}"}
-    installed_version = getattr(module, "__version__", None)
-    if not installed_version and module_name == "brainflow":
-        try:
-            from brainflow.board_shim import BoardShim
-
-            installed_version = BoardShim.get_version()
-        except Exception:  # pragma: no cover - native runtime specific
-            pass
-    if not installed_version:
-        try:
-            installed_version = package_version(module_name)
-        except PackageNotFoundError:
-            pass
-    return {"available": True, "version": str(installed_version) if installed_version else None}
-
-
-def _display_diagnostics() -> list[dict[str, Any]]:
-    """Return Qt display facts when a GUI runtime is available."""
-    try:
-        from PySide6.QtGui import QGuiApplication
-        from PySide6.QtWidgets import QApplication
-        application = QGuiApplication.instance() or QApplication(["neurostation-diagnostics"])
-    except Exception:
-        return []
-    displays: list[dict[str, Any]] = []
-    for index, screen in enumerate(application.screens()):
-        geometry = screen.geometry()
-        refresh = float(screen.refreshRate() or 0.0)
-        displays.append({
-            "index": index,
-            "name": str(screen.name()),
-            "geometry": {
-                "x": int(geometry.x()),
-                "y": int(geometry.y()),
-                "width": int(geometry.width()),
-                "height": int(geometry.height()),
-            },
-            "device_pixel_ratio": float(screen.devicePixelRatio()),
-            "refresh_rate_hz": refresh,
-        })
-    return displays
-
-
-def build_diagnostics() -> dict[str, Any]:
-    """Build a JSON-safe preflight report for support and field testing.
-
-    This intentionally reports configuration readiness separately from hardware
-    connectivity: a valid Cyton channel map is necessary for a session, but it
-    cannot prove that a USB dongle is plugged in or that electrodes are attached.
-    """
+def build_diagnostics(gateway=None) -> dict:
+    """Build the same metadata-only report shown by the desktop diagnostics page."""
 
     protocol_path = ROOT / "configs" / "protocols" / "ssvep_four_target_v2.json"
-    stimulus_path = ROOT / "configs" / "ssvep_config_v1.json"
     final_channel_path = ROOT / "configs" / "channel_config_v1.json"
     auto_channel_path = ROOT / "configs" / "channel_config_v1_auto.json"
     template_channel_path = ROOT / "configs" / "channel_config_v1_template.json"
@@ -91,72 +34,40 @@ def build_diagnostics() -> dict[str, Any]:
         else (auto_channel_path if auto_channel_path.is_file() else template_channel_path)
     )
 
-    config_report: dict[str, Any] = {
-        "protocol_path": str(protocol_path),
-        "stimulus_path": str(stimulus_path),
-        "channel_config_path": str(channel_path),
-        "final_channel_config_present": final_channel_path.is_file(),
-        "status": "invalid",
-        "warnings": [],
-        "error": None,
-    }
-    try:
-        from eeg_tools.config import load_and_validate_configs
+    if gateway is None:
+        from eeg_tools.workstation.desktop_gateway import DesktopGateway
 
-        _, _, warnings = load_and_validate_configs(stimulus_path, channel_path)
-        config_report["warnings"] = warnings
-        config_report["status"] = "ready" if not warnings else "draft"
-    except Exception as error:
-        config_report["error"] = f"{type(error).__name__}: {error}"
-
-    from eeg_tools.workstation.desktop_gateway import DesktopGateway
-    from eeg_tools.workstation.device_discovery import discover_serial_ports
-
-    gateway = DesktopGateway(
-        protocol_path=protocol_path,
-        channel_config_path=channel_path,
-    )
-    openbci = gateway.openbci_status
-    return {
-        "application": {
-            "name": PRODUCT_NAME,
-            "version": PRODUCT_VERSION,
-            "semantic_version": PRODUCT_SEMVER,
+        gateway = DesktopGateway(
+            protocol_path=protocol_path,
+            channel_config_path=channel_path,
+        )
+    report = DiagnosticStore(persist=False).build_report(gateway)
+    report["application"].update(
+        {
             "release_date": RELEASE_DATE,
             "description": PRODUCT_DESCRIPTION,
-            "release_note": "Windows standalone functional MVP for research and teaching validation; not a medical device.",
-        },
-        "platform": {
-            "system": platform.system(),
-            "release": platform.release(),
-            "machine": platform.machine(),
-            "python": platform.python_version(),
-        },
-        "resources": {
-            "protocol_ready": protocol_path.is_file(),
-            "locales_ready": all(
-                (ROOT / "apps" / "workstation_ui" / "locales" / name).is_file()
-                for name in ("zh-CN.json", "en-US.json")
+            "release_note": (
+                "Windows standalone functional MVP for research and teaching validation; "
+                "not a medical device."
             ),
-        },
-        "displays": _display_diagnostics(),
-        "dependencies": {
-            "PySide6": _dependency_status("PySide6"),
-            "brainflow": _dependency_status("brainflow"),
-        },
-        "configuration": config_report,
-        "openbci_gui": {
-            "source_ready": openbci.source_ready,
-            "overlay_ready": openbci.overlay_ready,
-            "executable_ready": openbci.executable_ready,
-            "revision": openbci.revision,
-        },
-        "hardware": {
-            "cyton_connected": False,
-            "serial_ports": [item.as_dict() for item in discover_serial_ports()],
-            "note": "Diagnostics discovers serial endpoints but does not open the serial port; Cyton readiness is verified by BrainFlow at task start.",
-        },
+        }
+    )
+    openbci = gateway.openbci_status
+    report["openbci_gui"] = {
+        "source_ready": openbci.source_ready,
+        "overlay_ready": openbci.overlay_ready,
+        "executable_ready": openbci.executable_ready,
+        "revision": openbci.revision,
     }
+    device = report.get("hardware", {}).get("device", {})
+    report["hardware"]["cyton_connected"] = bool(
+        device.get("connected") and not device.get("simulated")
+    )
+    report["hardware"]["note"] = (
+        "Diagnostics discovers serial endpoints but does not open the serial port; "
+        "Cyton readiness is verified by BrainFlow at task start."
+    )
+    return report
 
 
 def main() -> int:
@@ -188,10 +99,21 @@ def main() -> int:
         action="store_true",
         help="Print packaged resource and OpenBCI integration status, then exit",
     )
-    parser.add_argument(
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
         "--preview",
         action="store_true",
         help="Launch SSVEP in explicit full-screen visual preview mode",
+    )
+    mode_group.add_argument(
+        "--cyton",
+        action="store_true",
+        help="Launch with OpenBCI Cyton hardware mode selected",
+    )
+    parser.add_argument(
+        "--port",
+        default="AUTO",
+        help="Cyton serial port used with --cyton (default: AUTO)",
     )
     arguments = parser.parse_args()
     from eeg_tools.workstation.desktop_gateway import DesktopGateway
@@ -207,7 +129,7 @@ def main() -> int:
         dataset_root=arguments.dataset_root,
     )
     if arguments.diagnostics:
-        report = build_diagnostics()
+        report = build_diagnostics(gateway)
         report["root"] = str(ROOT)
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0
@@ -235,6 +157,8 @@ def main() -> int:
         persist_settings=True,
         save_directory_override=arguments.dataset_root,
         preview_mode=arguments.preview,
+        initial_mode=CaptureMode.CYTON if arguments.cyton else None,
+        initial_port=arguments.port if arguments.cyton else None,
     )
     window.show()
     if arguments.smoke_test:

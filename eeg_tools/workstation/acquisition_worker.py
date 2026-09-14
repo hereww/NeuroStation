@@ -14,7 +14,15 @@ import time
 from typing import Any, Callable
 
 from eeg_tools.config import ConfigError, validate_channel_config
-from eeg_tools.session_files import iso_now, sha256, write_events, write_json, write_manifest
+from eeg_tools.session_files import (
+    iso_now,
+    sha256,
+    write_brainflow_tsv,
+    write_column_definitions,
+    write_events,
+    write_json,
+    write_manifest,
+)
 from neurostation_contract import (
     PRODUCT_DESCRIPTION,
     PRODUCT_NAME,
@@ -116,6 +124,7 @@ def _create_stimulus_window(screen_index: int, *, fullscreen_flicker: bool = Fal
         def __init__(self) -> None:
             super().__init__()
             self.abort_requested = False
+            self._gaze_marks: list[tuple[int, float]] = []
             self.target_index: int | None = None
             self.lit = False
             self.fullscreen_flicker = fullscreen_flicker
@@ -128,7 +137,19 @@ def _create_stimulus_window(screen_index: int, *, fullscreen_flicker: bool = Fal
             if event.key() in (Qt.Key.Key_Escape, Qt.Key.Key_Q):
                 self.abort_requested = True
             else:
-                super().keyPressEvent(event)
+                target_keys = {
+                    Qt.Key.Key_1: 0,
+                    Qt.Key.Key_2: 1,
+                    Qt.Key.Key_3: 2,
+                    Qt.Key.Key_4: 3,
+                }
+                target_index = target_keys.get(event.key())
+                if target_index is not None:
+                    # This is an explicit manual/self-report annotation. It
+                    # is never treated as proof that the eyes were on target.
+                    self._gaze_marks.append((target_index, time.perf_counter()))
+                else:
+                    super().keyPressEvent(event)
 
         def paintEvent(self, event: QPaintEvent) -> None:
             painter = QPainter(self)
@@ -200,6 +221,11 @@ def _create_stimulus_window(screen_index: int, *, fullscreen_flicker: bool = Fal
             self.repaint()
             application.processEvents()
 
+        def consume_gaze_marks(self) -> list[tuple[int, float]]:
+            marks = list(self._gaze_marks)
+            self._gaze_marks.clear()
+            return marks
+
     screens = application.screens()
     if not screens:
         raise RuntimeError("No usable display was detected for the SSVEP stimulus")
@@ -218,6 +244,9 @@ def _prepare_cyton_board(
     board_id: int,
     params: Any,
     requested_port: str,
+    *,
+    retries: int = 2,
+    retry_delay_s: float = 0.5,
 ) -> tuple[Any, str, list[dict[str, str]]]:
     """Prepare the first Cyton endpoint accepted by BrainFlow.
 
@@ -235,26 +264,45 @@ def _prepare_cyton_board(
             "No serial ports were detected. Connect the OpenBCI USB dongle, "
             "close OpenBCI GUI/other serial monitors, then retry."
         )
+    if retries < 0:
+        raise ValueError("retries must be non-negative")
+    if retry_delay_s < 0:
+        raise ValueError("retry_delay_s must be non-negative")
     failures: list[dict[str, str]] = []
     for candidate in candidates:
-        params.serial_port = candidate.device
-        board = None
-        try:
-            board = BoardShim(board_id, params)
-            board.prepare_session()
-            return board, candidate.device, failures
-        except Exception as error:
-            failures.append(
-                {
-                    "port": candidate.device,
-                    "error": f"{type(error).__name__}: {error}",
-                }
-            )
-            if board is not None:
-                try:
-                    board.release_session()
-                except Exception:
-                    pass
+        for attempt in range(retries + 1):
+            params.serial_port = candidate.device
+            board = None
+            try:
+                board = BoardShim(board_id, params)
+                board.prepare_session()
+                return board, candidate.device, failures
+            except Exception as error:
+                failures.append(
+                    {
+                        "port": candidate.device,
+                        "attempt": str(attempt + 1),
+                        "error": f"{type(error).__name__}: {error}",
+                    }
+                )
+                if board is not None:
+                    try:
+                        board.release_session()
+                    except Exception:
+                        pass
+                message = str(error).lower()
+                retryable = any(
+                    marker in message
+                    for marker in (
+                        "board_not_ready_error:7",
+                        "welcome characters",
+                        "unable to prepare streaming session",
+                    )
+                )
+                if not retryable or attempt >= retries:
+                    break
+                if retry_delay_s:
+                    time.sleep(retry_delay_s)
     attempted = ", ".join(item["port"] for item in failures)
     detail = "; ".join(f"{item['port']}: {item['error']}" for item in failures)
     # BrainFlow logs the literal "welcome characters" message, but its Python
@@ -326,11 +374,19 @@ def _present_stimulus(
     trial_index: int,
     frame_rows: list[dict[str, Any]],
     progress: Callable[[float], None],
+    on_gaze_mark: Callable[[int, float], None] | None = None,
 ) -> None:
     frames_per_cycle = refresh_rate_hz // frequency_hz
     frame_total = max(1, round(duration_s * refresh_rate_hz))
     started = time.perf_counter()
     previous_actual: float | None = None
+
+    def drain_gaze_marks() -> None:
+        if on_gaze_mark is None or not hasattr(window, "consume_gaze_marks"):
+            return
+        for marked_target_index, marked_at in window.consume_gaze_marks():
+            on_gaze_mark(marked_target_index, marked_at)
+
     for frame_index in range(frame_total):
         deadline = started + frame_index / refresh_rate_hz
         while True:
@@ -338,9 +394,11 @@ def _present_stimulus(
             if now >= deadline:
                 break
             application.processEvents()
+            drain_gaze_marks()
             _check_abort(cancel_file, window)
             time.sleep(min(0.002, deadline - now))
         actual = time.perf_counter()
+        drain_gaze_marks()
         lit = (frame_index % frames_per_cycle) < (frames_per_cycle / 2)
         window.show_target(target_index, lit)
         interval = None if previous_actual is None else actual - previous_actual
@@ -474,6 +532,51 @@ def _build_quality_report(
     }
 
 
+def _annotate_event_samples(
+    events: list[dict[str, Any]], raw_data: Any, board_id: int | None
+) -> None:
+    """Attach the first matching marker sample and device time to each event."""
+
+    if board_id is None or getattr(raw_data, "ndim", 0) != 2 or raw_data.size == 0:
+        return
+    import numpy as np
+    from brainflow.board_shim import BoardShim
+
+    try:
+        marker_channel = int(BoardShim.get_marker_channel(board_id))
+        timestamp_channel = int(BoardShim.get_timestamp_channel(board_id))
+    except Exception:
+        return
+    if marker_channel >= raw_data.shape[0]:
+        return
+    marker_values = raw_data[marker_channel, :]
+    timestamps = (
+        raw_data[timestamp_channel, :]
+        if timestamp_channel < raw_data.shape[0]
+        else np.zeros(raw_data.shape[1])
+    )
+    used_by_marker: dict[int, int] = {}
+    session_start_time: float | None = None
+    for event in events:
+        try:
+            marker = int(event.get("marker_code"))
+        except (TypeError, ValueError):
+            continue
+        matches = np.flatnonzero(np.isclose(marker_values, marker, atol=1e-6))
+        start = used_by_marker.get(marker, 0)
+        if start >= len(matches):
+            continue
+        sample_index = int(matches[start])
+        used_by_marker[marker] = start + 1
+        sample_time = float(timestamps[sample_index])
+        event["sample_index"] = sample_index
+        event["sample_time_s"] = round(sample_time, 9)
+        if event.get("event_name") == "session_start":
+            session_start_time = sample_time
+        if session_start_time is not None:
+            event["recording_time_s"] = round(sample_time - session_start_time, 9)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--protocol", type=Path, default=DEFAULT_PROTOCOL)
@@ -578,6 +681,7 @@ def main(argv: list[str] | None = None) -> int:
     application = None
     window = None
     recording_started: float | None = None
+    acquisition_started: float | None = None
     completed_trials = 0
     status = "error"
     error_message: str | None = None
@@ -627,18 +731,40 @@ def main(argv: list[str] | None = None) -> int:
         trial_index: int = -1,
         target_id: str = "",
         frequency_hz: int | str = "",
+        *,
+        source: str = "software_protocol",
+        label_source: str = "",
+        event_monotonic: float | None = None,
     ) -> None:
         if board is not None and streaming:
             board.insert_marker(float(marker))
+        event_id = len(events) + 1
+        planned_target = target_id if name in {"stimulus_onset", "stimulus_offset"} else ""
+        presented_target = planned_target
+        gaze_target = target_id if name == "gaze_target_mark" else ""
         events.append(
             {
+                "event_id": event_id,
                 "event_name": name,
+                "source": source,
+                "label_source": label_source,
                 "trial_index": trial_index,
                 "target_id": target_id,
+                "planned_target_id": planned_target,
+                "presented_target_id": presented_target,
+                "gaze_target_id": gaze_target,
+                "eeg_predicted_target_id": "",
+                "target_confidence": "",
                 "frequency_hz": frequency_hz,
                 "marker_code": marker,
+                "sample_index": "",
+                "sample_time_s": "",
+                "recording_time_s": "",
                 "wall_time_iso": iso_now(),
-                "monotonic_s": round(time.perf_counter() - session_started_monotonic, 6),
+                "monotonic_s": round(
+                    (event_monotonic or time.perf_counter()) - session_started_monotonic,
+                    6,
+                ),
             }
         )
 
@@ -703,6 +829,20 @@ def main(argv: list[str] | None = None) -> int:
                 ),
             }
 
+        # Start the EEG stream before the visible countdown. The countdown is
+        # therefore present in the raw recording, while session_start remains
+        # the analysis anchor for the first experimental trial.
+        if board is not None:
+            board.start_stream()
+            streaming = True
+            acquisition_started = time.perf_counter()
+            add_event(
+                "acquisition_start",
+                protocol.acquisition_start_marker,
+                source="acquisition_stream",
+                label_source="board_marker",
+            )
+
         countdown_started = time.perf_counter()
 
         def countdown_update(elapsed: float) -> None:
@@ -718,11 +858,13 @@ def main(argv: list[str] | None = None) -> int:
             window=window,
             update=countdown_update,
         )
-        if board is not None:
-            board.start_stream()
-            streaming = True
         recording_started = time.perf_counter()
-        add_event("session_start", protocol.session_start_marker)
+        add_event(
+            "session_start",
+            protocol.session_start_marker,
+            source="protocol_timeline",
+            label_source="board_marker" if board is not None else "software_clock",
+        )
 
         trials = protocol.build_trials()
         target_ids = [target_id for target_id, _frequency in protocol.targets]
@@ -757,6 +899,21 @@ def main(argv: list[str] | None = None) -> int:
                     update=stimulus_progress,
                 )
             else:
+                def gaze_mark(target_index: int, marked_at: float) -> None:
+                    if not 0 <= target_index < len(target_ids):
+                        return
+                    marked_target_id = target_ids[target_index]
+                    add_event(
+                        "gaze_target_mark",
+                        protocol.gaze_marker_base + target_index + 1,
+                        trial.index,
+                        marked_target_id,
+                        trial.frequency_hz,
+                        source="manual_gaze_annotation",
+                        label_source="keyboard_self_report_or_operator",
+                        event_monotonic=marked_at,
+                    )
+
                 _present_stimulus(
                     application=application,
                     window=window,
@@ -768,6 +925,7 @@ def main(argv: list[str] | None = None) -> int:
                     trial_index=trial.index,
                     frame_rows=frame_rows,
                     progress=stimulus_progress,
+                    on_gaze_mark=gaze_mark,
                 )
             add_event(
                 "stimulus_offset",
@@ -836,14 +994,14 @@ def main(argv: list[str] | None = None) -> int:
                 except Exception:
                     pass
 
+    _annotate_event_samples(events, raw_data, board_id)
     raw_path = session_dir / "raw_brainflow.tsv"
-    if raw_data.size:
-        # BrainFlow's native writer cannot open non-ASCII paths on Windows.
-        # Python's file handle keeps dataset paths Unicode-safe on all platforms.
-        with raw_path.open("w", encoding="utf-8", newline="") as stream:
-            np.savetxt(stream, raw_data, delimiter="\t", fmt="%.10g")
-    else:
-        raw_path.write_text("", encoding="utf-8")
+    sample_rate_hz = 0 if board_id is None else int(BoardShim.get_sampling_rate(board_id))
+    column_definitions = write_brainflow_tsv(
+        raw_path, raw_data, board_id, sampling_rate_hz=sample_rate_hz
+    )
+    columns_path = session_dir / "raw_columns.tsv"
+    write_column_definitions(columns_path, column_definitions)
     events_path = session_dir / "events.tsv"
     write_events(events_path, events)
     frames_path = session_dir / "frame_timing.tsv"
@@ -877,13 +1035,26 @@ def main(argv: list[str] | None = None) -> int:
             error=error_message,
         ),
     )
-    output_files = [raw_path, events_path, frames_path, protocol_path, source_config_path, quality_path]
+    output_files = [
+        raw_path,
+        columns_path,
+        events_path,
+        frames_path,
+        protocol_path,
+        source_config_path,
+        quality_path,
+    ]
     if channel_config is not None:
         channels_path = session_dir / "channel_config.json"
         write_json(channels_path, channel_config)
         output_files.append(channels_path)
 
     sample_count = int(raw_data.shape[1]) if raw_data.ndim == 2 else 0
+    acquisition_duration = (
+        max(0.0, time.perf_counter() - acquisition_started)
+        if acquisition_started is not None
+        else 0.0
+    )
     session_path = session_dir / "session.json"
     session_value = {
         "schema_version": 1,
@@ -904,7 +1075,11 @@ def main(argv: list[str] | None = None) -> int:
         "started_at": started_at,
         "ended_at": iso_now(),
         "recording_duration_s": round(elapsed_recording(), 3),
+        "protocol_duration_s": round(elapsed_recording(), 3),
+        "acquisition_duration_s": round(acquisition_duration, 3),
+        "acquisition_includes_countdown": bool(acquisition_started is not None),
         "expected_duration_s": protocol.recording_duration_s,
+        "expected_samples_per_channel": protocol.expected_samples_per_channel,
         "completed_trials": completed_trials,
         "trial_count": protocol.trial_count,
         "recorded_samples_per_channel": sample_count,
