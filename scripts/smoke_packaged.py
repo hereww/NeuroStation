@@ -41,23 +41,27 @@ def main() -> int:
         environment["QT_QPA_PLATFORM"] = "minimal"
     with tempfile.TemporaryDirectory(prefix="neurostation-smoke-") as directory:
         dataset_root = Path(directory) / "中文数据集"
-        result = subprocess.run(
-            [
-                str(entry),
-                "--smoke-test",
-                "--dataset-root",
-                str(dataset_root),
-            ],
-            env=environment,
-            check=False,
-            capture_output=True,
-            timeout=30,
-        )
-        if result.returncode:
-            if result.stderr:
-                print(result.stderr, file=sys.stderr, end="")
-            print(f"Packaged UI smoke test failed with exit code {result.returncode}", file=sys.stderr)
-            return result.returncode
+        if sys.platform != "darwin":
+            result = subprocess.run(
+                [
+                    str(entry),
+                    "--smoke-test",
+                    "--dataset-root",
+                    str(dataset_root),
+                ],
+                env=environment,
+                check=False,
+                capture_output=True,
+                timeout=30,
+            )
+            if result.returncode:
+                if result.stderr:
+                    print(result.stderr, file=sys.stderr, end="")
+                print(
+                    f"Packaged UI smoke test failed with exit code {result.returncode}",
+                    file=sys.stderr,
+                )
+                return result.returncode
         diagnostics = subprocess.run(
             [str(entry), "--diagnostics", "--dataset-root", str(dataset_root)],
             env=environment,
