@@ -80,9 +80,9 @@ class DiagnosticStore:
     ) -> None:
         configured = os.environ.get("NEUROSTATION_DIAGNOSTICS")
         default_root = Path.home() / "Documents" / PRODUCT_NAME / "Diagnostics"
-        self.root = Path(configured).expanduser().resolve() if configured else default_root.resolve()
+        self.root = Path(configured).expanduser().absolute() if configured else default_root.absolute()
         if root is not None:
-            self.root = Path(root).expanduser().resolve()
+            self.root = Path(root).expanduser().absolute()
         self.persist = bool(persist)
         self.log_path = self.root / "workstation-events.jsonl"
         self.max_events = max(20, int(max_events))
@@ -357,9 +357,7 @@ class DiagnosticStore:
             except Exception as error:
                 snapshot = {"error": f"{type(error).__name__}: {error}"}
             try:
-                save_directory = str(
-                    Path(gateway.config.save_directory).expanduser().resolve()
-                )
+                save_directory = str(Path(gateway.config.save_directory).expanduser().absolute())
             except Exception:
                 save_directory = ""
             try:
@@ -496,7 +494,7 @@ class DiagnosticStore:
         }
 
     def export_report(self, path: Path, gateway: Any | None = None) -> Path:
-        output = Path(path).expanduser().resolve()
+        output = Path(path).expanduser().absolute()
         output.parent.mkdir(parents=True, exist_ok=True)
         report = self.build_report(gateway)
         report["events"] = list(self.events())

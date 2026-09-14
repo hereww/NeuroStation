@@ -65,7 +65,10 @@ class _RawFileStatistics:
 
 class DatasetRepository:
     def __init__(self, root: Path):
-        self.root = Path(root).expanduser().resolve()
+        # Keep the caller's absolute spelling. Windows can expose the same
+        # temp directory through long and 8.3 paths; returning one spelling
+        # consistently avoids leaking that representation change to callers.
+        self.root = self._absolute_path(root)
 
     @property
     def trash_root(self) -> Path:
@@ -264,7 +267,8 @@ class DatasetRepository:
         session_path = source / "session.json"
         value = self._read_session_value(session_path)
         now = datetime.now().astimezone().isoformat(timespec="milliseconds")
-        value["trash_original_path"] = str(source)
+        value["trash_original_path"] = str(source.resolve())
+        value["trash_original_display_path"] = str(source)
         value["output_dir"] = str(target)
         value["deleted_at"] = now
         self._write_session_value(session_path, value)
@@ -275,6 +279,7 @@ class DatasetRepository:
             # leave an active record looking like it is already trashed.
             value["output_dir"] = str(source)
             value.pop("trash_original_path", None)
+            value.pop("trash_original_display_path", None)
             value.pop("deleted_at", None)
             try:
                 self._write_session_value(session_path, value)
@@ -296,7 +301,13 @@ class DatasetRepository:
         if not original_value:
             raise RuntimeError("validation.dataset_restore_path")
         original = self._checked_path(Path(original_value), self.root)
-        if original.is_relative_to(self.trash_root.resolve()):
+        display_value = str(value.get("trash_original_display_path") or "").strip()
+        if display_value:
+            display_path = self._checked_path(Path(display_value), self.root)
+            if display_path.resolve() != original.resolve():
+                raise RuntimeError("validation.dataset_restore_path")
+            original = display_path
+        if original.resolve().is_relative_to(self.trash_root.resolve()):
             raise RuntimeError("validation.dataset_restore_path")
         if original.exists():
             raise RuntimeError("validation.dataset_restore_conflict")
@@ -304,6 +315,7 @@ class DatasetRepository:
         shutil.move(str(source), str(original))
         value["output_dir"] = str(original)
         value.pop("trash_original_path", None)
+        value.pop("trash_original_display_path", None)
         value.pop("deleted_at", None)
         self._write_session_value(original / "session.json", value)
         record = self._read_record(original / "session.json", force_path=original)
@@ -360,11 +372,16 @@ class DatasetRepository:
 
     @staticmethod
     def _checked_path(path: Path, parent: Path) -> Path:
-        resolved = path.expanduser().resolve()
+        candidate = DatasetRepository._absolute_path(path)
+        resolved = candidate.resolve()
         root = parent.expanduser().resolve()
         if resolved == root or not resolved.is_relative_to(root):
             raise RuntimeError("validation.dataset_path")
-        return resolved
+        return candidate
+
+    @staticmethod
+    def _absolute_path(path: Path) -> Path:
+        return Path(path).expanduser().absolute()
 
     @staticmethod
     def _read_session_value(path: Path) -> dict[str, Any]:
@@ -389,7 +406,7 @@ class DatasetRepository:
             value = cls._read_session_value(session_path)
             output_dir = (
                 force_path or Path(value.get("output_dir") or session_path.parent)
-            ).resolve()
+            ).expanduser().absolute()
             duration = float(
                 value.get("duration_s", value.get("recording_duration_s", 0))
             )
