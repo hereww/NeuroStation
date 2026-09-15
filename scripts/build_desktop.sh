@@ -6,10 +6,20 @@ python_command=${PYTHON:-python3}
 mode=${MODE:-standalone}
 deploy_command=$("$python_command" -c 'import pathlib,sys; print(pathlib.Path(sys.executable).parent / "pyside6-deploy")')
 deploy_spec="$project_root/pysidedeploy.spec"
+macos_hidden_brainflow_libs=""
+brainflow_lib=""
 
-if [ "$(uname -s)" = "Darwin" ]; then
-  deploy_spec="$project_root/pysidedeploy.macos.spec"
-fi
+restore_macos_brainflow_libs() {
+  if [ -z "$macos_hidden_brainflow_libs" ] || [ ! -d "$macos_hidden_brainflow_libs" ]; then
+    return
+  fi
+  for library in "$macos_hidden_brainflow_libs"/*.so; do
+    [ -e "$library" ] || continue
+    mv "$library" "$brainflow_lib/"
+  done
+  rmdir "$macos_hidden_brainflow_libs" 2>/dev/null || true
+  macos_hidden_brainflow_libs=""
+}
 
 if [ ! -x "$deploy_command" ]; then
   echo "pyside6-deploy is missing beside $python_command. Install requirements.txt first." >&2
@@ -17,7 +27,18 @@ if [ ! -x "$deploy_command" ]; then
 fi
 
 cd "$project_root"
+if [ "$(uname -s)" = "Darwin" ]; then
+  brainflow_lib=$("$python_command" -c 'import pathlib,brainflow; print(pathlib.Path(brainflow.__file__).resolve().parent / "lib")')
+  macos_hidden_brainflow_libs=$(mktemp -d "${TMPDIR:-/tmp}/neurostation-brainflow.XXXXXX")
+  trap restore_macos_brainflow_libs EXIT
+  for library in "$brainflow_lib"/*.so; do
+    [ -e "$library" ] || continue
+    mv "$library" "$macos_hidden_brainflow_libs/"
+  done
+fi
 "$deploy_command" -c "$deploy_spec" --mode "$mode" --force "$@"
+restore_macos_brainflow_libs
+trap - EXIT
 
 if [ "$mode" = "standalone" ]; then
   brainflow_lib=$("$python_command" -c 'import pathlib,brainflow; print(pathlib.Path(brainflow.__file__).resolve().parent / "lib")')
@@ -47,6 +68,10 @@ case "$(uname -s)" in
     -exec cp {} "$artifact_root/brainflow/lib/" \;
   if [ "$runtime_name" = "macos" ] && find "$artifact_root" -type f -name '*.so' -print -quit | grep -q .; then
     echo "macOS artifact contains Linux shared libraries." >&2
+    exit 2
+  fi
+  if [ "$runtime_name" = "macos" ] && [ ! -f "$artifact_root/Python" ]; then
+    echo "macOS artifact is missing its embedded Python runtime." >&2
     exit 2
   fi
   openbci_source="$project_root/integrations/openbci_gui/runtime/$runtime_name"
