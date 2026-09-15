@@ -15,16 +15,7 @@ from typing import Any
 
 from neurostation_contract import (
     OpenBCIImportReport,
-    PRODUCT_DESCRIPTION,
-    PRODUCT_NAME,
-    PRODUCT_SEMVER,
-    PRODUCT_VERSION,
-    RELEASE_DATE,
 )
-
-from eeg_tools.session_files import write_manifest
-
-from .ssvep import SSVEPProtocol
 
 
 @dataclass(frozen=True)
@@ -40,7 +31,7 @@ class DatasetRecord:
     recorded_samples_per_channel: int
     event_count: int
     simulated: bool
-    source: str = "demo"
+    source: str = "cyton"
     sampling_rate_hz: int = 250
     channel_count: int = 8
     files: tuple[str, ...] = ()
@@ -85,105 +76,10 @@ class DatasetRepository:
     def default_openbci_recordings_root() -> Path:
         return Path.home() / "Documents" / "OpenBCI_GUI" / "Recordings"
 
-    def create_simulated(
-        self,
-        protocol: SSVEPProtocol,
-        *,
-        participant_id: str,
-        session_name: str,
-        status: str = "completed",
-        completed_trials: int | None = None,
-        user_id: str = "",
-        user_name: str = "",
-        user_link_status: str = "unlinked",
-    ) -> DatasetRecord:
-        now = datetime.now().astimezone()
-        session_id = now.strftime("session_%Y%m%d_%H%M%S_%f")[:-3]
-        output_dir = self.root / session_id
-        output_dir.mkdir(parents=True, exist_ok=False)
-        completed = protocol.trial_count if completed_trials is None else completed_trials
-        event_count = 3 + completed * 2
-        record = DatasetRecord(
-            session_id=session_id,
-            status=status,
-            participant_id=participant_id,
-            session_name=session_name,
-            output_dir=output_dir,
-            duration_s=protocol.recording_duration_s,
-            completed_trials=completed,
-            expected_samples_per_channel=protocol.expected_samples_per_channel,
-            recorded_samples_per_channel=0,
-            event_count=event_count,
-            simulated=True,
-            source="demo",
-            sampling_rate_hz=protocol.sampling_rate_hz,
-            channel_count=protocol.channel_count,
-            user_id=user_id,
-            user_name=user_name,
-            user_link_status=user_link_status,
-        )
+    def create_simulated(self, *args, **kwargs) -> DatasetRecord:
+        """Reject the removed simulated-session API."""
 
-        protocol_path = output_dir / "protocol.json"
-        protocol_payload: dict[str, Any] = {
-            "protocol_id": protocol.protocol_id,
-            "source": str(protocol.source) if protocol.source else None,
-            "countdown_s": protocol.countdown_s,
-            "recording_duration_s": protocol.recording_duration_s,
-            "trial_count": protocol.trial_count,
-            "targets": [
-                {"id": target_id, "frequency_hz": frequency}
-                for target_id, frequency in protocol.targets
-            ],
-        }
-        protocol_path.write_text(
-            json.dumps(protocol_payload, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-
-        events_path = output_dir / "events.tsv"
-        event_lines = ["event_name\ttrial_index\ttarget_id\tfrequency_hz\tmarker_code"]
-        event_lines.append(f"acquisition_start\t-1\t\t\t{protocol.acquisition_start_marker}")
-        event_lines.append(f"session_start\t-1\t\t\t{protocol.session_start_marker}")
-        for trial in protocol.build_trials()[:completed]:
-            event_lines.append(
-                f"stimulus_onset\t{trial.index}\t{trial.target_id}\t"
-                f"{trial.frequency_hz}\t{trial.onset_marker}"
-            )
-            event_lines.append(
-                f"stimulus_offset\t{trial.index}\t{trial.target_id}\t"
-                f"{trial.frequency_hz}\t{trial.offset_marker}"
-            )
-        terminal_name = "session_end" if status == "completed" else "abort"
-        terminal_marker = (
-            protocol.session_end_marker if status == "completed" else protocol.abort_marker
-        )
-        event_lines.append(f"{terminal_name}\t-1\t\t\t{terminal_marker}")
-        events_path.write_text("\n".join(event_lines) + "\n", encoding="utf-8")
-
-        session_path = output_dir / "session.json"
-        session_payload = asdict(record)
-        session_payload["output_dir"] = str(output_dir)
-        session_payload["created_at"] = now.isoformat(timespec="milliseconds")
-        session_payload["notice"] = (
-            "UI acceptance simulation: no hardware EEG samples were recorded."
-        )
-        session_payload["application"] = {
-            "name": PRODUCT_NAME,
-            "version": PRODUCT_VERSION,
-            "semantic_version": PRODUCT_SEMVER,
-            "release_date": RELEASE_DATE,
-            "description": PRODUCT_DESCRIPTION,
-        }
-        temporary_path = output_dir / "session.json.pending"
-        temporary_path.write_text(
-            json.dumps(session_payload, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        temporary_path.replace(session_path)
-
-        manifest_path = output_dir / "manifest.csv"
-        write_manifest(
-            manifest_path, session_id, [session_path, protocol_path, events_path]
-        )
-        return record
+        raise RuntimeError("validation.real_hardware_only")
 
     def import_openbci_recordings(self, source_root: Path) -> OpenBCIImportReport:
         """Copy OpenBCI GUI recordings into this repository atomically."""
@@ -414,12 +310,12 @@ class DatasetRepository:
             expected_duration = float(value.get("expected_duration_s", duration))
             if value.get("source"):
                 source = str(value["source"])
-            elif value.get("board") == "synthetic":
+            elif value.get("board") == "synthetic" or value.get("simulated", False):
                 source = "synthetic"
             elif value.get("board") == "cyton":
                 source = "cyton"
             else:
-                source = "demo" if value.get("simulated", False) else "cyton"
+                source = "cyton"
             imported = bool(
                 value.get("imported", False)
                 or value.get("origin") == "imported_openbci"

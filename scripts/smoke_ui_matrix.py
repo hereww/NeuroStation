@@ -12,10 +12,14 @@ def main() -> int:
         environment["QT_QPA_PLATFORM"] = "offscreen"
         environment["QT_SCALE_FACTOR"] = scale
         code = (
+            "from pathlib import Path; import tempfile; "
             "from PySide6.QtWidgets import QApplication; "
             "from apps.workstation_ui.app import MainWindow; "
-            "from apps.workstation_ui.gateway import MockGateway; "
-            "app=QApplication([]); w=MainWindow(MockGateway(), timer_enabled=False); "
+            "from eeg_tools.workstation.desktop_gateway import DesktopGateway; "
+            "app=QApplication([]); root=Path(tempfile.mkdtemp()); "
+            "gateway=DesktopGateway(protocol_path=Path('configs/protocols/ssvep_four_target_v2.json'), "
+            "channel_config_path=Path('configs/channel_config_v1_auto.json'), dataset_root=root); "
+            "w=MainWindow(gateway, timer_enabled=False); "
             "w.show(); app.processEvents(); "
             "assert w.width() >= 320 and w.height() >= 560; "
             "w.navigate('ssvep'); app.processEvents(); assert not w.grab().isNull(); "

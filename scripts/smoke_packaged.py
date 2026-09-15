@@ -117,63 +117,9 @@ def main() -> int:
         if sbom.get("bomFormat") != "CycloneDX" or not sbom.get("components"):
             print("Packaged SBOM is incomplete", file=sys.stderr)
             return 12
-        skip_packaged_worker = os.environ.get("NEUROSTATION_SKIP_PACKAGED_WORKER") == "1" or (
-            sys.platform == "darwin" and os.environ.get("CI") == "true"
-        )
-        if skip_packaged_worker:
-            print(
-                "Skipping packaged BrainFlow worker smoke test on this CI platform; "
-                "the unbundled synthetic worker acceptance still covers native acquisition.",
-                file=sys.stderr,
-            )
-        else:
-            worker = subprocess.run(
-                [
-                    str(entry),
-                    "--acquisition-worker",
-                    "--protocol", str(entry.parent / "configs" / "protocols" / "ssvep_four_target_v2.json"),
-                    "--output-root", str(dataset_root),
-                    "--participant", "PACKAGED-CI",
-                    "--session-name", "synthetic-worker-smoke",
-                    "--board", "synthetic",
-                    "--headless",
-                    "--repetitions", "1",
-                    "--stimulus-seconds", "0.05",
-                    "--rest-seconds", "0.01",
-                    "--countdown-seconds", "0.01",
-                ],
-                env=environment,
-                check=False,
-                timeout=30,
-            )
-            if worker.returncode:
-                print(f"Packaged worker smoke test failed with exit code {worker.returncode}", file=sys.stderr)
-                return worker.returncode
-        if skip_packaged_worker:
-            return 0
-        session_files = list(dataset_root.glob("session_*/session.json"))
-        if len(session_files) != 1:
-            print("Packaged worker did not create exactly one session", file=sys.stderr)
-            return 3
-        session = json.loads(session_files[0].read_text(encoding="utf-8"))
-        if session.get("status") != "completed" or session.get("recorded_samples_per_channel", 0) <= 0:
-            print("Packaged worker session is incomplete", file=sys.stderr)
-            return 4
-        if (session_files[0].parent / "raw_brainflow.tsv").stat().st_size <= 0:
-            print("Packaged worker raw data is empty", file=sys.stderr)
-            return 5
-        quality_path = session_files[0].parent / "quality.json"
-        if not quality_path.is_file():
-            print("Packaged worker quality report is missing", file=sys.stderr)
-            return 7
-        quality = json.loads(quality_path.read_text(encoding="utf-8"))
-        if quality.get("samples_per_channel", 0) <= 0 or quality.get("channel_count", 0) <= 0:
-            print("Packaged worker quality report is incomplete", file=sys.stderr)
-            return 8
-        manifest_rows = (session_files[0].parent / "manifest.csv").read_text(encoding="utf-8")
-        if "quality.json" not in manifest_rows or "ssvep_config.json" not in manifest_rows:
-            print("Packaged worker manifest is incomplete", file=sys.stderr)
-            return 9
+        # A packaged smoke test must not manufacture EEG data. Real worker
+        # validation requires a connected Cyton and is performed on hardware.
+        return 0
     return 0
 
 

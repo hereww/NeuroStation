@@ -48,8 +48,8 @@ jobs:
           bash scripts/sync_openbci_gui.sh sync
           bash scripts/sync_openbci_gui.sh overlay
           PYTHON=python bash scripts/build_openbci_gui.sh
-      - name: Synthetic worker acceptance
-        run: python run_ssvep_session.py --synthetic --headless --participant CI --session-name synthetic-acceptance --output-root .acceptance-data --repetitions 1 --stimulus-seconds 0.05 --rest-seconds 0.01 --countdown-seconds 0.01
+      - name: Real hardware entrypoint guard
+        run: python run_ssvep_session.py --validate-only --channel-config configs/channel_config_v1_auto.json
       - name: Core and integration tests
         run: python -m unittest discover -s tests -v
       - name: Independent UI tests

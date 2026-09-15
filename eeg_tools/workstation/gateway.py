@@ -1,15 +1,18 @@
-"""Stable UI gateway for acquisition apps and task state."""
+"""Legacy application metadata gateway.
+
+Hardware acquisition is implemented by ``AcquisitionProcessGateway``. This
+module retains protocol and dataset management helpers, but it has no task
+state machine and cannot create simulated recordings.
+"""
 
 from __future__ import annotations
 
-import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Callable
 
 from .dataset import DatasetRecord, DatasetRepository
 from .ssvep import SSVEPProtocol
-from .task import SSVEPTask, TaskPhase, TaskSnapshot
+from .task import TaskSnapshot
 
 
 @dataclass(frozen=True)
@@ -32,12 +35,9 @@ class WorkstationGateway:
         *,
         protocol_path: Path,
         dataset_root: Path,
-        clock: Callable[[], float] = time.monotonic,
     ):
         self.protocol_path = protocol_path
         self.repository = DatasetRepository(dataset_root)
-        self.clock = clock
-        self._task: SSVEPTask | None = None
 
     def list_acquisition_apps(self) -> tuple[AcquisitionApp, ...]:
         return (
@@ -77,7 +77,7 @@ class WorkstationGateway:
 
     @property
     def active_protocol(self) -> SSVEPProtocol | None:
-        return self._task.protocol if self._task is not None else None
+        return None
 
     def ssvep_details(
         self,
@@ -124,37 +124,14 @@ class WorkstationGateway:
         stimulus_s: float | None = None,
         rest_s: float | None = None,
         frequencies_hz: tuple[int, ...] | None = None,
-        simulation_speed: float = 1.0,
     ) -> TaskSnapshot:
-        if self._task and self._task.phase in (TaskPhase.COUNTDOWN, TaskPhase.RUNNING):
-            raise RuntimeError("an acquisition task is already active")
-        protocol = SSVEPProtocol.load(self.protocol_path).with_runtime_parameters(
-            repetitions=repetitions,
-            stimulus_s=stimulus_s,
-            rest_s=rest_s,
-            frequencies_hz=frequencies_hz,
-        )
-        self._task = SSVEPTask(
-            protocol,
-            self.repository,
-            participant_id=participant_id,
-            session_name=session_name,
-            user_id=user_id,
-            user_name=user_name,
-            user_link_status=user_link_status,
-            simulation_speed=simulation_speed,
-        )
-        return self._task.start(self.clock())
+        raise ValueError("validation.real_hardware_only")
 
     def poll_task(self) -> TaskSnapshot:
-        if self._task is None:
-            raise RuntimeError("no acquisition task has been started")
-        return self._task.snapshot(self.clock())
+        raise RuntimeError("validation.real_hardware_only")
 
     def abort_task(self) -> TaskSnapshot:
-        if self._task is None:
-            raise RuntimeError("no acquisition task has been started")
-        return self._task.abort(self.clock())
+        raise RuntimeError("validation.real_hardware_only")
 
     def list_datasets(self) -> list[dict]:
         return [self._serialize_record(record) for record in self.repository.list_records()]

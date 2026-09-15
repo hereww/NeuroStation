@@ -32,14 +32,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-root", type=Path, default=DatasetRepository.default_root())
     parser.add_argument("--participant", default="P001")
     parser.add_argument("--session-name", default="SSVEP")
-    parser.add_argument("--user-id", default="U0000")
-    parser.add_argument("--user-name", default="演示用户")
+    parser.add_argument("--user-id", default="")
+    parser.add_argument("--user-name", default="")
     parser.add_argument("--repetitions", type=int)
     parser.add_argument("--stimulus-seconds", type=float)
     parser.add_argument("--rest-seconds", type=float)
     parser.add_argument("--countdown-seconds", type=float)
     parser.add_argument("--screen-index", type=int, default=0)
-    parser.add_argument("--synthetic", action="store_true")
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--acknowledge-flicker-risk", action="store_true")
     parser.add_argument("--allow-draft-protocol", action="store_true")
@@ -82,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
         "--session-name", arguments.session_name,
         "--user-id", arguments.user_id,
         "--user-name", arguments.user_name,
-        "--board", "synthetic" if arguments.synthetic else "cyton",
+        "--board", "cyton",
         "--port", arguments.port,
         "--screen-index", str(arguments.screen_index),
     ]

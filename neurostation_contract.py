@@ -16,9 +16,8 @@ PRODUCT_NAME = "NeuroStation"
 PRODUCT_VERSION = "MVP1.0.2"
 PRODUCT_SEMVER = "1.0.2"
 PRODUCT_DESCRIPTION = (
-    "Windows-first EEG acquisition workstation for SSVEP workflow demos, "
-    "BrainFlow Synthetic capture, OpenBCI Cyton acquisition, session metadata, "
-    "quality reports, and dataset review."
+    "Windows-first EEG acquisition workstation for OpenBCI Cyton SSVEP capture, "
+    "session metadata, quality reports, and dataset review."
 )
 RELEASE_DATE = "2026-09-13"
 
@@ -101,6 +100,9 @@ class UserProfile:
 
 
 class CaptureMode(str, Enum):
+    # The legacy values remain readable so older datasets can still be shown
+    # in the dataset browser.  New acquisition requests are restricted to
+    # CYTON by CaptureConfig.validate().
     DEMO = "demo"
     VISUAL_PREVIEW = "preview"
     SYNTHETIC = "synthetic"
@@ -124,10 +126,10 @@ def format_duration(seconds: float) -> str:
 
 @dataclass(frozen=True)
 class CaptureConfig:
-    participant: str = "P001"
+    participant: str = ""
     name: str = "SSVEP"
-    user_id: str = "U0000"
-    user_name: str = "演示用户"
+    user_id: str = ""
+    user_name: str = ""
     stimulus_seconds: int = 5
     rest_seconds: int = 3
     repetitions: int = 3
@@ -136,7 +138,7 @@ class CaptureConfig:
     # apps, test runners, and long-lived desktop processes.
     save_directory: Path = field(default_factory=default_save_directory)
     refresh_rate: int = 60
-    mode: CaptureMode = CaptureMode.DEMO
+    mode: CaptureMode = CaptureMode.CYTON
     port: str = "AUTO"
     screen_index: int = 0
     acknowledge_flicker_risk: bool = False
@@ -161,11 +163,13 @@ class CaptureConfig:
             mode = CaptureMode(self.mode)
         except ValueError as error:
             raise ValueError("validation.mode") from error
+        if mode is not CaptureMode.CYTON:
+            raise ValueError("validation.real_hardware_only")
         if type(self.screen_index) is not int or self.screen_index < 0:
             raise ValueError("validation.screen")
-        if mode == CaptureMode.CYTON and not self.port.strip():
+        if not self.port.strip():
             raise ValueError("validation.port")
-        if mode != CaptureMode.DEMO and not self.acknowledge_flicker_risk:
+        if not self.acknowledge_flicker_risk:
             raise ValueError("validation.flicker_ack")
         if self.channel_config is not None:
             channel_path = Path(self.channel_config).expanduser()
@@ -204,8 +208,8 @@ class DeviceInfo:
     port: str = "AUTO"
     channels: int = CHANNEL_COUNT
     sample_rate: int = SAMPLE_RATE
-    connected: bool = True
-    simulated: bool = True
+    connected: bool = False
+    simulated: bool = False
 
 
 @dataclass(frozen=True)
@@ -230,9 +234,9 @@ class Dataset:
     event_count: int
     path: Path
     created_at: str
-    simulated: bool = True
+    simulated: bool = False
     persisted: bool = False
-    source: CaptureMode = CaptureMode.DEMO
+    source: CaptureMode = CaptureMode.CYTON
     status: str = "completed"
     channel_count: int = CHANNEL_COUNT
     error: str = ""
@@ -274,7 +278,7 @@ class TaskSnapshot:
     frequency: int = 0
     resting: bool = False
     event_count: int = 0
-    speed: float = 8
+    speed: float = 1
     result: Dataset | None = None
     error: str = ""
 
@@ -308,10 +312,7 @@ class CaptureGateway(Protocol):
 
     def preflight_cyton(self, seconds: float = 3.0, port: str = "AUTO") -> dict[str, Any]: ...
 
-    def start_ssvep(self, config: CaptureConfig, speed: float = 8) -> TaskSnapshot: ...
-    def start_manual(self, config: CaptureConfig) -> TaskSnapshot: ...
-    def stop_manual(self) -> Dataset: ...
-    def add_marker(self) -> int: ...
+    def start_ssvep(self, config: CaptureConfig, speed: float = 1) -> TaskSnapshot: ...
     def cancel(self) -> TaskSnapshot: ...
     def tick(self) -> TaskSnapshot: ...
     def read_live_waveform(self, maximum_rows: int = 1000) -> dict[str, Any] | None: ...

@@ -1,4 +1,5 @@
 """Optional real-Qt smoke tests; automatically skipped when PySide6 is absent."""
+
 import importlib.util
 import math
 import os
@@ -9,20 +10,31 @@ import unittest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 HAS_QT = importlib.util.find_spec("PySide6") is not None
 
+ROOT = Path(__file__).resolve().parents[3]
+PROTOCOL = ROOT / "configs" / "protocols" / "ssvep_four_target_v2.json"
+CHANNELS = ROOT / "configs" / "channel_config_v1_auto.json"
+
 
 @unittest.skipUnless(HAS_QT, "PySide6 not installed; pure logic tests still run")
 class QtOffscreenTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from PySide6.QtWidgets import QApplication
+
         cls.application = QApplication.instance() or QApplication([])
 
     def setUp(self):
         from apps.workstation_ui.app import MainWindow
-        from apps.workstation_ui.gateway import MockGateway
+        from eeg_tools.workstation.desktop_gateway import DesktopGateway
         from neurostation_diagnostics import DiagnosticStore
-        self.now = 0.0
-        self.gateway = MockGateway(lambda: self.now)
+
+        self.temp = tempfile.TemporaryDirectory()
+        self.gateway = DesktopGateway(
+            protocol_path=PROTOCOL,
+            channel_config_path=CHANNELS,
+            dataset_root=Path(self.temp.name) / "Datasets",
+        )
+        self.start_calls = []
         self.diagnostic_store = DiagnosticStore(persist=False)
         self.window = MainWindow(
             self.gateway,
@@ -34,9 +46,42 @@ class QtOffscreenTests(unittest.TestCase):
         self.window.close()
         self.window.deleteLater()
         self.application.processEvents()
+        self.temp.cleanup()
+
+    def _stub_start(self, config, speed=1):
+        """Record routing without creating samples or a dataset."""
+
+        from apps.workstation_ui.gateway import Phase, TaskSnapshot
+
+        self.start_calls.append((config, speed))
+        acquisition = self.gateway._acquisition
+        acquisition.config = config
+        acquisition._snapshot = TaskSnapshot(
+            phase=Phase.COUNTDOWN,
+            countdown=5,
+            remaining=config.recording_seconds,
+            trial_count=config.trials,
+            speed=1,
+        )
+        self.gateway._active = acquisition
+        return acquisition.snapshot
+
+    def _add_user(self, user_id="U0001", name="Test user"):
+        from neurostation_contract import UserProfile
+
+        self.gateway.add_user(UserProfile(
+            user_id=user_id,
+            name=name,
+            age=30,
+            medical_conditions=("none",),
+        ))
+        self.window.refresh_users()
 
     def test_navigation_language_and_static_render(self):
         from apps.workstation_ui.app import NAVIGATION
+
+        self.assertNotIn("live", NAVIGATION)
+        self.assertNotIn("live", self.window.pages)
         self.window.show()
         for page in NAVIGATION:
             self.window.navigate(page)
@@ -46,45 +91,33 @@ class QtOffscreenTests(unittest.TestCase):
         self.assertEqual(self.window.tr("nav.apps"), "Acquisition apps")
         self.assertFalse(self.window.grab().isNull())
 
-    def test_task_completion_dataset_and_timer_cleanup(self):
-        from PySide6.QtWidgets import QFrame
-        from apps.workstation_ui.gateway import CaptureConfig, Phase
-        self.window.start_ssvep(CaptureConfig(), 8)
-        self.assertEqual(self.window.current_page, "task")
-        self.assertFalse(self.window.pages["ssvep"].start_button.isEnabled())
-        self.now = 4.999
-        self.window.poll()
-        self.assertEqual(self.gateway.snapshot.phase, Phase.COUNTDOWN)
-        self.now = 5
-        self.window.poll()
-        self.now = 16.625
-        self.window.poll()
-        self.assertEqual(self.window.current_page, "result")
-        self.window.navigate("datasets")
-        self.assertEqual(self.window.latest_dataset, self.gateway.datasets[0].id)
-        self.assertIsNotNone(self.window.pages["datasets"].findChild(QFrame, "latestDataset"))
-        self.assertFalse(self.window.timer.isActive())
-
-    def test_default_ssvep_page_is_one_click_runnable(self):
-        from apps.workstation_ui.gateway import CaptureMode, Phase
+    def test_ssvep_form_is_cyton_only_and_runs_at_real_time(self):
+        from apps.workstation_ui.gateway import CaptureMode
 
         page = self.window.pages["ssvep"]
-        self.assertEqual(CaptureMode(page.mode.currentData()), CaptureMode.DEMO)
-        self.assertTrue(page.config().save_directory.is_absolute())
-        page._start()
-        self.assertEqual(self.window.current_page, "task")
-        self.assertEqual(self.gateway.snapshot.phase, Phase.COUNTDOWN)
-        self.assertFalse(page.start_button.isEnabled())
+        self.assertEqual(1, page.mode.count())
+        self.assertEqual(CaptureMode.CYTON, page.mode.currentData())
+        self.assertFalse(hasattr(page, "speed"))
+        self.assertEqual(CaptureMode.CYTON, page.config().mode)
+        self.assertTrue(page.port.isEnabled())
+        self.assertFalse(page.channel_auto_label.isHidden())
 
-        # A normal user can leave every field untouched and still reach the
-        # completed result path through the same UI signal as a button click.
-        self.now = 5
-        self.window.poll()
-        self.now = 16.625
-        self.window.poll()
-        self.assertEqual(self.window.current_page, "result")
-        self.assertIsNotNone(self.window.result)
-        self.assertFalse(self.window.result.persisted)
+        page.channel_manual.setChecked(True)
+        channel_path = ROOT / "configs" / "channel_config_v1_auto.json"
+        page.channel.setText(str(channel_path))
+        self.assertEqual(channel_path, page.config().channel_config)
+
+    def test_capture_form_requires_a_real_user_and_photosensitivity_ack(self):
+        from apps.workstation_ui.gateway import CaptureMode
+
+        page = self.window.pages["ssvep"]
+        page._start()
+        self.assertTrue(page.error.text())
+        self._add_user()
+        page.acknowledge.setChecked(True)
+        config = page.config()
+        self.assertEqual(CaptureMode.CYTON, config.mode)
+        config.validate()
 
     def test_openbci_waveform_model_uses_rolling_buffers_and_display_copy(self):
         from apps.workstation_ui.components import WaveformDisplayModel
@@ -133,92 +166,22 @@ class QtOffscreenTests(unittest.TestCase):
         self.assertLess(gain(60.0), 0.02)
         self.assertLess(gain(100.0), 0.02)
 
-    def test_live_page_is_non_persistent_capture_test_with_openbci_waveform(self):
-        from apps.workstation_ui.gateway import CaptureMode
-
-        page = self.window.pages["live"]
-        self.window.navigate("live")
-        self.window.show()
-        self.application.processEvents()
-        self.assertEqual("采集测试", page.title_label.text())
-        self.assertTrue(page.waveform._timer.isActive())
-        self.assertEqual(40, page.waveform._timer.interval())
-        self.assertEqual(8, page.waveform.model.CHANNEL_COUNT)
-        self.assertEqual(
-            ("Fp1", "Fp2", "C3", "C4", "P7", "P8", "O1", "O2"),
-            page.waveform.model.CHANNEL_NAMES,
-        )
-        self.assertEqual(0, page.waveform.model.sample_index)
-        self.assertEqual(
-            (0.0,) * page.waveform.model.DISPLAY_SAMPLES,
-            page.waveform.model.visible_samples(0),
-        )
-        page.waveform._advance()
-        self.assertEqual(0, page.waveform.model.sample_index)
-
-        page._start()
-        self.assertIs(CaptureMode.DEMO, self.gateway.config.mode)
-        page.waveform._advance()
-        self.assertEqual(10, page.waveform.model.sample_index)
-        self.assertEqual(1250, len(page.waveform.model.visible_samples(0)))
-        self.assertEqual(10, len(page.waveform.model.raw_buffers[0]))
-        self.now = 3
-        self.window.poll()
-        self.window.stop_manual()
-        self.assertEqual("result", self.window.current_page)
-        self.assertEqual("capture_test", self.window.result.origin)
-        self.assertFalse(self.window.result.persisted)
-        self.assertFalse(self.window.result.path.exists())
-
-    def test_cancel_and_close_stop_timer(self):
-        from apps.workstation_ui.gateway import CaptureConfig, Phase
-        self.window.start_ssvep(CaptureConfig(), 8)
-        self.window.cancel_task()
-        self.assertEqual(self.gateway.snapshot.phase, Phase.CANCELLED)
-        self.assertFalse(self.window.timer.isActive())
-        self.window.start_ssvep(CaptureConfig(), 8)
-        self.window.close()
-        self.assertFalse(self.gateway.snapshot.active)
-
-    def test_cyton_start_runs_preflight_before_starting(self):
+    def test_cyton_start_runs_preflight_before_routing_to_worker(self):
         from apps.workstation_ui.gateway import CaptureConfig, CaptureMode, Phase
-        calls = []
-        self.gateway.preflight_cyton = lambda port="AUTO": calls.append(port) or {"status": "passed", "checks": []}
-        self.gateway.add_user(__import__("neurostation_contract", fromlist=["UserProfile"]).UserProfile(
-            user_id="U0001", name="Test", age=30, medical_conditions=("none",)
-        ))
+
+        self._add_user()
+        self.gateway.preflight_cyton = lambda port="AUTO": {
+            "status": "passed",
+            "selected_port": port,
+            "checks": [],
+        }
+        self.gateway.start_ssvep = self._stub_start
         config = CaptureConfig(
             mode=CaptureMode.CYTON,
             port="COM5",
             user_id="U0001",
             participant="U0001",
-            acknowledge_flicker_risk=True,
-        )
-        self.window.start_ssvep(config, 1)
-        for _ in range(50):
-            self.application.processEvents()
-            if self.window.gateway.snapshot.phase == Phase.COUNTDOWN:
-                break
-        self.assertEqual(["COM5"], calls)
-        self.assertEqual(Phase.COUNTDOWN, self.gateway.snapshot.phase)
-
-    def test_cyton_failed_preflight_blocks_start(self):
-        from apps.workstation_ui.gateway import CaptureConfig, CaptureMode, Phase
-        from neurostation_contract import UserProfile
-        errors = []
-        self.window._error = errors.append
-        self.gateway.add_user(UserProfile(
-            user_id="U0002", name="Failed", age=30, medical_conditions=("none",)
-        ))
-        calls = []
-        self.gateway.preflight_cyton = lambda port="AUTO": calls.append(port) or {
-            "status": "failed", "error": "no device", "checks": []
-        }
-        config = CaptureConfig(
-            mode=CaptureMode.CYTON,
-            port="COM9",
-            user_id="U0002",
-            participant="U0002",
+            name="real hardware routing",
             acknowledge_flicker_risk=True,
         )
         self.window.start_ssvep(config, 1)
@@ -226,69 +189,50 @@ class QtOffscreenTests(unittest.TestCase):
             self.application.processEvents()
             if self.window.preflight_thread is None:
                 break
-        self.assertEqual(["COM9"], calls)
-        self.assertFalse(self.gateway.snapshot.active)
-        self.assertEqual(1, len(errors))
-        self.assertIsInstance(errors[0], ValueError)
-
-    def test_cyton_preflight_warning_surfaces_check_detail(self):
-        page = self.window.pages["devices"]
-        self.window._preflight_finished({
-            "status": "warning",
-            "error": "",
-            "checks": [{
-                "name": "timestamps",
-                "status": "warning",
-                "detail": "Detected 9 timestamp gaps.",
-                "metrics": {
-                    "timestamp_gap_count": 9,
-                    "timestamp_gap_ratio": 9 / 208,
-                    "timestamp_diff_max_s": 0.012,
-                },
-            }],
-        })
-        self.assertIn("时间戳", page.preflight_status.text())
-        self.assertIn("9", page.preflight_status.text())
-        self.assertIn("12.0", page.preflight_status.text())
-
-    def test_cyton_preflight_warning_continues_in_technical_validation(self):
-        from apps.workstation_ui.gateway import CaptureConfig, CaptureMode, Phase
-        from neurostation_contract import UserProfile
-        self.gateway.add_user(UserProfile(
-            user_id="U0003", name="Technical", age=30, medical_conditions=("none",)
-        ))
-        config = CaptureConfig(
-            mode=CaptureMode.CYTON,
-            port="COM7",
-            user_id="U0003",
-            participant="U0003",
-            acknowledge_flicker_risk=True,
-            allow_draft_hardware_config=True,
-        )
-        self.window._pending_ssvep = (config, 1)
-        self.window._preflight_finished({
-            "status": "warning",
-            "error": "",
-            "selected_port": "COM7",
-            "checks": [{"name": "channels", "status": "warning", "metrics": {"warning_channels": [2]}}],
-        })
-        for _ in range(50):
-            self.application.processEvents()
-            if self.gateway.snapshot.phase == Phase.COUNTDOWN:
-                break
+        self.assertEqual(1, len(self.start_calls))
+        self.assertEqual("COM5", self.start_calls[0][0].port)
+        self.assertEqual(1, self.start_calls[0][1])
         self.assertEqual(Phase.COUNTDOWN, self.gateway.snapshot.phase)
 
-    def test_cyton_preflight_warning_does_not_block_formal_candidate(self):
+    def test_cyton_failed_preflight_blocks_worker_routing(self):
+        from apps.workstation_ui.gateway import CaptureConfig, CaptureMode
+
+        self._add_user()
+        errors = []
+        self.window._error = errors.append
+        self.gateway.start_ssvep = self._stub_start
+        self.gateway.preflight_cyton = lambda port="AUTO": {
+            "status": "failed",
+            "error": "no device",
+            "checks": [],
+        }
+        config = CaptureConfig(
+            mode=CaptureMode.CYTON,
+            port="COM9",
+            user_id="U0001",
+            participant="U0001",
+            name="blocked hardware",
+            acknowledge_flicker_risk=True,
+        )
+        self.window.start_ssvep(config, 1)
+        for _ in range(50):
+            self.application.processEvents()
+            if self.window.preflight_thread is None:
+                break
+        self.assertEqual([], self.start_calls)
+        self.assertEqual(1, len(errors))
+
+    def test_cyton_preflight_warning_is_visible_when_worker_is_allowed_to_continue(self):
         from apps.workstation_ui.gateway import CaptureConfig, CaptureMode, Phase
-        from neurostation_contract import UserProfile
-        self.gateway.add_user(UserProfile(
-            user_id="U0004", name="Formal candidate", age=30, medical_conditions=("none",)
-        ))
+
+        self._add_user()
+        self.gateway.start_ssvep = self._stub_start
         config = CaptureConfig(
             mode=CaptureMode.CYTON,
             port="COM5",
-            user_id="U0004",
-            participant="U0004",
+            user_id="U0001",
+            participant="U0001",
+            name="warning hardware",
             acknowledge_flicker_risk=True,
             allow_draft_hardware_config=False,
         )
@@ -307,27 +251,20 @@ class QtOffscreenTests(unittest.TestCase):
                 "packet_duplicate_count": 0,
             }}],
         })
-        for _ in range(50):
-            self.application.processEvents()
-            if self.gateway.snapshot.phase == Phase.COUNTDOWN:
-                break
         self.assertEqual(Phase.COUNTDOWN, self.gateway.snapshot.phase)
         self.assertIn("继续", self.window.pages["ssvep"].error.text())
-        task_page = self.window.pages["task"]
-        self.assertFalse(task_page.quality_notice.isHidden())
-        self.assertIn("继续", task_page.quality_notice.text())
+        self.assertFalse(self.window.pages["task"].quality_notice.isHidden())
 
     def test_cyton_preflight_degraded_requires_review(self):
         from apps.workstation_ui.gateway import CaptureConfig, CaptureMode, Phase
-        from neurostation_contract import UserProfile
-        self.gateway.add_user(UserProfile(
-            user_id="U0005", name="Degraded", age=30, medical_conditions=("none",)
-        ))
+
+        self._add_user()
         config = CaptureConfig(
             mode=CaptureMode.CYTON,
             port="COM5",
-            user_id="U0005",
-            participant="U0005",
+            user_id="U0001",
+            participant="U0001",
+            name="degraded hardware",
             acknowledge_flicker_risk=True,
         )
         self.window._pending_ssvep = (config, 1)
@@ -341,57 +278,28 @@ class QtOffscreenTests(unittest.TestCase):
         self.assertNotEqual(Phase.COUNTDOWN, self.gateway.snapshot.phase)
         self.assertIn("复核", self.window.pages["ssvep"].error.text())
 
-    def test_ssvep_mode_selector_preserves_enum_and_requires_risk_ack(self):
-        from apps.workstation_ui.gateway import CaptureMode
+    def test_task_page_exposes_current_trial_banner(self):
+        from apps.workstation_ui.gateway import CaptureConfig, Phase, TaskSnapshot
 
-        page = self.window.pages["ssvep"]
-        page.mode.setCurrentIndex(page.mode.findData(CaptureMode.SYNTHETIC))
-        self.application.processEvents()
-        self.assertFalse(page.speed.isEnabled())
-        self.assertTrue(page.acknowledge.isEnabled())
-        with self.assertRaisesRegex(ValueError, "validation.flicker_ack"):
-            page.config().validate()
-        page.acknowledge.setChecked(True)
-        config = page.config()
-        config.validate()
-        self.assertIs(config.mode, CaptureMode.SYNTHETIC)
-        page.mode.setCurrentIndex(page.mode.findData(CaptureMode.CYTON))
-        self.application.processEvents()
-        self.assertTrue(page.port.isEnabled())
-        self.assertTrue(page.channel.isEnabled())
-
-    def test_preview_and_cyton_channel_mapping_defaults(self):
-        from apps.workstation_ui.gateway import CaptureMode
-
-        page = self.window.pages["ssvep"]
-        page.mode.setCurrentIndex(page.mode.findData(CaptureMode.VISUAL_PREVIEW))
-        self.application.processEvents()
-        self.assertFalse(page.port.isEnabled())
-        self.assertFalse(page.channel_manual.isEnabled())
-        self.assertTrue(page.channel_auto_label.isHidden())
-        self.assertIsNone(page.config().channel_config)
-        with self.assertRaisesRegex(ValueError, "validation.flicker_ack"):
-            page.config().validate()
-
-        page.mode.setCurrentIndex(page.mode.findData(CaptureMode.CYTON))
-        self.application.processEvents()
-        self.assertTrue(page.port.isEnabled())
-        self.assertFalse(page.channel_auto_label.isHidden())
-        self.assertFalse(page.channel_manual.isChecked())
-        self.assertIsNone(page.config().channel_config)
-        page.channel_manual.setChecked(True)
-        channel_path = Path.cwd() / "configs" / "cyton.json"
-        page.channel.setText(str(channel_path))
-        self.assertEqual(channel_path, page.config().channel_config)
-
-    def test_serial_scan_selects_detected_port(self):
-        page = self.window.pages["ssvep"]
-        self.window.gateway.scan_serial_ports = lambda: (
-            {"device": "COM5", "description": "USB serial"},
+        config = CaptureConfig(
+            participant="U0001",
+            user_id="U0001",
+            name="task view",
+            acknowledge_flicker_risk=True,
         )
-        self.window.scan_serial_ports()
-        self.assertEqual("COM5", page.port.text())
-        self.assertIn("COM5", page.port_status.text())
+        self.window.pages["task"].update_snapshot(
+            TaskSnapshot(
+                phase=Phase.RUNNING,
+                trial=2,
+                trial_count=12,
+                frequency=12,
+                elapsed=8,
+                remaining=85,
+                progress=8.6,
+            ),
+            config,
+        )
+        self.assertIn("/ 12", self.window.pages["task"].trial_banner.text())
 
     def test_diagnostics_page_navigates_refreshes_and_shows_events(self):
         self.diagnostic_store.warning(
@@ -417,60 +325,57 @@ class QtOffscreenTests(unittest.TestCase):
     def test_language_storage_and_window_geometry_persist(self):
         from PySide6.QtCore import QSettings
         from apps.workstation_ui.app import MainWindow
-        from apps.workstation_ui.gateway import MockGateway
+        from eeg_tools.workstation.desktop_gateway import DesktopGateway
 
-        with tempfile.TemporaryDirectory() as directory:
-            settings_path = Path(directory) / "settings.ini"
-            dataset_path = Path(directory) / "持久化数据"
-            settings = QSettings(str(settings_path), QSettings.Format.IniFormat)
-            first = MainWindow(
-                MockGateway(lambda: self.now),
-                locale="zh-CN",
-                timer_enabled=False,
-                persist_settings=True,
-                settings=settings,
-            )
-            first.change_language("en-US")
-            first.pages["ssvep"].save.setText(str(dataset_path))
-            first.resize(780, 650)
-            first.close()
-            settings.sync()
+        settings_path = Path(self.temp.name) / "settings.ini"
+        dataset_path = Path(self.temp.name) / "persistent-datasets"
+        settings = QSettings(str(settings_path), QSettings.Format.IniFormat)
+        first_gateway = DesktopGateway(
+            protocol_path=PROTOCOL,
+            channel_config_path=CHANNELS,
+            dataset_root=Path(self.temp.name) / "first-datasets",
+        )
+        first = MainWindow(
+            first_gateway,
+            locale="zh-CN",
+            timer_enabled=False,
+            persist_settings=True,
+            settings=settings,
+        )
+        first.change_language("en-US")
+        first.pages["ssvep"].save.setText(str(dataset_path))
+        first.resize(780, 650)
+        first.close()
+        settings.sync()
 
-            second = MainWindow(
-                MockGateway(lambda: self.now),
-                locale=None,
-                timer_enabled=False,
-                persist_settings=True,
-                settings=QSettings(str(settings_path), QSettings.Format.IniFormat),
-            )
-            self.assertEqual("en-US", second.tr.locale)
-            self.assertEqual(dataset_path, second.draft_config.save_directory)
-            self.assertEqual((780, 650), (second.width(), second.height()))
-            second.close()
-
-    def test_escape_does_not_cancel_when_idle(self):
-        self.window.cancel_task()
-        self.assertFalse(self.gateway.snapshot.active)
-        self.assertEqual("apps", self.window.current_page)
-
-    def test_task_page_exposes_current_trial_banner(self):
-        from apps.workstation_ui.gateway import CaptureConfig
-        self.window.start_ssvep(CaptureConfig(), 8)
-        self.now = 5
-        self.window.poll()
-        self.assertIn("/ 12", self.window.pages["task"].trial_banner.text())
+        second_gateway = DesktopGateway(
+            protocol_path=PROTOCOL,
+            channel_config_path=CHANNELS,
+            dataset_root=Path(self.temp.name) / "second-datasets",
+        )
+        second = MainWindow(
+            second_gateway,
+            locale=None,
+            timer_enabled=False,
+            persist_settings=True,
+            settings=QSettings(str(settings_path), QSettings.Format.IniFormat),
+        )
+        self.assertEqual("en-US", second.tr.locale)
+        self.assertEqual(dataset_path, second.draft_config.save_directory)
+        self.assertEqual((780, 650), (second.width(), second.height()))
+        second.close()
 
     def test_dataset_filters_persist_when_page_rebuilt(self):
         self.window.navigate("datasets")
         page = self.window.pages["datasets"]
-        page.search.setText("U0000")
-        page.source_filter.setCurrentIndex(page.source_filter.findData("demo"))
+        page.search.setText("U0001")
+        page.source_filter.setCurrentIndex(page.source_filter.findData("cyton"))
         page.status_filter.setCurrentIndex(page.status_filter.findData("completed"))
         self.window.navigate("apps")
         self.window.navigate("datasets")
         page = self.window.pages["datasets"]
-        self.assertEqual("U0000", page.search.text())
-        self.assertEqual("demo", page.source_filter.currentData())
+        self.assertEqual("U0001", page.search.text())
+        self.assertEqual("cyton", page.source_filter.currentData())
         self.assertEqual("completed", page.status_filter.currentData())
 
     def test_narrow_window_keeps_sidebar_compact_and_content_scrollable(self):

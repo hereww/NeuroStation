@@ -12,10 +12,10 @@ from PySide6.QtWidgets import (
 )
 
 from .components import action, label
-from .gateway import CaptureGateway, MockGateway, CaptureConfig, CaptureMode, Phase, Dataset
+from .gateway import CaptureGateway, CaptureConfig, CaptureMode, Phase, Dataset
 from .i18n import Translator
 from .pages import (
-    HomePage, DevicesPage, LivePage, AppsPage, SSVEPPage, TaskPage,
+    HomePage, DevicesPage, AppsPage, SSVEPPage, TaskPage,
     ResultPage, DatasetsPage, DatasetTrashPage, InfoPage,
     DatasetSummaryPage, UserManagementPage, UserDialog, DiagnosticsPage,
 )
@@ -57,7 +57,7 @@ class _ImportWorker(QObject):
 
 
 NAVIGATION = (
-    "home", "devices", "users", "live", "apps", "datasets", "trash", "openbci",
+    "home", "devices", "users", "apps", "datasets", "trash", "openbci",
     "integrations", "diagnostics",
 )
 
@@ -106,19 +106,18 @@ def product_stylesheet(dark: bool) -> str:
 class MainWindow(QMainWindow):
     def __init__(
         self,
-        gateway: CaptureGateway | None = None,
+        gateway: CaptureGateway,
         locale: str | None = "zh-CN",
         timer_enabled: bool = True,
         persist_settings: bool = False,
         save_directory_override: Path | None = None,
         settings: QSettings | None = None,
-        preview_mode: bool = False,
         initial_mode: CaptureMode | None = None,
         initial_port: str | None = None,
         diagnostic_store: DiagnosticStore | None = None,
     ):
         super().__init__()
-        self.gateway = gateway or MockGateway()
+        self.gateway = gateway
         self.diagnostic_store = diagnostic_store or DiagnosticStore()
         self.diagnostic_store.install_exception_hook()
         self.diagnostic_store.info(
@@ -140,18 +139,10 @@ class MainWindow(QMainWindow):
         self.cancel_shortcut.activated.connect(self.cancel_task)
         self.current_page = "apps"
         self.draft_config = self.gateway.config
-        # The desktop preview is an actual worker-driven full-screen visual
-        # task. Keep it opt-in here so MockGateway consumers retain the
-        # metadata-only demo default.
-        if preview_mode:
+        if initial_mode is not None:
             self.draft_config = replace(
                 self.draft_config,
-                mode=CaptureMode.VISUAL_PREVIEW,
-            )
-        elif initial_mode is not None:
-            self.draft_config = replace(
-                self.draft_config,
-                mode=CaptureMode(initial_mode),
+                mode=CaptureMode.CYTON,
                 port=(initial_port or self.draft_config.port),
             )
         if save_directory_override is not None:
@@ -275,11 +266,6 @@ class MainWindow(QMainWindow):
         self.screens = {}
         self._replace_page("home", HomePage(self.tr, self.navigate))
         self._replace_page("devices", DevicesPage(self.tr, self.navigate, self.preflight_cyton))
-        live = LivePage(self.tr, self.draft_config)
-        live.start_requested.connect(self.start_manual)
-        live.stop_requested.connect(self.stop_manual)
-        live.marker_requested.connect(self.add_marker)
-        self._replace_page("live", live)
         self._replace_page("users", self._build_users_page())
         self._replace_page("apps", AppsPage(self.tr, self.navigate))
         detail = SSVEPPage(self.tr, self.draft_config, self.navigate, self.gateway.users)
@@ -768,34 +754,6 @@ class MainWindow(QMainWindow):
         self.refresh_users()
         self.pages["ssvep"].set_users(self.gateway.users, selected_id=profile.user_id)
 
-    def start_manual(self, config: CaptureConfig):
-        self._record("capture", "manual capture test requested")
-        try:
-            self.gateway.start_manual(config)
-        except (ValueError, RuntimeError) as error:
-            self._error(error)
-            return
-        self._update_controls()
-        self._start_timer()
-
-    def stop_manual(self):
-        try:
-            result = self.gateway.stop_manual()
-        except RuntimeError as error:
-            self._error(error)
-            return
-        self.timer.stop()
-        self.latest_dataset = result.id
-        self.show_result(result)
-        self._record("capture", "manual capture test completed", dataset_id=result.id)
-
-    def add_marker(self):
-        try:
-            self.gateway.add_marker()
-        except RuntimeError as error:
-            self._error(error)
-        self._update_controls()
-
     def launch_openbci(self):
         try:
             process_id = self.gateway.launch_openbci_workspace(self.tr.locale)
@@ -822,7 +780,7 @@ class MainWindow(QMainWindow):
             self.pages["ssvep"].error.setText(self.tr("task.cancelled"))
 
     def return_to_task(self):
-        self.navigate("live" if self.gateway.snapshot.protocol == "manual" else "task")
+        self.navigate("task")
 
     def show_result(self, result: Dataset):
         self.result = result
@@ -874,23 +832,14 @@ class MainWindow(QMainWindow):
             device_name, device_port, device_channels, device_rate = (
                 device.name, device.port, device.channels, device.sample_rate
             )
-        elif mode is CaptureMode.CYTON:
-            device_name, device_port, device_channels, device_rate = (
-                "OpenBCI Cyton", self.draft_config.port or "AUTO", 8, 250
-            )
-        elif mode is CaptureMode.VISUAL_PREVIEW:
-            device_name, device_port, device_channels, device_rate = (
-                "Full-screen visual preview", "—", 0, 0
-            )
         else:
             device_name, device_port, device_channels, device_rate = (
-                "BrainFlow Synthetic", "—", 16, 250
+                "OpenBCI Cyton", self.draft_config.port or "AUTO", 8, 250
             )
         self.device_summary.setText(
             f"{device_name}\n{device_port} · {device_channels} CH · {device_rate} Hz"
         )
-        self.active_banner.setVisible(snapshot.active and self.current_page not in ("task", "live"))
-        self.pages["live"].update_snapshot(snapshot)
+        self.active_banner.setVisible(snapshot.active and self.current_page != "task")
         self.pages["ssvep"].start_button.setEnabled(
             not snapshot.active and self.preflight_thread is None
         )

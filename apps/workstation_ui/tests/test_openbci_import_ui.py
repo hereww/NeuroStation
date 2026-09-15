@@ -27,7 +27,7 @@ class OpenBCIImportUiTests(unittest.TestCase):
 
     def test_import_button_and_readonly_summary(self):
         from apps.workstation_ui.app import MainWindow
-        from eeg_tools.workstation.desktop_gateway import MetadataSimulationGateway
+        from eeg_tools.workstation.desktop_gateway import MetadataGateway
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -35,7 +35,7 @@ class OpenBCIImportUiTests(unittest.TestCase):
             session = source / "OpenBCISession_2026-01-04_00-00-00"
             session.mkdir(parents=True)
             write_csv(session / "BrainFlow-RAW_0.csv")
-            gateway = MetadataSimulationGateway(
+            gateway = MetadataGateway(
                 protocol_path=Path("configs/protocols/ssvep_four_target_v2.json"),
                 dataset_root=root / "Datasets",
             )

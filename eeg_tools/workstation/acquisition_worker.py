@@ -670,7 +670,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--session-name", required=True)
     parser.add_argument("--user-id", default="")
     parser.add_argument("--user-name", default="")
-    parser.add_argument("--board", choices=("cyton", "synthetic", "demo"), default="cyton")
+    parser.add_argument(
+        "--board",
+        choices=("cyton",),
+        default="cyton",
+        help="Physical acquisition board. Only OpenBCI Cyton is supported.",
+    )
     parser.add_argument("--port", default="AUTO")
     parser.add_argument("--repetitions", type=int)
     parser.add_argument("--stimulus-seconds", type=float)
@@ -776,13 +781,9 @@ def main(argv: list[str] | None = None) -> int:
     exit_code = 1
     raw_data = np.empty((0, 0))
     validation_mode = (
-        "technical_validation"
-        if arguments.board in {"demo", "synthetic"}
-        else (
-            "technical_validation_override"
-            if protocol_is_draft or channel_is_draft or arguments.allow_draft_protocol or arguments.allow_draft_channel_config
-            else "formal_candidate"
-        )
+        "technical_validation_override"
+        if protocol_is_draft or channel_is_draft or arguments.allow_draft_protocol or arguments.allow_draft_channel_config
+        else "formal_candidate"
     )
     protocol_provenance = {
         "source_path": str(arguments.protocol.resolve()),
@@ -802,13 +803,8 @@ def main(argv: list[str] | None = None) -> int:
         }
 
     params = BrainFlowInputParams()
-    board_id = (
-        None
-        if arguments.board == "demo"
-        else (BoardIds.SYNTHETIC_BOARD if arguments.board == "synthetic" else BoardIds.CYTON_BOARD)
-    )
-    if arguments.board == "cyton":
-        params.serial_port = arguments.port
+    board_id = BoardIds.CYTON_BOARD
+    params.serial_port = arguments.port
 
     def elapsed_recording() -> float:
         return 0.0 if recording_started is None else time.perf_counter() - recording_started
@@ -878,20 +874,14 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         emit("preparing")
-        if board_id is not None:
-            if arguments.board == "cyton":
-                board, selected_port, _port_failures = _prepare_cyton_board(
-                    board_id, params, arguments.port
-                )
-                prepared = True
-            else:
-                board = BoardShim(board_id, params)
-                board.prepare_session()
-                prepared = True
+        board, selected_port, _port_failures = _prepare_cyton_board(
+            board_id, params, arguments.port
+        )
+        prepared = True
         if not arguments.headless:
             application, window = _create_stimulus_window(
                 arguments.screen_index,
-                fullscreen_flicker=arguments.board == "demo",
+                fullscreen_flicker=False,
             )
             # Qt has already resolved an invalid saved index to screen 0 in
             # _create_stimulus_window; retain the effective value in metadata.
@@ -1187,7 +1177,7 @@ def main(argv: list[str] | None = None) -> int:
         "recorded_samples_per_channel": sample_count,
         "event_count": len(events),
         "frame_count": len(frame_rows),
-        "simulated": arguments.board in {"synthetic", "demo"},
+        "simulated": False,
         "headless": arguments.headless,
         "error": error_message,
         "channel_config_warnings": channel_warnings,
@@ -1225,7 +1215,7 @@ def main(argv: list[str] | None = None) -> int:
             "recorded_samples_per_channel": sample_count,
             "event_count": len(events),
             "completed_trials": completed_trials,
-            "simulated": arguments.board in {"synthetic", "demo"},
+            "simulated": False,
             "persisted": True,
             "error": error_message,
         },

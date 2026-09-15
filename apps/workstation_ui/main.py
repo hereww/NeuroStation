@@ -6,7 +6,7 @@ import importlib
 from pathlib import Path
 import sys
 
-from neurostation_contract import PRODUCT_NAME, PRODUCT_SEMVER, PRODUCT_VERSION
+from neurostation_contract import CaptureMode, PRODUCT_NAME, PRODUCT_SEMVER, PRODUCT_VERSION
 
 
 def main() -> int:
@@ -24,21 +24,10 @@ def main() -> int:
         type=Path,
         help="Directory for session files (default: Documents/NeuroStation/Datasets)",
     )
-    mode_group = parser.add_mutually_exclusive_group()
-    mode_group.add_argument(
-        "--preview",
-        action="store_true",
-        help="Launch SSVEP in explicit full-screen visual preview mode",
-    )
-    mode_group.add_argument(
-        "--cyton",
-        action="store_true",
-        help="Launch with OpenBCI Cyton hardware mode selected",
-    )
     parser.add_argument(
         "--port",
         default="AUTO",
-        help="Cyton serial port used with --cyton (default: AUTO)",
+        help="Cyton serial port (default: AUTO)",
     )
     arguments = parser.parse_args()
     if not __package__:
@@ -46,7 +35,6 @@ def main() -> int:
     try:
         from PySide6.QtWidgets import QApplication
         from apps.workstation_ui.app import MainWindow
-        from neurostation_contract import CaptureMode
         DesktopGateway = importlib.import_module(
             "eeg_tools.workstation.desktop_gateway"
         ).DesktopGateway
@@ -76,9 +64,8 @@ def main() -> int:
         locale=arguments.language,
         persist_settings=True,
         save_directory_override=session_root,
-        preview_mode=arguments.preview,
-        initial_mode=CaptureMode.CYTON if arguments.cyton else None,
-        initial_port=arguments.port if arguments.cyton else None,
+        initial_mode=CaptureMode.CYTON,
+        initial_port=arguments.port,
     )
     window.show()
     return application.exec()

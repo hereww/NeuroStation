@@ -14,7 +14,7 @@ NeuroStation 是一个面向科研与教学技术验证的跨平台脑电采集�
 - [查看完整验收清单](docs/验收清单.md)
 - [查看跨平台方案](docs/跨平台脑电采集工作站方案.md)
 
-Windows 包是可直接解压运行的目录，不是 MSI 安装器，也不包含真实 Cyton 设备。默认启动为不连接硬件的流程演示；Synthetic 模式产生 BrainFlow 合成数据；Cyton 模式才会打开真实串口。
+Windows 包是可直接解压运行的目录，不是 MSI 安装器，也不包含真实 Cyton 设备。当前生产入口只允许 OpenBCI Cyton 真实硬件采集；没有设备时只能查看历史记录、导入 OpenBCI 文件或运行诊断，不能生成模拟 EEG。
 
 ### MVP1.0.2 更新内容
 
@@ -30,15 +30,12 @@ Windows 包是可直接解压运行的目录，不是 MSI 安装器，也不包�
 
 本项目不是医疗诊断设备。SSVEP 参数、通道位置、参考电极、BIAS、显示器刷新率和光学/marker 时序仍需在正式实验前人工复核。MVP1.0 的自动化测试不能替代 Cyton 实机、photodiode/TTL 和长时间稳定性验收。
 
-## 运行模式
+## 运行来源
 
-| 模式 | 是否连接硬件 | 是否产生 EEG 样本 | 用途 |
+| 来源 | 是否连接硬件 | 数据含义 | 用途 |
 | --- | --- | --- | --- |
-| 流程演示 | 否 | 否 | 首次启动、界面和会话元数据验收 |
-| 视觉预览 `--preview` | 否 | 否 | 全屏倒计时、黑白刺激和帧时序验收；需要确认光敏风险 |
-| BrainFlow Synthetic | 否 | 是，合成数据 | 无硬件环境的端到端采集验收 |
-| OpenBCI Cyton | 是 | 是，真实数据 | 真实设备采集；需要完成硬件和实验时序复核 |
-| OpenBCI 记录导入 | 否 | 使用已有记录 | 只读导入历史 OpenBCI recording，不修改原始文件 |
+| OpenBCI Cyton | 是 | 真实 EEG 数据 | 真实设备采集；需要完成硬件和实验时序复核 |
+| OpenBCI 记录导入 | 否 | 已有真实记录 | 只读导入历史 OpenBCI recording，不修改原始文件 |
 
 ## 快速启动
 
@@ -46,7 +43,7 @@ Windows 包是可直接解压运行的目录，不是 MSI 安装器，也不包�
 
 1. 下载并解压 `NeuroStation-MVP1.0.2-Windows-x64.zip`。
 2. 运行 `NeuroStation.dist\workstation.exe`。
-3. 首次使用先选择默认流程演示，确认界面和会话目录能够正常生成。
+3. 首次使用先连接 Cyton USB dongle，选择采集用户并完成硬件预检。
 4. 需要查看运行环境时执行：
 
 ```powershell
@@ -72,7 +69,6 @@ python workstation.py
 
 ```powershell
 python -m apps.workstation_ui.main
-python -m apps.workstation_ui.main --preview
 ```
 
 ## SSVEP 默认协议
@@ -171,19 +167,7 @@ python run_ssvep_session.py `
   --validate-only
 ```
 
-无硬件端到端 Synthetic 验收：
-
-```powershell
-python run_ssvep_session.py `
-  --synthetic --headless `
-  --participant CI `
-  --session-name synthetic-acceptance `
-  --output-root .acceptance-data `
-  --repetitions 1 `
-  --stimulus-seconds 0.05 `
-  --rest-seconds 0.01 `
-  --countdown-seconds 0.01
-```
+CI 不生成 Synthetic 或 Demo 数据。没有 Cyton 时只执行协议/通道配置校验、UI 构建和禁止模拟入口的回归测试；真实采集必须在连接设备的现场环境执行。
 
 ## 开发、测试与打包
 

@@ -87,7 +87,7 @@ class UserRegistryTests(unittest.TestCase):
             registry_path = users_dir / "registry.json"
             registry_path.write_text("{not valid json", encoding="utf-8")
             registry = UserRegistry(root)
-            self.assertIsNotNone(registry.get("U0000"))
+            self.assertEqual((), registry.users)
             self.assertTrue((users_dir / "registry.json.corrupt").is_file())
             self.assertTrue(json.loads(registry_path.read_text(encoding="utf-8")))
 
@@ -102,7 +102,7 @@ class UserRegistryTests(unittest.TestCase):
             value = json.loads(public.read_text(encoding="utf-8"))
             text = public.read_text(encoding="utf-8")
             self.assertNotIn("medical_conditions", text)
-            self.assertGreaterEqual(len(value["users"]), 2)
+            self.assertEqual(1, len(value["users"]))
             self.assertIn("U0001", {item["user_id"] for item in value["users"]})
 
     def test_public_snapshot_redacts_identity_and_medical_details(self):
@@ -112,10 +112,10 @@ class UserRegistryTests(unittest.TestCase):
             registry.add(replace(self.profile("U0001", "张三"), medical_conditions=("diabetes",)))
             output = registry.export_public_snapshot(root / "public" / "users.json")
             value = json.loads(output.read_text(encoding="utf-8"))
-            self.assertEqual("U0001", value["users"][1]["user_id"])
-            self.assertNotIn("name", value["users"][1])
-            self.assertNotIn("medical_conditions", value["users"][1])
-            self.assertTrue(value["users"][1]["screening_recorded"])
+            self.assertEqual("U0001", value["users"][0]["user_id"])
+            self.assertNotIn("name", value["users"][0])
+            self.assertNotIn("medical_conditions", value["users"][0])
+            self.assertTrue(value["users"][0]["screening_recorded"])
 
     def test_renaming_user_rewrites_session_snapshot(self):
         with tempfile.TemporaryDirectory() as directory:

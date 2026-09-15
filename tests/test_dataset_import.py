@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from eeg_tools.workstation.dataset import DatasetRepository
-from eeg_tools.workstation.desktop_gateway import DesktopGateway, MetadataSimulationGateway
+from eeg_tools.workstation.desktop_gateway import DesktopGateway, MetadataGateway
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -189,7 +189,7 @@ class DatasetImportTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            gateway = MetadataSimulationGateway(
+            gateway = MetadataGateway(
                 protocol_path=PROTOCOL,
                 dataset_root=root,
             )
@@ -205,7 +205,7 @@ class DatasetImportTests(unittest.TestCase):
             session = source / "OpenBCISession_2026-01-03_00-00-00"
             session.mkdir(parents=True)
             write_csv(session / "BrainFlow-RAW_0.csv", 2)
-            gateway = MetadataSimulationGateway(protocol_path=PROTOCOL, dataset_root=root / "Datasets")
+            gateway = MetadataGateway(protocol_path=PROTOCOL, dataset_root=root / "Datasets")
 
             report = gateway.import_openbci_recordings(source)
 

@@ -30,7 +30,6 @@ class UserRegistry:
         self._trash: dict[str, UserProfile] = {}
         self._trashed_sessions: dict[str, list[dict[str, str]]] = {}
         self._load()
-        self._ensure_demo()
 
     def _load(self) -> None:
         if self.registry_path is None:
@@ -63,6 +62,7 @@ class UserRegistry:
                 shutil.copy2(source_path, backup)
             except OSError:
                 pass
+            self._save()
             return
         if not isinstance(value, dict):
             return
@@ -130,22 +130,6 @@ class UserRegistry:
         pending = self.registry_path.with_suffix(".json.pending")
         pending.write_text(json.dumps(public, ensure_ascii=False, indent=2), encoding="utf-8")
         pending.replace(self.registry_path)
-
-    def _ensure_demo(self) -> None:
-        if "U0000" in self._active or "U0000" in self._trash:
-            return
-        now = _now()
-        self._active["U0000"] = UserProfile(
-            user_id="U0000",
-            name="演示用户",
-            age=0,
-            gender="unspecified",
-            medical_conditions=("none",),
-            created_at=now,
-            updated_at=now,
-            is_demo=True,
-        )
-        self._save()
 
     def export_public_snapshot(self, path: Path) -> Path:
         """Export a redacted user index suitable for sharing or diagnostics."""

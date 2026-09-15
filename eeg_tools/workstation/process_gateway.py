@@ -144,11 +144,9 @@ class AcquisitionProcessGateway:
     def _command(self, config: CaptureConfig) -> list[str]:
         command, _ = self._launch_context()
         mode = CaptureMode(config.mode)
-        board = {
-            CaptureMode.CYTON: "cyton",
-            CaptureMode.SYNTHETIC: "synthetic",
-            CaptureMode.VISUAL_PREVIEW: "demo",
-        }.get(mode, "synthetic")
+        if mode is not CaptureMode.CYTON:
+            raise ValueError("validation.real_hardware_only")
+        board = "cyton"
         channel_config = Path(config.channel_config or self.channel_config_path).resolve()
         command.extend(
             [
@@ -202,35 +200,25 @@ class AcquisitionProcessGateway:
             raise RuntimeError("validation.busy")
         config.validate()
         mode = CaptureMode(config.mode)
-        if mode == CaptureMode.DEMO:
-            raise ValueError("validation.mode")
+        if mode is not CaptureMode.CYTON:
+            raise ValueError("validation.real_hardware_only")
         if speed != 1:
             raise ValueError("validation.production_speed")
-        if mode == CaptureMode.CYTON:
-            channel_path = Path(config.channel_config or self.channel_config_path).resolve()
-            if not channel_path.is_file():
-                raise ValueError("validation.channel_missing")
+        channel_path = Path(config.channel_config or self.channel_config_path).resolve()
+        if not channel_path.is_file():
+            raise ValueError("validation.channel_missing")
 
         output_root = Path(config.save_directory).expanduser().resolve()
         output_root.mkdir(parents=True, exist_ok=True)
         self.config = config
-        if mode == CaptureMode.VISUAL_PREVIEW:
-            self.device = DeviceInfo(
-                name="Full-screen visual preview",
-                port="—",
-                channels=0,
-                sample_rate=0,
-                connected=False,
-                simulated=True,
-            )
-        else:
-            self.device = DeviceInfo(
-                name="OpenBCI Cyton" if mode == CaptureMode.CYTON else "BrainFlow Synthetic",
-                port=config.port if mode == CaptureMode.CYTON else "—",
-                channels=8 if mode == CaptureMode.CYTON else 16,
-                connected=False,
-                simulated=mode == CaptureMode.SYNTHETIC,
-            )
+        self.device = DeviceInfo(
+            name="OpenBCI Cyton",
+            port=config.port,
+            channels=8,
+            sample_rate=250,
+            connected=False,
+            simulated=False,
+        )
         self._runtime_dir = Path(tempfile.mkdtemp(prefix="neurostation-worker-"))
         self._status_file = self._runtime_dir / "status.json"
         self._cancel_file = self._runtime_dir / "cancel.request"
@@ -518,11 +506,9 @@ class AcquisitionProcessGateway:
             session = json.loads(session_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return None
-        source = {
-            "cyton": CaptureMode.CYTON,
-            "synthetic": CaptureMode.SYNTHETIC,
-            "demo": CaptureMode.VISUAL_PREVIEW,
-        }.get(str(session.get("board", "")), CaptureMode.SYNTHETIC)
+        if str(session.get("board", "")) != "cyton":
+            return None
+        source = CaptureMode.CYTON
         quality: dict[str, Any] = {}
         try:
             loaded_quality = json.loads((output / "quality.json").read_text(encoding="utf-8"))
