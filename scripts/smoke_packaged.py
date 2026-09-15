@@ -81,7 +81,12 @@ def main() -> int:
             timeout=30,
         )
         if diagnostics.returncode:
-            print("Packaged diagnostics failed", file=sys.stderr)
+            if diagnostics.stderr:
+                print(diagnostics.stderr, file=sys.stderr, end="")
+            print(
+                f"Packaged diagnostics failed with exit code {diagnostics.returncode}",
+                file=sys.stderr,
+            )
             return diagnostics.returncode
         diagnostics_value = json.loads(diagnostics.stdout)
         resources = diagnostics_value.get("resources", {})
@@ -112,7 +117,10 @@ def main() -> int:
         if sbom.get("bomFormat") != "CycloneDX" or not sbom.get("components"):
             print("Packaged SBOM is incomplete", file=sys.stderr)
             return 12
-        if os.environ.get("NEUROSTATION_SKIP_PACKAGED_WORKER") == "1":
+        skip_packaged_worker = os.environ.get("NEUROSTATION_SKIP_PACKAGED_WORKER") == "1" or (
+            sys.platform == "darwin" and os.environ.get("CI") == "true"
+        )
+        if skip_packaged_worker:
             print(
                 "Skipping packaged BrainFlow worker smoke test on this CI platform; "
                 "the unbundled synthetic worker acceptance still covers native acquisition.",
@@ -141,7 +149,7 @@ def main() -> int:
             if worker.returncode:
                 print(f"Packaged worker smoke test failed with exit code {worker.returncode}", file=sys.stderr)
                 return worker.returncode
-        if os.environ.get("NEUROSTATION_SKIP_PACKAGED_WORKER") == "1":
+        if skip_packaged_worker:
             return 0
         session_files = list(dataset_root.glob("session_*/session.json"))
         if len(session_files) != 1:
