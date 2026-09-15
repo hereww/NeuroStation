@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -19,6 +20,22 @@ from neurostation_diagnostics import DiagnosticStore
 
 
 ROOT = Path(__file__).resolve().parent
+
+
+def _configure_bundled_native_libraries() -> None:
+    """Expose bundled macOS dylibs before a BrainFlow worker is started."""
+
+    if sys.platform != "darwin":
+        return
+    library_root = ROOT / "brainflow" / "lib"
+    if not library_root.is_dir():
+        return
+    path = str(library_root)
+    for variable in ("DYLD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH"):
+        existing = os.environ.get(variable, "")
+        os.environ[variable] = os.pathsep.join(
+            value for value in (path, existing) if value
+        )
 
 
 def build_diagnostics(gateway=None) -> dict:
@@ -71,6 +88,7 @@ def build_diagnostics(gateway=None) -> dict:
 
 
 def main() -> int:
+    _configure_bundled_native_libraries()
     if len(sys.argv) > 1 and sys.argv[1] == "--acquisition-worker":
         from eeg_tools.workstation.acquisition_worker import main as worker_main
 

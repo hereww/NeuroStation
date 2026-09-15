@@ -39,6 +39,14 @@ def main() -> int:
         # The macOS offscreen backend can abort inside the packaged Qt runtime;
         # minimal still avoids a WindowServer dependency for this smoke test.
         environment["QT_QPA_PLATFORM"] = "minimal"
+        brainflow_lib = entry.parent / "brainflow" / "lib"
+        if brainflow_lib.is_dir():
+            library_path = str(brainflow_lib)
+            for variable in ("DYLD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH"):
+                existing = environment.get(variable, "")
+                environment[variable] = os.pathsep.join(
+                    value for value in (library_path, existing) if value
+                )
     with tempfile.TemporaryDirectory(prefix="neurostation-smoke-") as directory:
         dataset_root = Path(directory) / "中文数据集"
         if sys.platform != "darwin":
