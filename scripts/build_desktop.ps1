@@ -54,7 +54,7 @@ try {
     }
     & $buildPython -c "import PySide6, nuitka, brainflow, numpy" 2>$null
     if ($LASTEXITCODE -ne 0) {
-        & $buildPython -m pip install "PySide6>=6.7" "Nuitka>=4.2,<5" "brainflow>=5.22" "numpy>=2.0"
+        & $buildPython -m pip install "PySide6>=6.7" "Nuitka>=4.2,<5" "brainflow==5.22.2" "numpy>=2.0"
         if ($LASTEXITCODE -ne 0) {
             throw "Unable to install desktop build dependencies."
         }
