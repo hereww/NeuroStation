@@ -5,6 +5,11 @@ project_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 python_command=${PYTHON:-python3}
 mode=${MODE:-standalone}
 deploy_command=$("$python_command" -c 'import pathlib,sys; print(pathlib.Path(sys.executable).parent / "pyside6-deploy")')
+deploy_spec="$project_root/pysidedeploy.spec"
+
+if [ "$(uname -s)" = "Darwin" ]; then
+  deploy_spec="$project_root/pysidedeploy.macos.spec"
+fi
 
 if [ ! -x "$deploy_command" ]; then
   echo "pyside6-deploy is missing beside $python_command. Install requirements.txt first." >&2
@@ -12,7 +17,7 @@ if [ ! -x "$deploy_command" ]; then
 fi
 
 cd "$project_root"
-"$deploy_command" -c "$project_root/pysidedeploy.spec" --mode "$mode" --force "$@"
+"$deploy_command" -c "$deploy_spec" --mode "$mode" --force "$@"
 
 if [ "$mode" = "standalone" ]; then
   brainflow_lib=$("$python_command" -c 'import pathlib,brainflow; print(pathlib.Path(brainflow.__file__).resolve().parent / "lib")')
@@ -40,6 +45,10 @@ case "$(uname -s)" in
   fi
   find "$brainflow_lib" -mindepth 1 -maxdepth 1 -type f -name "$native_pattern" \
     -exec cp {} "$artifact_root/brainflow/lib/" \;
+  if [ "$runtime_name" = "macos" ] && find "$artifact_root" -type f -name '*.so' -print -quit | grep -q .; then
+    echo "macOS artifact contains Linux shared libraries." >&2
+    exit 2
+  fi
   openbci_source="$project_root/integrations/openbci_gui/runtime/$runtime_name"
   if [ -d "$openbci_source" ]; then
     openbci_destination="$artifact_root/integrations/openbci_gui/runtime/$runtime_name"
