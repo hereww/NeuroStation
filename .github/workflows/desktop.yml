@@ -66,9 +66,15 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: PYTHON=python bash scripts/build_desktop.sh
-      - name: Packaged application smoke test
+      - name: Packaged application smoke test (Windows/Linux)
+        if: runner.os != 'macOS'
         env:
-          NEUROSTATION_SKIP_PACKAGED_WORKER: ${{ runner.os == 'macOS' && '1' || '0' }}
+          NEUROSTATION_SKIP_PACKAGED_WORKER: "0"
+        run: python scripts/smoke_packaged.py
+      - name: Packaged application smoke test (macOS)
+        if: runner.os == 'macOS'
+        env:
+          NEUROSTATION_SKIP_PACKAGED_WORKER: "1"
         run: python scripts/smoke_packaged.py
       - uses: actions/upload-artifact@v4
         with:
