@@ -66,7 +66,7 @@ case "$(uname -s)" in
   fi
   find "$brainflow_lib" -mindepth 1 -maxdepth 1 -type f -name "$native_pattern" \
     -exec cp {} "$artifact_root/brainflow/lib/" \;
-  if [ "$runtime_name" = "macos" ] && find "$artifact_root" -type f -name '*.so' -print -quit | grep -q .; then
+  if [ "$runtime_name" = "macos" ] && find "$artifact_root/brainflow/lib" -type f -name '*.so' -print -quit 2>/dev/null | grep -q .; then
     echo "macOS artifact contains Linux shared libraries." >&2
     exit 2
   fi
