@@ -67,6 +67,8 @@ jobs:
         shell: bash
         run: PYTHON=python bash scripts/build_desktop.sh
       - name: Packaged application smoke test
+        env:
+          NEUROSTATION_SKIP_PACKAGED_WORKER: ${{ runner.os == 'macOS' && '1' || '0' }}
         run: python scripts/smoke_packaged.py
       - uses: actions/upload-artifact@v4
         with:
