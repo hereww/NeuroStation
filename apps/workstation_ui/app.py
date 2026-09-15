@@ -16,7 +16,7 @@ from .gateway import CaptureGateway, MockGateway, CaptureConfig, CaptureMode, Ph
 from .i18n import Translator
 from .pages import (
     HomePage, DevicesPage, LivePage, AppsPage, SSVEPPage, TaskPage,
-    ResultPage, DatasetsPage, InfoPage,
+    ResultPage, DatasetsPage, DatasetTrashPage, InfoPage,
     DatasetSummaryPage, UserManagementPage, UserDialog, DiagnosticsPage,
 )
 from neurostation_diagnostics import DiagnosticStore
@@ -57,7 +57,7 @@ class _ImportWorker(QObject):
 
 
 NAVIGATION = (
-    "home", "devices", "users", "live", "apps", "datasets", "openbci",
+    "home", "devices", "users", "live", "apps", "datasets", "trash", "openbci",
     "integrations", "diagnostics",
 )
 
@@ -373,15 +373,28 @@ class MainWindow(QMainWindow):
                 search_text=self._dataset_search,
                 source_value=self._dataset_source,
                 status_value=self._dataset_status,
-                trashed_datasets=self.gateway.trashed_datasets,
                 callbacks={
                     "delete": self.gateway.delete_dataset,
+                    "refresh": self.refresh_datasets,
+                },
+            )
+            page.import_requested.connect(self._start_import)
+            page.filter_changed.connect(self._dataset_filters_changed)
+            self._replace_page(key, page)
+        elif key == "trash":
+            page = DatasetTrashPage(
+                self.tr,
+                self.gateway.trashed_datasets,
+                self.navigate,
+                search_text=self._dataset_search,
+                source_value=self._dataset_source,
+                status_value=self._dataset_status,
+                callbacks={
                     "restore": self.gateway.restore_dataset,
                     "purge": self.gateway.purge_dataset,
                     "refresh": self.refresh_datasets,
                 },
             )
-            page.import_requested.connect(self._start_import)
             page.filter_changed.connect(self._dataset_filters_changed)
             self._replace_page(key, page)
         elif key == "users":
@@ -409,8 +422,8 @@ class MainWindow(QMainWindow):
 
     def refresh_datasets(self):
         self.gateway.refresh_datasets()
-        if self.current_page == "datasets":
-            self.navigate("datasets")
+        if self.current_page in ("datasets", "trash"):
+            self.navigate(self.current_page)
 
     def change_language(self, locale: str):
         if locale == self.tr.locale:

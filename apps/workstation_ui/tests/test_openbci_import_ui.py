@@ -53,8 +53,21 @@ class OpenBCIImportUiTests(unittest.TestCase):
 
             buttons = window.pages["datasets"].findChildren(QPushButton)
             self.assertTrue(any(button.text() == "删除数据集" for button in buttons))
-            self.assertIsNotNone(window.pages["datasets"].findChild(QFrame, "datasetsTrashSection"))
-            window.show_result(gateway.datasets[0])
+            self.assertIsNone(window.pages["datasets"].findChild(QFrame, "datasetsTrashSection"))
+            self.assertIsNone(window.pages["datasets"].findChild(QFrame, "datasetTrashItem"))
+            dataset = gateway.datasets[0]
+            gateway.delete_dataset(dataset.id)
+            window.refresh_datasets()
+            window.navigate("trash")
+            self.assertEqual("trash", window.current_page)
+            self.assertEqual("数据集回收站", window.pages["trash"].title_label.text())
+            self.assertIsNotNone(window.pages["trash"].findChild(QFrame, "datasetTrashItem"))
+            window.navigate("datasets")
+            self.assertIsNone(window.pages["datasets"].findChild(QFrame, "datasetTrashItem"))
+            gateway.restore_dataset(dataset.id)
+            window.refresh_datasets()
+            window.navigate("datasets")
+            window.show_result(dataset)
             self.assertEqual("result", window.current_page)
             self.assertEqual("DatasetSummaryPage", type(window.pages["result"]).__name__)
             from PySide6.QtWidgets import QLabel, QPushButton, QTableWidget

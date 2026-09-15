@@ -1243,22 +1243,23 @@ class DatasetSummaryPage(Page):
         table.setSortingEnabled(True)
 
 
-class DatasetsPage(Page):
-    import_requested = Signal(object)
+class _DatasetCollectionPage(Page):
     filter_changed = Signal(str, str, str)
 
-    def __init__(self, tr, datasets: tuple[Dataset, ...], latest: str | None, show_result, navigate,
-                 import_busy: bool = False, import_status: str = "", import_directory: str = "",
+    def __init__(self, tr, title: str, subtitle: str, datasets: tuple[Dataset, ...],
+                 latest: str | None, show_result, navigate, *, trashed: bool = False,
                  search_text: str = "", source_value: str = "", status_value: str = "",
-                 trashed_datasets: tuple[Dataset, ...] = (), callbacks: dict[str, Any] | None = None):
-        super().__init__(tr, tr("app.datasets"), tr("datasets.subtitle"))
+                 status_text: str = "", callbacks: dict[str, Any] | None = None):
+        super().__init__(tr, title, subtitle)
         self._callbacks = callbacks or {}
+        self._navigate = navigate
+        self._datasets = tuple(datasets)
+        self._trashed = trashed
+        self._latest = latest
+        self._show_result = show_result
         controls = QHBoxLayout()
-        controls.addWidget(action(tr("nav.apps"), lambda: navigate("apps")))
-        self.import_button = action(tr("datasets.import_openbci"), self._choose_import_directory, True)
-        self.import_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon))
-        self.import_button.setEnabled(not import_busy)
-        controls.addWidget(self.import_button)
+        self._build_header_controls(controls)
+        controls.addStretch()
         self.layout.addLayout(controls)
         filters = QHBoxLayout()
         self.search = QLineEdit()
@@ -1286,14 +1287,9 @@ class DatasetsPage(Page):
         self.status_filter.currentIndexChanged.connect(self._apply_filters)
         filters.addWidget(self.status_filter, 1)
         self.layout.addLayout(filters)
-        self.import_status = label(import_status, "muted")
-        self.import_status.setVisible(bool(import_status))
-        self.layout.addWidget(self.import_status)
-        self.import_directory = import_directory
-        self._datasets = tuple(datasets)
-        self._trashed_datasets = tuple(trashed_datasets)
-        self._latest = latest
-        self._show_result = show_result
+        self.status = label(status_text, "muted")
+        self.status.setVisible(bool(status_text))
+        self.layout.addWidget(self.status)
         self._records_host = QWidget()
         self._records_layout = QVBoxLayout(self._records_host)
         self._records_layout.setContentsMargins(0, 0, 0, 0)
@@ -1302,6 +1298,9 @@ class DatasetsPage(Page):
         self._records_widgets: list[QWidget] = []
         self._render_records()
         self.layout.addStretch()
+
+    def _build_header_controls(self, controls: QHBoxLayout):
+        controls.addWidget(action(self.tr("nav.apps"), lambda: self._navigate("apps")))
 
     def _render_records(self):
         for widget in self._records_widgets:
@@ -1314,26 +1313,15 @@ class DatasetsPage(Page):
         visible = tuple(dataset for dataset in reversed(self._datasets)
                         if self._matches(dataset, query, source, status))
         if not visible:
-            empty = label(self.tr("datasets.empty"), "muted")
+            empty_key = "datasets.empty_trash" if self._trashed else "datasets.empty"
+            empty = label(self.tr(empty_key), "muted")
             self._records_layout.addWidget(empty)
             self._records_widgets.append(empty)
         else:
             for dataset in visible:
-                item = self._dataset_section(dataset, trashed=False)
+                item = self._dataset_section(dataset, trashed=self._trashed)
                 self._records_layout.addWidget(item)
                 self._records_widgets.append(item)
-
-        trash = Section(self.tr("datasets.trash"))
-        trash.setObjectName("datasetsTrashSection")
-        trash_visible = tuple(dataset for dataset in reversed(self._trashed_datasets)
-                              if self._matches(dataset, query, source, status))
-        if not trash_visible:
-            trash.layout.addWidget(label(self.tr("datasets.empty_trash"), "muted"))
-        else:
-            for dataset in trash_visible:
-                trash.layout.addWidget(self._dataset_section(dataset, trashed=True))
-        self._records_layout.addWidget(trash)
-        self._records_widgets.append(trash)
 
     def _matches(self, dataset: Dataset, query: str, source: str, status: str) -> bool:
         haystack = " ".join((dataset.name, dataset.participant, dataset.user_id, dataset.user_name)).casefold()
@@ -1402,15 +1390,15 @@ class DatasetsPage(Page):
         try:
             self._run_callback("delete", dataset.id)
         except (ValueError, RuntimeError) as error:
-            self.import_status.setText(self.tr(str(error)))
-            self.import_status.setVisible(True)
+            self.status.setText(self.tr(str(error)))
+            self.status.setVisible(True)
 
     def _restore_dataset(self, dataset: Dataset):
         try:
             self._run_callback("restore", dataset.id)
         except (ValueError, RuntimeError) as error:
-            self.import_status.setText(self.tr(str(error)))
-            self.import_status.setVisible(True)
+            self.status.setText(self.tr(str(error)))
+            self.status.setVisible(True)
 
     def _purge_dataset(self, dataset: Dataset):
         answer = QMessageBox.question(
@@ -1424,8 +1412,8 @@ class DatasetsPage(Page):
         try:
             self._run_callback("purge", dataset.id)
         except (ValueError, RuntimeError) as error:
-            self.import_status.setText(self.tr(str(error)))
-            self.import_status.setVisible(True)
+            self.status.setText(self.tr(str(error)))
+            self.status.setVisible(True)
 
     def _show_result_callback(self, dataset):
         self._show_result(dataset)
@@ -1444,6 +1432,44 @@ class DatasetsPage(Page):
         )
         if path:
             self.import_requested.emit(path)
+
+
+class DatasetsPage(_DatasetCollectionPage):
+    import_requested = Signal(object)
+
+    def __init__(self, tr, datasets: tuple[Dataset, ...], latest: str | None, show_result, navigate,
+                 import_busy: bool = False, import_status: str = "", import_directory: str = "",
+                 search_text: str = "", source_value: str = "", status_value: str = "",
+                 callbacks: dict[str, Any] | None = None):
+        self._import_busy = import_busy
+        self.import_directory = import_directory
+        super().__init__(
+            tr, tr("app.datasets"), tr("datasets.subtitle"), datasets, latest,
+            show_result, navigate, search_text=search_text, source_value=source_value,
+            status_value=status_value, status_text=import_status, callbacks=callbacks,
+        )
+
+    def _build_header_controls(self, controls: QHBoxLayout):
+        super()._build_header_controls(controls)
+        self.import_button = action(self.tr("datasets.import_openbci"), self._choose_import_directory, True)
+        self.import_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon))
+        self.import_button.setEnabled(not self._import_busy)
+        controls.addWidget(self.import_button)
+
+
+class DatasetTrashPage(_DatasetCollectionPage):
+    def __init__(self, tr, datasets: tuple[Dataset, ...], navigate,
+                 search_text: str = "", source_value: str = "", status_value: str = "",
+                 callbacks: dict[str, Any] | None = None):
+        super().__init__(
+            tr, tr("datasets.trash"), tr("datasets.trash_subtitle"), datasets, None,
+            None, navigate, trashed=True, search_text=search_text, source_value=source_value,
+            status_value=status_value, callbacks=callbacks,
+        )
+        self.setObjectName("datasetTrashPage")
+
+    def _build_header_controls(self, controls: QHBoxLayout):
+        controls.addWidget(action(self.tr("datasets.back_to_datasets"), lambda: self._navigate("datasets")))
 
 
 class InfoPage(Page):
