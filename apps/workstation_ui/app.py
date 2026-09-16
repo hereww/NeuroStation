@@ -62,6 +62,48 @@ NAVIGATION = (
 )
 
 
+def _has_only_clean_packet_timestamp_jitter(report: dict) -> bool:
+    """Return whether a warning is only host-arrival timestamp jitter.
+
+    Cyton packet continuity is the meaningful loss signal. Host timestamps can
+    arrive in bursts over USB/radio without any board samples being lost.
+    """
+    checks = report.get("checks")
+    if not isinstance(checks, list):
+        return False
+
+    timestamp_warning = False
+    for check in checks:
+        if not isinstance(check, dict):
+            return False
+        if str(check.get("status") or "") == "passed":
+            continue
+        if str(check.get("name") or "") != "timestamps":
+            return False
+        if str(check.get("status") or "") != "warning":
+            return False
+        metrics = check.get("metrics")
+        if not isinstance(metrics, dict):
+            return False
+        timestamp_warning = True
+        if not metrics.get("packet_sequence_available"):
+            return False
+        if any(
+            int(metrics.get(key, 0) or 0) != 0
+            for key in (
+                "packet_loss_count",
+                "packet_sequence_mismatch_count",
+                "packet_duplicate_count",
+                "timestamp_non_monotonic_count",
+            )
+        ):
+            return False
+        if bool(metrics.get("timestamp_missing", False)):
+            return False
+
+    return timestamp_warning
+
+
 def product_stylesheet(dark: bool) -> str:
     background, surface, line, ink, muted, accent, active = (
         ("#151a20", "#1b222a", "#34434e", "#e0e9ef", "#a6b6c1", "#69c8d3", "#233b41")
@@ -616,6 +658,7 @@ class MainWindow(QMainWindow):
             self._preflight_ready = False
             if status == "warning":
                 warning_detail = detail or self.tr(f"device.preflight_status.{status}")
+                only_clean_timestamp_jitter = _has_only_clean_packet_timestamp_jitter(report)
                 # OpenBCI GUI keeps streaming when packet/timestamp quality is
                 # imperfect and surfaces loss statistics while acquisition
                 # continues. Match that behavior for timestamp-only warnings.
@@ -638,19 +681,30 @@ class MainWindow(QMainWindow):
                 if selected_port:
                     config = replace(config, port=selected_port)
                     self.draft_config = config
-                self._record(
-                    "preflight",
-                    "quality warning accepted; acquisition continues",
-                    port=selected_port or "AUTO",
-                    detail=warning_detail,
-                    technical_validation=bool(config.allow_draft_hardware_config),
-                )
-                self.start_ssvep(config, speed, _preflight_ready=True)
-                task_page = self.pages.get("task")
-                if task_page is not None and hasattr(task_page, "set_quality_warning"):
-                    task_page.set_quality_warning(message)
-                if ssvep_page is not None and hasattr(ssvep_page, "error"):
-                    ssvep_page.error.setText(message)
+                if only_clean_timestamp_jitter:
+                    self._record(
+                        "preflight",
+                        "host timestamp jitter accepted; acquisition continues",
+                        port=selected_port or "AUTO",
+                        detail=warning_detail,
+                        suppressed_ui_warning=True,
+                        technical_validation=bool(config.allow_draft_hardware_config),
+                    )
+                    self.start_ssvep(config, speed, _preflight_ready=True)
+                else:
+                    self._record(
+                        "preflight",
+                        "quality warning accepted; acquisition continues",
+                        port=selected_port or "AUTO",
+                        detail=warning_detail,
+                        technical_validation=bool(config.allow_draft_hardware_config),
+                    )
+                    self.start_ssvep(config, speed, _preflight_ready=True)
+                    task_page = self.pages.get("task")
+                    if task_page is not None and hasattr(task_page, "set_quality_warning"):
+                        task_page.set_quality_warning(message)
+                    if ssvep_page is not None and hasattr(ssvep_page, "error"):
+                        ssvep_page.error.setText(message)
             elif status == "degraded":
                 message = self.tr(
                     "validation.preflight_degraded_blocked",

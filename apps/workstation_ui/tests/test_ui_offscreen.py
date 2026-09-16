@@ -222,7 +222,7 @@ class QtOffscreenTests(unittest.TestCase):
         self.assertEqual([], self.start_calls)
         self.assertEqual(1, len(errors))
 
-    def test_cyton_preflight_warning_is_visible_when_worker_is_allowed_to_continue(self):
+    def test_cyton_preflight_timestamp_jitter_does_not_show_repeated_warning(self):
         from apps.workstation_ui.gateway import CaptureConfig, CaptureMode, Phase
 
         self._add_user()
@@ -250,6 +250,47 @@ class QtOffscreenTests(unittest.TestCase):
                 "packet_sequence_mismatch_count": 0,
                 "packet_duplicate_count": 0,
             }}],
+        })
+        self.assertEqual(Phase.COUNTDOWN, self.gateway.snapshot.phase)
+        self.assertEqual("", self.window.pages["ssvep"].error.text())
+        self.assertTrue(self.window.pages["task"].quality_notice.isHidden())
+
+    def test_cyton_preflight_packet_warning_is_visible_when_worker_continues(self):
+        from apps.workstation_ui.gateway import CaptureConfig, CaptureMode, Phase
+
+        self._add_user()
+        self.gateway.start_ssvep = self._stub_start
+        config = CaptureConfig(
+            mode=CaptureMode.CYTON,
+            port="COM5",
+            user_id="U0001",
+            participant="U0001",
+            name="packet warning hardware",
+            acknowledge_flicker_risk=True,
+            allow_draft_hardware_config=False,
+        )
+        self.window._pending_ssvep = (config, 1)
+        self.window._preflight_finished({
+            "status": "warning",
+            "error": "",
+            "selected_port": "COM5",
+            "checks": [
+                {"name": "timestamps", "status": "warning", "metrics": {
+                    "timestamp_gap_count": 22,
+                    "timestamp_gap_ratio": 0.031,
+                    "timestamp_diff_max_s": 0.3546,
+                    "packet_sequence_available": True,
+                    "packet_loss_count": 1,
+                    "packet_sequence_mismatch_count": 1,
+                    "packet_duplicate_count": 0,
+                }},
+                {"name": "packet_sequence", "status": "warning", "metrics": {
+                    "packet_sequence_available": True,
+                    "packet_loss_count": 1,
+                    "packet_sequence_mismatch_count": 1,
+                    "packet_duplicate_count": 0,
+                }},
+            ],
         })
         self.assertEqual(Phase.COUNTDOWN, self.gateway.snapshot.phase)
         self.assertIn("继续", self.window.pages["ssvep"].error.text())
