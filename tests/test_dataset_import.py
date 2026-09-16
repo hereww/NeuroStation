@@ -78,6 +78,25 @@ class DatasetImportTests(unittest.TestCase):
             self.assertEqual({4, 5}, {record.recorded_samples_per_channel for record in records})
             self.assertTrue(any(record.output_dir.name.endswith("-2") for record in records))
 
+    def test_import_skips_a_source_that_is_already_in_trash(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "Recordings"
+            session = source / "OpenBCISession_2026-01-03_00-00-00"
+            session.mkdir(parents=True)
+            write_csv(session / "BrainFlow-RAW_2026-01-03_00-00-00_0.csv", 3)
+            repository = DatasetRepository(root / "Datasets")
+
+            self.assertEqual(1, repository.import_openbci_recordings(source).imported_count)
+            dataset_id = repository.list_records()[0].session_id
+            repository.delete_record(dataset_id)
+
+            report = repository.import_openbci_recordings(source)
+
+            self.assertEqual((0, 1, 0), (report.imported_count, report.skipped_count, report.failed_count))
+            self.assertEqual([], repository.list_records())
+            self.assertEqual([dataset_id], [record.session_id for record in repository.list_trashed_records()])
+
     def test_empty_and_unknown_sessions_fail_without_half_dataset(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -168,6 +187,33 @@ class DatasetImportTests(unittest.TestCase):
             repository.purge_record("session_delete")
             self.assertFalse(session.exists())
             self.assertFalse(trash_path.exists())
+
+    def test_active_records_do_not_shadow_records_already_in_trash(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "Datasets"
+            active = root / "imports" / "imported_openbci_same_session"
+            trashed = root / "Trash" / "Datasets" / "imported_openbci_same_session"
+            for path, deleted_at in ((active, ""), (trashed, "2026-09-16T10:00:00+08:00")):
+                path.mkdir(parents=True)
+                (path / "session.json").write_text(
+                    json.dumps({
+                        "session_id": "imported_openbci_same_session",
+                        "session_name": "Same session",
+                        "duration_s": 1,
+                        "recorded_samples_per_channel": 250,
+                        "sampling_rate_hz": 250,
+                        "deleted_at": deleted_at,
+                    }),
+                    encoding="utf-8",
+                )
+
+            repository = DatasetRepository(root)
+
+            self.assertEqual([], repository.list_records())
+            self.assertEqual(
+                ["imported_openbci_same_session"],
+                [record.session_id for record in repository.list_trashed_records()],
+            )
 
     def test_unknown_legacy_source_remains_visible_in_desktop_gateway(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

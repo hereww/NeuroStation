@@ -98,6 +98,7 @@ class DatasetRepository:
         imports_root = self.root / "imports"
         imports_root.mkdir(parents=True, exist_ok=True)
         existing_fingerprints = self._import_fingerprints(imports_root)
+        existing_fingerprints.update(self._import_fingerprints(self.trash_root))
         imported = skipped = 0
         failures: list[str] = []
         for session_directory in sessions:
@@ -110,7 +111,7 @@ class DatasetRepository:
                     session_directory, fingerprint
                 )
                 destination = self._next_import_destination(
-                    imports_root, record.session_id
+                    imports_root, record.session_id, self.trash_root
                 )
                 record = replace(record, session_id=destination.name, output_dir=destination)
                 self._copy_openbci_session(
@@ -130,10 +131,23 @@ class DatasetRepository:
     def list_records(self) -> list[DatasetRecord]:
         if not self.root.exists():
             return []
+        trashed_records = self.list_trashed_records()
+        trashed_ids = {record.session_id for record in trashed_records}
+        trashed_fingerprints = {
+            record.fingerprint
+            for record in trashed_records
+            if record.fingerprint
+        }
         records = [
             record
             for path in self._active_session_paths()
             if (record := self._read_record(path, force_path=path.parent)) is not None
+            and not record.deleted_at
+            and record.session_id not in trashed_ids
+            and (
+                not record.fingerprint
+                or record.fingerprint not in trashed_fingerprints
+            )
         ]
         return sorted(records, key=lambda item: item.session_id, reverse=True)
 
@@ -548,10 +562,13 @@ class DatasetRepository:
         return _RawFileStatistics(path, "openbci_txt", samples, channels, sampling_rate)
 
     @staticmethod
-    def _next_import_destination(imports_root: Path, base_id: str) -> Path:
+    def _next_import_destination(
+        imports_root: Path, base_id: str, *reserved_roots: Path
+    ) -> Path:
         destination = imports_root / base_id
         suffix = 2
-        while destination.exists():
+        roots = (imports_root, *reserved_roots)
+        while any((root / destination.name).exists() for root in roots):
             destination = imports_root / f"{base_id}-{suffix}"
             suffix += 1
         return destination

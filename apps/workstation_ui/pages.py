@@ -1216,7 +1216,8 @@ class _DatasetCollectionPage(Page):
         source = str(self.source_filter.currentData() or "")
         status = str(self.status_filter.currentData() or "")
         visible = tuple(dataset for dataset in reversed(self._datasets)
-                        if self._matches(dataset, query, source, status))
+                        if bool(dataset.deleted_at) == self._trashed
+                        and self._matches(dataset, query, source, status))
         if not visible:
             empty_key = "datasets.empty_trash" if self._trashed else "datasets.empty"
             empty = label(self.tr(empty_key), "muted")
