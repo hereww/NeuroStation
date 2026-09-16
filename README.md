@@ -5,28 +5,26 @@
 
 NeuroStation 是一个面向科研与教学技术验证的跨平台脑电采集工作站。项目把 PySide6 桌面界面、BrainFlow 采集 worker、SSVEP 刺激流程、OpenBCI Cyton 接入、会话文件和数据集浏览整合在同一套工作流中。
 
-当前交付版本为 **MVP1.0.2（语义版本 1.0.2）**，属于 MVP1.0 系列的功能维护版本。Windows 10/11 x64 提供无需 Python 环境的 standalone portable 包；Linux 和 macOS 主要用于源码测试与平台构建验收。
+当前交付版本为 **MVP1.0.3（语义版本 1.0.3）**，属于 MVP1.0 系列的功能维护版本。Windows 10/11 x64 提供无需 Python 环境的 standalone portable 包；Linux 和 macOS 主要用于源码测试与平台构建验收。
 
 ## 下载与版本边界
 
-- [下载 NeuroStation MVP1.0.2 Windows x64](https://github.com/hereww/NeuroStation/releases/latest)
-- [查看 MVP1.0.2 Release 说明](release/NeuroStation-MVP1.0.2-Windows-x64.md)
+- [下载 NeuroStation MVP1.0.3 Windows x64](https://github.com/hereww/NeuroStation/releases/latest)
+- [查看 MVP1.0.3 Release 说明](release/NeuroStation-MVP1.0.3-Windows-x64.md)
 - [查看完整验收清单](docs/验收清单.md)
 - [查看跨平台方案](docs/跨平台脑电采集工作站方案.md)
 
 Windows 包是可直接解压运行的目录，不是 MSI 安装器，也不包含真实 Cyton 设备。当前生产入口只允许 OpenBCI Cyton 真实硬件采集；没有设备时只能查看历史记录、导入 OpenBCI 文件或运行诊断，不能生成模拟 EEG。
 
-### MVP1.0.2 更新内容
+### MVP1.0.3 更新内容
 
-- 新增 Cyton 硬件预检，检查握手、短时采样、时间戳连续性和通道平线，并在失败时阻止正式采集；
-- 预检按 OpenBCI GUI 逻辑用包序号判断真实丢包；时间戳抖动和通道质量作为可追踪 warning，严重降级或失败才需要复核/阻断；
-- 新增 SSVEP 三步流程提示、试次/频率提示、`Esc` 取消快捷键和用户脱敏索引导出；
-- 新增 Windows 用户注册表 DPAPI 保护，并明确非 Windows plaintext fallback；
-- 新增会话验证模式、协议/通道配置 hash、质量状态、掉帧、时间戳间隔和平线通道统计；
-- 新增数据集搜索与来源/状态筛选，以及诊断中的显示器、DPI、刷新率信息；
-- 工作台新增“诊断”页：检查依赖、配置、资源、保存目录和串口，记录 UI/任务/预检/导入事件，并支持导出 JSON 报告；
-- 新增 UI scale matrix、SBOM 生成和 packaged smoke 校验；
-- 修复 Windows 构建平台检测、正式 Cyton 绕过预检、草稿配置阻断和发布包证据缺失问题。
+- 新增透明的 SSVEP 离线 FFT 基线分析，生成 `analysis.json` 和 `trial_features.tsv`；
+- 新增 `raw_columns.tsv` 和目标标记审计字段，区分呈现目标、人工/自报目标与 EEG 推断目标；
+- 新增诊断页、持久化事件日志、JSON 报告导出和真实采样滚动波形显示；
+- 新增数据集回收站，支持恢复、永久删除和筛选；
+- 生产入口收敛为 OpenBCI Cyton 实机，CI 不再生成 Synthetic/Demo EEG；
+- 固定 BrainFlow `5.22.2`，修复跨平台原生库混包、macOS runtime、Windows 路径和打包 smoke 问题；
+- 修复活动数据集遮蔽回收站记录和干净时间戳抖动重复告警问题。
 
 本项目不是医疗诊断设备。SSVEP 参数、通道位置、参考电极、BIAS、显示器刷新率和光学/marker 时序仍需在正式实验前人工复核。MVP1.0 的自动化测试不能替代 Cyton 实机、photodiode/TTL 和长时间稳定性验收。
 
@@ -41,7 +39,7 @@ Windows 包是可直接解压运行的目录，不是 MSI 安装器，也不包�
 
 ### 使用 Windows 发布包
 
-1. 下载并解压 `NeuroStation-MVP1.0.2-Windows-x64.zip`。
+1. 下载并解压 `NeuroStation-MVP1.0.3-Windows-x64.zip`。
 2. 运行 `NeuroStation.dist\workstation.exe`。
 3. 首次使用先连接 Cyton USB dongle，选择采集用户并完成硬件预检。
 4. 需要查看运行环境时执行：
@@ -190,7 +188,7 @@ python scripts\smoke_packaged.py
 构建会把源码复制到 ASCII 路径的临时 stage，使用 Qt 官方 `pyside6-deploy`/Nuitka 构建，再把产物复制回 `dist/`。Windows 输出包括：
 
 - `dist\NeuroStation.dist\`：可运行目录；
-- `dist\NeuroStation-MVP1.0.2-Windows-x64.zip`：发布归档。
+- `dist\NeuroStation-MVP1.0.3-Windows-x64.zip`：发布归档。
 
 GitHub Actions 的职责分工如下：
 
