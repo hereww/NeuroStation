@@ -56,6 +56,15 @@ def _nonempty_string(value: Any, key: str, source: Path) -> str:
     return value
 
 
+def is_confirmed_position(value: Any) -> bool:
+    """Return whether a position is an operator-confirmed placement label."""
+
+    if not isinstance(value, str):
+        return False
+    normalized = value.strip().casefold()
+    return normalized not in {"", "unspecified", "unknown", "unassigned", "未指定", "未设置"}
+
+
 def validate_stimulus_config(config: dict[str, Any], source: Path) -> list[str]:
     warnings: list[str] = []
     display = _required_mapping(config, "display", source)
@@ -165,7 +174,7 @@ def validate_channel_config(config: dict[str, Any], source: Path) -> list[str]:
             raise ConfigError(f"Channel '{name}' has no valid gui_index in {source}")
         names.append(name)
         indexes.append(index)
-        if not channel.get("electrode_position"):
+        if not is_confirmed_position(channel.get("electrode_position")):
             unset_positions.append(name)
 
     if len(set(names)) != len(names) or len(set(indexes)) != len(indexes):
@@ -178,6 +187,11 @@ def validate_channel_config(config: dict[str, Any], source: Path) -> list[str]:
         warnings.append(
             "Electrode positions are not filled in for: " + ", ".join(unset_positions)
         )
+    for key in ("reference", "bias", "ground"):
+        auxiliary = config.get(key)
+        position = auxiliary.get("position") if isinstance(auxiliary, dict) else None
+        if not is_confirmed_position(position):
+            warnings.append(f"{key} position is not confirmed")
     if "DRAFT" in str(config.get("config_version", "")).upper():
         warnings.append("The channel configuration is marked as a draft.")
     return warnings

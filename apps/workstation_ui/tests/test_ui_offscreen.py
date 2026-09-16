@@ -107,6 +107,29 @@ class QtOffscreenTests(unittest.TestCase):
         page.channel.setText(str(channel_path))
         self.assertEqual(channel_path, page.config().channel_config)
 
+    def test_device_page_has_one_test_action_per_channel(self):
+        self.window.navigate("devices")
+        page = self.window.pages["devices"]
+        self.assertEqual(8, page.calibration_table.rowCount())
+        self.assertEqual(8, len(page.test_buttons))
+        self.assertTrue(all(button.isEnabled() for button in page.test_buttons))
+
+        page.set_channel_test_busy(2, True)
+        self.assertTrue(all(not button.isEnabled() for button in page.test_buttons))
+        page.set_channel_test_busy(-1, False)
+        self.assertTrue(all(button.isEnabled() for button in page.test_buttons))
+
+        page.set_channel_test_result(2, {
+            "status": "passed",
+            "detail": "ok",
+            "metrics": {
+                "finite_fraction": 1.0,
+                "flat_fraction": 0.0,
+                "saturation_fraction": 0.0,
+            },
+        })
+        self.assertIn("通过", page.test_statuses[2].text())
+
     def test_capture_form_requires_a_real_user_and_photosensitivity_ack(self):
         from apps.workstation_ui.gateway import CaptureMode
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -67,6 +68,22 @@ class OpenBCIImportUiTests(unittest.TestCase):
             gateway.restore_dataset(dataset.id)
             window.refresh_datasets()
             window.navigate("datasets")
+            derived = dataset.path / "derived" / "denoise_v1"
+            derived.mkdir(parents=True)
+            (derived / "denoising_metrics.json").write_text(json.dumps({
+                "artifact_segment_count": 2,
+                "artifact_fraction": 0.01,
+                "tracks": {
+                    "annotated": {"line_noise_ratio": {"50.0": 10}, "target_snr_db": {"top_right": 2}},
+                    "50hz": {"line_noise_ratio": {"50.0": 0.1}, "target_snr_db": {"top_right": 4}},
+                    "60hz": {"line_noise_ratio": {"60.0": 0.1}, "target_snr_db": {"top_right": 4}},
+                },
+                "analysis": {
+                    "annotated": {"trial_count": 1, "rejected_trial_count": 1},
+                    "50hz": {"trial_count": 1, "rejected_trial_count": 0},
+                    "60hz": {"trial_count": 1, "rejected_trial_count": 0},
+                },
+            }), encoding="utf-8")
             window.show_result(dataset)
             self.assertEqual("result", window.current_page)
             self.assertEqual("DatasetSummaryPage", type(window.pages["result"]).__name__)
@@ -77,6 +94,9 @@ class OpenBCIImportUiTests(unittest.TestCase):
             self.assertIsNotNone(session_table)
             self.assertIsNotNone(file_table)
             self.assertEqual(14, session_table.rowCount())
+            denoising_table = window.pages["result"].findChild(QTableWidget, "denoisingMetricsTable")
+            self.assertIsNotNone(denoising_table)
+            self.assertEqual(3, denoising_table.rowCount())
             self.assertEqual(4, file_table.columnCount())
             self.assertEqual(1, file_table.rowCount())
             session_texts = [

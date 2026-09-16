@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "sampling_rate_hz": 250,
+  "bandpass_hz": [1.0, 45.0],
+  "bandpass_order": 4,
+  "line_noise_hz": [50.0, 60.0],
+  "notch_quality_factor": 30.0,
+  "max_interpolation_s": 0.2,
+  "artifact_detection": {
+    "flatline_fraction": 0.2,
+    "robust_z_threshold": 8.0,
+    "high_frequency_band_hz": [30.0, 45.0],
+    "high_frequency_ratio": 0.35,
+    "motion_z_threshold": 8.0,
+    "window_s": 1.0,
+    "step_s": 0.5
+  }
+}

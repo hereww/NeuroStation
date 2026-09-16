@@ -14,7 +14,13 @@ import threading
 import traceback
 from typing import Any
 
-from neurostation_contract import PRODUCT_NAME, PRODUCT_SEMVER, PRODUCT_VERSION
+from neurostation_contract import (
+    PRODUCT_NAME,
+    PRODUCT_SEMVER,
+    PRODUCT_VERSION,
+    default_user_channel_config_path,
+    default_user_protocol_path,
+)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -253,30 +259,56 @@ class DiagnosticStore:
     def build_report(self, gateway: Any | None = None) -> dict[str, Any]:
         """Collect JSON-safe runtime checks without opening hardware."""
 
-        protocol_path = ROOT / "configs" / "protocols" / "ssvep_four_target_v2.json"
+        bundled_protocol_path = ROOT / "configs" / "protocols" / "ssvep_four_target_v2.json"
+        protocol_path = (
+            default_user_protocol_path()
+            if default_user_protocol_path().is_file()
+            else bundled_protocol_path
+        )
         stimulus_path = ROOT / "configs" / "ssvep_config_v1.json"
-        final_channel_path = ROOT / "configs" / "channel_config_v1.json"
+        final_channel_path = default_user_channel_config_path()
+        bundled_final_channel_path = ROOT / "configs" / "channel_config_v1.json"
         auto_channel_path = ROOT / "configs" / "channel_config_v1_auto.json"
         template_channel_path = ROOT / "configs" / "channel_config_v1_template.json"
         channel_path = (
             final_channel_path
             if final_channel_path.is_file()
-            else (auto_channel_path if auto_channel_path.is_file() else template_channel_path)
+            else (
+                bundled_final_channel_path
+                if bundled_final_channel_path.is_file()
+                else (auto_channel_path if auto_channel_path.is_file() else template_channel_path)
+            )
         )
 
         configuration: dict[str, Any] = {
             "protocol_path": str(protocol_path),
             "stimulus_path": str(stimulus_path),
             "channel_config_path": str(channel_path),
-            "final_channel_config_present": final_channel_path.is_file(),
+            "final_channel_config_present": (
+                final_channel_path.is_file() or bundled_final_channel_path.is_file()
+            ),
             "status": "invalid",
             "warnings": [],
             "error": None,
         }
         try:
-            from eeg_tools.config import load_and_validate_configs
+            from eeg_tools.config import validate_channel_config
+            from eeg_tools.workstation.ssvep import SSVEPProtocol
 
-            _, _, warnings = load_and_validate_configs(stimulus_path, channel_path)
+            protocol_value = json.loads(protocol_path.read_text(encoding="utf-8"))
+            channel_value = json.loads(channel_path.read_text(encoding="utf-8"))
+            protocol = SSVEPProtocol.load(protocol_path)
+            warnings = validate_channel_config(channel_value, channel_path)
+            protocol_status = str(protocol_value.get("status") or "")
+            configuration["protocol_status"] = protocol_status
+            if protocol_status.lower().startswith("draft"):
+                warnings.append("The protocol is marked as a draft.")
+            if (
+                protocol.refresh_rate_hz != 60
+                or protocol.sampling_rate_hz != 250
+                or protocol.channel_count != 8
+            ):
+                warnings.append("Protocol hardware or display parameters are not the formal 8-channel/250 Hz/60 Hz setup.")
             configuration["warnings"] = list(warnings)
             configuration["status"] = "ready" if not warnings else "draft"
         except Exception as error:
@@ -370,6 +402,7 @@ class DiagnosticStore:
             "PySide6": _dependency_status("PySide6"),
             "brainflow": _dependency_status("brainflow"),
             "numpy": _dependency_status("numpy"),
+            "scipy": _dependency_status("scipy"),
         }
         resources = {
             "protocol_ready": protocol_path.is_file(),

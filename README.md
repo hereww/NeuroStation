@@ -146,6 +146,23 @@ python analyze_ssvep_session.py .\path\to\session_YYYYMMDD_HHMMSS_mmm
 
 分析只生成 `analysis.json` 和 `trial_features.tsv`，不会改写原始 EEG。
 
+### 离线去噪研究管线
+
+MVP1.0.3 支线提供可审计的 SciPy 离线去噪流程。它不会修改
+`raw_brainflow.tsv`，默认同时生成 50 Hz 和 60 Hz 两套结果，并保留原始标记轨道：
+
+```powershell
+python preprocess_eeg_session.py `
+  .\path\to\session_YYYYMMDD_HHMMSS_mmm `
+  --pipeline configs\denoise_pipeline_v1.json
+```
+
+默认输出到会话目录下的 `derived\denoise_v1\`，包含伪迹段、带通/陷波后的
+`denoised_50hz.npz` 和 `denoised_60hz.npz`、SSVEP 特征、PSD/SNR/工频比、处理参数、
+输入与派生文件 hash。短的非有限缺口只在滤波前临时插值，超过 0.2 秒的缺口保持为
+无效值并进入 `artifact_segments.tsv`；原始文件始终保持不变。结果页会在派生结果存在时
+显示三条处理轨道的摘要。
+
 原始 EEG 和通道配置可能包含敏感信息。录制目录、会话目录以及本地正式通道配置已加入 `.gitignore`，不要把真实参与者数据提交到 Git 仓库。
 
 ## CLI 入口

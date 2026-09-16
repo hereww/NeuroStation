@@ -34,6 +34,7 @@ $sourceItems = @(
     "eeg_tools",
     "neurostation_contract.py",
     "analyze_ssvep_session.py",
+    "preprocess_eeg_session.py",
     "workstation.py",
     "neurostation_diagnostics.py",
     "pysidedeploy.spec",
@@ -52,9 +53,16 @@ try {
     if (-not (Test-Path -LiteralPath $buildPython)) {
         & $pythonPath -m venv $venvRoot
     }
-    & $buildPython -c "import PySide6, nuitka, brainflow, numpy" 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        & $buildPython -m pip install "PySide6>=6.7" "Nuitka>=4.2,<5" "brainflow==5.22.2" "numpy>=2.0"
+    $dependencyCheckExit = 0
+    try {
+        & $buildPython -c "import PySide6, nuitka, brainflow, numpy, scipy" 2>$null
+        $dependencyCheckExit = $LASTEXITCODE
+    }
+    catch {
+        $dependencyCheckExit = 1
+    }
+    if ($dependencyCheckExit -ne 0) {
+        & $buildPython -m pip install "PySide6>=6.7" "Nuitka>=4.2,<5" "brainflow==5.22.2" "numpy>=2.0" "scipy>=1.14"
         if ($LASTEXITCODE -ne 0) {
             throw "Unable to install desktop build dependencies."
         }

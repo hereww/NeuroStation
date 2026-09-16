@@ -119,6 +119,20 @@ def default_save_directory() -> Path:
     return (Path.home() / "Documents" / "NeuroStation" / "Datasets").resolve()
 
 
+def default_user_settings_directory() -> Path:
+    """Return the writable per-user directory for calibrated acquisition settings."""
+
+    return (Path.home() / "Documents" / PRODUCT_NAME / "Settings").resolve()
+
+
+def default_user_channel_config_path() -> Path:
+    return default_user_settings_directory() / "channel_config_v1.json"
+
+
+def default_user_protocol_path() -> Path:
+    return default_user_settings_directory() / "ssvep_four_target_v2.json"
+
+
 def format_duration(seconds: float) -> str:
     value = max(0, int(seconds))
     return f"{value // 3600:02}:{value // 60 % 60:02}:{value % 60:02}"
@@ -311,6 +325,16 @@ class CaptureGateway(Protocol):
     def openbci_status(self) -> OpenBCIWorkspaceStatus: ...
 
     def preflight_cyton(self, seconds: float = 3.0, port: str = "AUTO") -> dict[str, Any]: ...
+
+    def test_cyton_channel(
+        self,
+        channel_number: int,
+        seconds: float = 3.0,
+        port: str = "AUTO",
+    ) -> dict[str, Any]: ...
+
+    def load_channel_calibration(self) -> dict[str, Any] | None: ...
+    def save_channel_calibration(self, calibration: dict[str, Any]) -> dict[str, Any]: ...
 
     def start_ssvep(self, config: CaptureConfig, speed: float = 1) -> TaskSnapshot: ...
     def cancel(self) -> TaskSnapshot: ...

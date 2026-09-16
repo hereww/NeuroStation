@@ -1,6 +1,7 @@
 """Desktop shell and UI command routing; one gateway, one task timer."""
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -36,6 +37,29 @@ class _PreflightWorker(QObject):
             self.finished.emit(error)
             return
         self.finished.emit(report)
+
+
+class _ChannelCalibrationWorker(QObject):
+    finished = Signal(object)
+
+    def __init__(self, gateway: CaptureGateway, channel_number: int, port: str):
+        super().__init__()
+        self.gateway = gateway
+        self.channel_number = channel_number
+        self.port = port
+
+    @Slot()
+    def run(self):
+        try:
+            result = self.gateway.test_cyton_channel(
+                self.channel_number,
+                seconds=3.0,
+                port=self.port,
+            )
+        except Exception as error:
+            self.finished.emit(error)
+            return
+        self.finished.emit(result)
 
 
 class _ImportWorker(QObject):
@@ -206,6 +230,9 @@ class MainWindow(QMainWindow):
         self.import_worker: _ImportWorker | None = None
         self.preflight_thread: QThread | None = None
         self.preflight_worker: _PreflightWorker | None = None
+        self.channel_calibration_thread: QThread | None = None
+        self.channel_calibration_worker: _ChannelCalibrationWorker | None = None
+        self._channel_calibration_index: int | None = None
         self._pending_ssvep: tuple[CaptureConfig, float] | None = None
         self._preflight_ready = False
         self.import_status = ""
@@ -307,7 +334,18 @@ class MainWindow(QMainWindow):
         self.pages = {}
         self.screens = {}
         self._replace_page("home", HomePage(self.tr, self.navigate))
-        self._replace_page("devices", DevicesPage(self.tr, self.navigate, self.preflight_cyton))
+        self._replace_page(
+            "devices",
+            DevicesPage(
+                self.tr,
+                self.navigate,
+                self.preflight_cyton,
+                self.calibrate_cyton_channel,
+                self.save_channel_calibration,
+                self._channel_config_value(),
+                self._protocol_status(),
+            ),
+        )
         self._replace_page("users", self._build_users_page())
         self._replace_page("apps", AppsPage(self.tr, self.navigate))
         detail = SSVEPPage(self.tr, self.draft_config, self.navigate, self.gateway.users)
@@ -558,6 +596,126 @@ class MainWindow(QMainWindow):
         self.preflight_thread.finished.connect(self._preflight_thread_finished)
         self.preflight_thread.start()
         self._update_controls()
+
+    def _channel_config_value(self) -> dict:
+        loader = getattr(self.gateway, "load_channel_calibration", None)
+        if callable(loader):
+            try:
+                value = loader()
+                if isinstance(value, dict):
+                    return value
+            except Exception:
+                pass
+        path = getattr(self.gateway, "channel_config_path", None)
+        try:
+            value = json.loads(Path(path).read_text(encoding="utf-8"))
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    def _protocol_status(self) -> str:
+        path = getattr(self.gateway, "protocol_path", None)
+        try:
+            value = json.loads(Path(path).read_text(encoding="utf-8"))
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            return "unknown"
+        return str(value.get("status") or "unknown") if isinstance(value, dict) else "unknown"
+
+    def calibrate_cyton_channel(self, channel_index: int):
+        if self.gateway.snapshot.active or self.preflight_thread is not None:
+            return
+        if self.channel_calibration_thread is not None:
+            return
+        page = self.pages.get("devices")
+        if page is None:
+            return
+        try:
+            channel_index = int(channel_index)
+        except (TypeError, ValueError):
+            page.calibration_status.setText(self.tr("validation.calibration_channel"))
+            return
+        if not 0 <= channel_index < 8:
+            page.calibration_status.setText(self.tr("validation.calibration_channel"))
+            return
+        port = page.calibration_port.text().strip() or "AUTO"
+        self._channel_calibration_index = channel_index
+        page.set_channel_test_busy(channel_index, True)
+        page.calibration_status.setText(
+            self.tr("device.calibration_running", channel=channel_index + 1)
+        )
+        self.channel_calibration_thread = QThread(self)
+        self.channel_calibration_worker = _ChannelCalibrationWorker(
+            self.gateway,
+            channel_index + 1,
+            port,
+        )
+        self.channel_calibration_worker.moveToThread(self.channel_calibration_thread)
+        self.channel_calibration_thread.started.connect(self.channel_calibration_worker.run)
+        self.channel_calibration_worker.finished.connect(self._channel_calibration_finished)
+        self.channel_calibration_worker.finished.connect(self.channel_calibration_thread.quit)
+        self.channel_calibration_worker.finished.connect(self.channel_calibration_worker.deleteLater)
+        self.channel_calibration_thread.finished.connect(self.channel_calibration_thread.deleteLater)
+        self.channel_calibration_thread.finished.connect(self._channel_calibration_thread_finished)
+        self.channel_calibration_thread.start()
+        self._update_controls()
+
+    def _channel_calibration_finished(self, result):
+        page = self.pages.get("devices")
+        index = self._channel_calibration_index
+        if page is None or index is None:
+            return
+        if isinstance(result, Exception):
+            result = {
+                "status": "failed",
+                "channel": index + 1,
+                "detail": str(result),
+                "metrics": {},
+            }
+        if not isinstance(result, dict):
+            result = {
+                "status": "failed",
+                "channel": index + 1,
+                "detail": self.tr("validation.calibration_result"),
+                "metrics": {},
+            }
+        page.set_channel_test_result(index, result)
+        self._record(
+            "hardware",
+            "cyton channel calibration finished",
+            channel=index + 1,
+            status=result.get("status", "unknown"),
+        )
+
+    def _channel_calibration_thread_finished(self):
+        page = self.pages.get("devices")
+        if page is not None:
+            page.set_channel_test_busy(-1, False)
+        self.channel_calibration_thread = None
+        self.channel_calibration_worker = None
+        self._channel_calibration_index = None
+        self._update_controls()
+
+    def save_channel_calibration(self, calibration: dict):
+        try:
+            result = self.gateway.save_channel_calibration(calibration)
+        except (ValueError, RuntimeError, OSError) as error:
+            self._error(error)
+            return
+        self._record(
+            "hardware",
+            "formal Cyton channel calibration saved",
+            channel_config_path=result.get("channel_config_path", ""),
+            protocol_path=result.get("protocol_path", ""),
+        )
+        page = self.pages.get("devices")
+        if page is not None:
+            page.set_calibration_saved(result)
+            page.set_protocol_status(self._protocol_status())
+        ssvep_page = self.pages.get("ssvep")
+        if ssvep_page is not None and hasattr(ssvep_page, "allow_draft"):
+            ssvep_page.allow_draft.setChecked(False)
+        self.draft_config = replace(self.draft_config, allow_draft_hardware_config=False)
+        self._refresh_diagnostics()
 
     def _preflight_finished(self, result):
         if isinstance(result, Exception):

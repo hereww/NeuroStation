@@ -195,6 +195,70 @@ class AcquisitionProcessGateway:
         self._preflight_report = report.as_dict()
         return self._preflight_report
 
+    def test_cyton_channel(
+        self,
+        channel_number: int,
+        seconds: float = 3.0,
+        port: str = "AUTO",
+    ) -> dict[str, Any]:
+        """Run a short real Cyton sample and return one channel's checks."""
+
+        if not 1 <= int(channel_number) <= 8:
+            raise ValueError("validation.calibration_channel")
+        report = self.preflight_cyton(seconds=seconds, port=port or "AUTO")
+        checks = report.get("checks", [])
+        channel_check = next(
+            (
+                check
+                for check in checks
+                if isinstance(check, dict) and check.get("name") == "channels"
+            ),
+            None,
+        )
+        metrics = channel_check.get("metrics", {}) if isinstance(channel_check, dict) else {}
+        channel_metrics = metrics.get("channels", []) if isinstance(metrics, dict) else []
+        selected = next(
+            (
+                item
+                for item in channel_metrics
+                if isinstance(item, dict) and int(item.get("channel", 0) or 0) == int(channel_number)
+            ),
+            None,
+        )
+        if selected is None:
+            return {
+                "status": "failed",
+                "channel": int(channel_number),
+                "report": report,
+                "metrics": {},
+                "detail": "Selected channel metrics were not returned.",
+            }
+        channel_status = "passed"
+        if str(channel_check.get("status") if isinstance(channel_check, dict) else "") in {
+            "failed",
+            "warning",
+        }:
+            flat_fraction = float(selected.get("flat_fraction", 1.0) or 1.0)
+            saturation_fraction = float(selected.get("saturation_fraction", 1.0) or 1.0)
+            finite_fraction = float(selected.get("finite_fraction", 0.0) or 0.0)
+            if finite_fraction < 0.99 or flat_fraction >= 0.95 or saturation_fraction >= 0.95:
+                channel_status = "failed"
+                detail = "Channel is mostly flat, saturated, or contains invalid samples."
+            else:
+                channel_status = "warning"
+                detail = "Channel samples are changing, but the overall preflight has a warning."
+        else:
+            detail = "Channel samples are finite and changing."
+        return {
+            "status": channel_status,
+            "channel": int(channel_number),
+            "selected_port": report.get("selected_port", ""),
+            "report_status": report.get("status", "unknown"),
+            "report": report,
+            "metrics": selected,
+            "detail": detail,
+        }
+
     def start_ssvep(self, config: CaptureConfig, speed: float = 1) -> TaskSnapshot:
         if self.snapshot.active:
             raise RuntimeError("validation.busy")

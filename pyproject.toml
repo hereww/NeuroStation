@@ -8,7 +8,7 @@ version = "1.0.3"
 description = "NeuroStation MVP1.0.3 Windows-first EEG acquisition workstation"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["PySide6>=6.7", "brainflow==5.22.2", "numpy>=2.0"]
+dependencies = ["PySide6>=6.7", "brainflow==5.22.2", "numpy>=2.0", "scipy>=1.14"]
 
 [tool.pyside6-project]
 files = [
@@ -16,6 +16,7 @@ files = [
   "neurostation_contract.py",
   "neurostation_diagnostics.py",
   "analyze_ssvep_session.py",
+  "preprocess_eeg_session.py",
   "apps/workstation_ui/__init__.py",
   "apps/workstation_ui/app.py",
   "apps/workstation_ui/components.py",
@@ -26,6 +27,7 @@ files = [
   "eeg_tools/__init__.py",
   "eeg_tools/session_files.py",
   "eeg_tools/offline_analysis.py",
+  "eeg_tools/denoise.py",
   "eeg_tools/workstation/__init__.py",
   "eeg_tools/workstation/acquisition_worker.py",
   "eeg_tools/workstation/dataset.py",

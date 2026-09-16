@@ -9,13 +9,14 @@ import math
 import re
 from typing import Any
 
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal, Qt, QUrl
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QLineEdit,
     QSpinBox, QComboBox, QCheckBox, QFileDialog, QProgressBar, QStyle,
     QAbstractItemView, QHeaderView, QTableWidget, QTableWidgetItem,
-    QDialog, QDialogButtonBox, QMessageBox, QTextEdit,
+    QDialog, QDialogButtonBox, QMessageBox, QTextEdit, QPushButton,
 )
+from PySide6.QtGui import QDesktopServices
 
 from .components import (
     CHANNEL_NAMES,
@@ -29,6 +30,7 @@ from .components import (
     label,
 )
 from .gateway import CaptureConfig, CaptureMode, TaskSnapshot, Phase, Dataset, format_duration
+from eeg_tools.config import is_confirmed_position
 from neurostation_contract import GENDERS, MEDICAL_OPTIONS, UserProfile
 
 
@@ -160,6 +162,60 @@ def _dataset_raw_file_names(result: Dataset) -> tuple[str, ...]:
             or Path(name).name.lower() == "raw_brainflow.tsv"
         )
     )
+
+
+def _load_denoising_metrics(result: Dataset) -> tuple[Path, dict[str, Any] | None]:
+    candidates = (
+        result.path / "derived" / "denoise_v1" / "denoising_metrics.json",
+        result.path / "denoising_metrics.json",
+    )
+    for metrics_path in candidates:
+        try:
+            value = json.loads(metrics_path.read_text(encoding="utf-8"))
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if isinstance(value, dict) and isinstance(value.get("tracks"), dict):
+            return metrics_path.parent, value
+    return candidates[0].parent, None
+
+
+def _denoising_section(tr, result: Dataset) -> Section | None:
+    output_dir, metrics = _load_denoising_metrics(result)
+    if metrics is None:
+        return None
+    section = Section(tr("result.denoising.title"))
+    section.layout.addWidget(label(tr("result.denoising.note"), "muted"))
+    table = _readonly_table((tr("result.denoising.track"), tr("result.denoising.line_noise"), tr("result.denoising.target_snr"), tr("result.denoising.trials"), tr("result.denoising.rejected")))
+    table.setObjectName("denoisingMetricsTable")
+    header = table.horizontalHeader()
+    for column in range(4):
+        header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+    header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+    tracks = metrics.get("tracks", {})
+    analyses = metrics.get("analysis", {})
+    for key, title_key in (("annotated", "result.denoising.annotated"), ("50hz", "result.denoising.50hz"), ("60hz", "result.denoising.60hz")):
+        track = tracks.get(key, {}) if isinstance(tracks, dict) else {}
+        line_values = track.get("line_noise_ratio", {}) if isinstance(track, dict) else {}
+        line_text = ", ".join(
+            f"{frequency} Hz: {10.0 * math.log10(max(float(value), 1e-12)):.1f} dB"
+            for frequency, value in line_values.items()
+            if value is not None
+        ) or "—"
+        target_values = track.get("target_snr_db", {}) if isinstance(track, dict) else {}
+        snr_values = [float(value) for value in target_values.values() if value is not None]
+        snr_text = f"{sum(snr_values) / len(snr_values):.1f} dB" if snr_values else "—"
+        analysis = analyses.get(key, {}) if isinstance(analyses, dict) else {}
+        values = (tr(title_key), line_text, snr_text, str(analysis.get("trial_count", "—")), str(analysis.get("rejected_trial_count", "—")))
+        row = table.rowCount()
+        table.insertRow(row)
+        for column, value in enumerate(values):
+            table.setItem(row, column, _table_item(value))
+    table.resizeRowsToContents()
+    section.layout.addWidget(table)
+    section.layout.addWidget(label(tr("result.denoising.artifacts", count=metrics.get("artifact_segment_count", 0), fraction=f"{float(metrics.get('artifact_fraction', 0.0)) * 100:.2f}%"), "muted"))
+    section.layout.addWidget(label(tr("result.denoising.generated", path=str(output_dir)), "path"))
+    section.layout.addWidget(action(tr("result.denoising.open"), lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(output_dir)))))
+    return section
 
 
 def _read_data_preview(path: Path, limit: int = 100) -> tuple[tuple[str, ...], list[list[str]]]:
@@ -494,7 +550,25 @@ class HomePage(Page):
 
 
 class DevicesPage(Page):
-    def __init__(self, tr, navigate, preflight=None):
+    ELECTRODE_POSITIONS = (
+        "Fp1", "Fp2", "AF3", "AF4", "Fz", "Cz", "C3", "C4",
+        "P3", "P4", "P7", "P8", "T7", "T8", "O1", "O2", "Oz",
+    )
+    AUXILIARY_POSITIONS = ("ear_clip", "left_earlobe", "right_earlobe", "mastoid")
+
+    calibration_test_requested = Signal(int)
+    calibration_save_requested = Signal(object)
+
+    def __init__(
+        self,
+        tr,
+        navigate,
+        preflight=None,
+        channel_test=None,
+        save_calibration=None,
+        channel_config=None,
+        protocol_status="draft",
+    ):
         super().__init__(tr, tr("nav.devices"), tr("device.serial_note"))
         device = Section("OpenBCI Cyton · AUTO")
         device.layout.addWidget(KeyValues([
@@ -505,14 +579,247 @@ class DevicesPage(Page):
         ]))
         self.layout.addWidget(device)
         mapping = Section(tr("device.mapping"))
-        mapping.layout.addWidget(label("CH 1–4: Fp1 · Fp2 · C3 · C4\nCH 5–8: P7 · P8 · O1 · O2"))
+        mapping.layout.addWidget(label(tr("device.mapping_fixed")))
         mapping.layout.addWidget(label(tr("device.mapping_note"), "muted"))
         self.layout.addWidget(mapping)
+
+        calibration = Section(tr("device.calibration_title"))
+        calibration.layout.addWidget(label(tr("device.calibration_note"), "muted"))
+        protocol_key = self._protocol_status_key(protocol_status)
+        self.protocol_status = label(
+            tr("device.protocol_status", status=tr("device.protocol_status." + protocol_key)),
+            "muted",
+        )
+        calibration.layout.addWidget(self.protocol_status)
+
+        channel_value = channel_config if isinstance(channel_config, dict) else {}
+        self.calibration_port = QLineEdit(str(channel_value.get("serial_port") or "AUTO"))
+        self.calibration_port.setPlaceholderText("AUTO")
+        port_form = QFormLayout()
+        port_form.addRow(tr("device.calibration_port"), self.calibration_port)
+        calibration.layout.addLayout(port_form)
+
+        self.calibration_table = QTableWidget(8, 5)
+        self.calibration_table.setObjectName("channelCalibrationTable")
+        self.calibration_table.setHorizontalHeaderLabels([
+            tr("device.calibration_channel"),
+            tr("device.calibration_input"),
+            tr("device.calibration_position"),
+            tr("device.calibration_result"),
+            tr("device.calibration_action"),
+        ])
+        self.calibration_table.verticalHeader().setVisible(False)
+        self.calibration_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.calibration_table.setMinimumHeight(320)
+        self.calibration_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.calibration_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.calibration_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        self.position_boxes: list[QComboBox] = []
+        self.test_buttons: list[QPushButton] = []
+        self.test_statuses: list[QLabel] = []
+        self._test_results: list[dict[str, Any] | None] = [None] * 8
+        configured_channels = channel_value.get("channels")
+        configured_channels = configured_channels if isinstance(configured_channels, list) else []
+        for index in range(8):
+            channel = configured_channels[index] if index < len(configured_channels) else {}
+            channel = channel if isinstance(channel, dict) else {}
+            self.calibration_table.setItem(index, 0, _table_item(f"CH{index + 1}"))
+            self.calibration_table.setItem(index, 1, _table_item(str(channel.get("board_input") or f"N{index + 1}P")))
+            position = QComboBox()
+            position.setEditable(True)
+            position.addItem("", "")
+            position.addItems(self.ELECTRODE_POSITIONS)
+            position.setCurrentText(str(channel.get("electrode_position") or ""))
+            if position.lineEdit() is not None:
+                position.lineEdit().setPlaceholderText(tr("device.calibration_position_placeholder"))
+            position.currentTextChanged.connect(self._calibration_form_changed)
+            self.position_boxes.append(position)
+            self.calibration_table.setCellWidget(index, 2, position)
+            result_label = label(tr("device.calibration_not_tested"), "muted")
+            self.test_statuses.append(result_label)
+            self.calibration_table.setCellWidget(index, 3, result_label)
+            test_button = action(
+                tr("device.calibration_test"),
+                lambda _checked=False, channel_index=index: self.calibration_test_requested.emit(channel_index),
+            )
+            self.test_buttons.append(test_button)
+            self.calibration_table.setCellWidget(index, 4, test_button)
+            self.calibration_table.setRowHeight(index, 38)
+        calibration.layout.addWidget(self.calibration_table)
+
+        auxiliary_form = QFormLayout()
+        self.reference_position = self._editable_choice(
+            self.AUXILIARY_POSITIONS,
+            str((channel_value.get("reference") or {}).get("position") or "ear_clip"),
+            tr("device.calibration_aux_placeholder"),
+        )
+        self.bias_position = self._editable_choice(
+            self.AUXILIARY_POSITIONS,
+            str((channel_value.get("bias") or {}).get("position") or "ear_clip"),
+            tr("device.calibration_aux_placeholder"),
+        )
+        self.ground_position = self._editable_choice(
+            self.AUXILIARY_POSITIONS,
+            str((channel_value.get("ground") or {}).get("position") or ""),
+            tr("device.calibration_aux_placeholder"),
+        )
+        auxiliary_form.addRow(tr("device.calibration_reference"), self.reference_position)
+        auxiliary_form.addRow(tr("device.calibration_bias"), self.bias_position)
+        auxiliary_form.addRow(tr("device.calibration_ground"), self.ground_position)
+        calibration.layout.addLayout(auxiliary_form)
+        for combo in (self.reference_position, self.bias_position, self.ground_position):
+            combo.currentTextChanged.connect(self._calibration_form_changed)
+
+        self.protocol_reviewed = QCheckBox(tr("device.protocol_reviewed"))
+        self.protocol_reviewed.toggled.connect(self._calibration_form_changed)
+        calibration.layout.addWidget(self.protocol_reviewed)
+        self.calibration_status = label("", "muted")
+        calibration.layout.addWidget(self.calibration_status)
+        self.calibration_path = label("", "path")
+        calibration.layout.addWidget(self.calibration_path)
+        self.save_calibration_button = action(
+            tr("device.save_formal_calibration"), self._save_calibration, True
+        )
+        calibration.layout.addWidget(self.save_calibration_button)
+        self.layout.addWidget(calibration)
+
         self.preflight_status = label(tr("device.preflight_idle"), "muted")
         self.layout.addWidget(self.preflight_status)
         if preflight is not None:
             self.layout.addWidget(action(tr("action.preflight"), preflight, True))
         self.layout.addStretch()
+
+        self._set_loaded_calibration(channel_value)
+
+        if channel_test is not None:
+            self.calibration_test_requested.connect(channel_test)
+        if save_calibration is not None:
+            self.calibration_save_requested.connect(save_calibration)
+
+    @staticmethod
+    def _editable_choice(values: tuple[str, ...], current: str, placeholder: str) -> QComboBox:
+        combo = QComboBox()
+        combo.setEditable(True)
+        combo.addItem("", "")
+        combo.addItems(values)
+        combo.setCurrentText(current)
+        if combo.lineEdit() is not None:
+            combo.lineEdit().setPlaceholderText(placeholder)
+        return combo
+
+    @staticmethod
+    def _protocol_status_key(status: str) -> str:
+        normalized = str(status or "").strip().lower()
+        if normalized.startswith("draft"):
+            return "draft"
+        if normalized in {"formal", "formal_candidate"}:
+            return "formal_candidate"
+        return normalized or "unknown"
+
+    def _set_loaded_calibration(self, config: dict[str, Any]) -> None:
+        path = str(config.get("calibration", {}).get("completed_at") or "") if isinstance(config.get("calibration"), dict) else ""
+        if path:
+            self.calibration_status.setText(self.tr("device.calibration_loaded", value=path))
+
+    def _calibration_form_changed(self, *_args) -> None:
+        return
+
+    def _save_calibration(self) -> None:
+        positions = [box.currentText().strip() for box in self.position_boxes]
+        if any(not is_confirmed_position(value) for value in positions):
+            self.calibration_status.setText(self.tr("validation.calibration_missing"))
+            return
+        if len({value.casefold() for value in positions}) != len(positions):
+            self.calibration_status.setText(self.tr("validation.calibration_duplicate"))
+            return
+        results = [result or {} for result in self._test_results]
+        if any(str(result.get("status")) != "passed" for result in results):
+            self.calibration_status.setText(self.tr("validation.calibration_test_required"))
+            return
+        if not all(
+            is_confirmed_position(combo.currentText())
+            for combo in (self.reference_position, self.bias_position, self.ground_position)
+        ):
+            self.calibration_status.setText(self.tr("validation.calibration_aux_missing"))
+            return
+        if not self.protocol_reviewed.isChecked():
+            self.calibration_status.setText(self.tr("validation.calibration_protocol_ack"))
+            return
+        answer = QMessageBox.question(
+            self,
+            self.tr("device.save_formal_title"),
+            self.tr("device.save_formal_prompt"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self.calibration_save_requested.emit({
+            "serial_port": self.calibration_port.text().strip() or "AUTO",
+            "channels": [
+                {
+                    "name": f"CH{index + 1}",
+                    "gui_index": index,
+                    "board_input": f"N{index + 1}P",
+                    "electrode_position": position,
+                }
+                for index, position in enumerate(positions)
+            ],
+            "reference": {
+                "label": "SRB",
+                "position": self.reference_position.currentText().strip(),
+                "hardware_connection": "SRB ear clip",
+            },
+            "bias": {
+                "label": "BIAS",
+                "position": self.bias_position.currentText().strip(),
+                "hardware_connection": "BIAS ear clip",
+            },
+            "ground": {
+                "label": "AGND",
+                "position": self.ground_position.currentText().strip(),
+                "hardware_connection": "AGND on acquisition board",
+            },
+            "tests": results,
+            "protocol_reviewed": True,
+            "notes": self.tr("device.calibration_notes"),
+        })
+
+    def set_channel_test_busy(self, channel_index: int, busy: bool) -> None:
+        for button in self.test_buttons:
+            button.setEnabled(not busy)
+        self.save_calibration_button.setEnabled(not busy)
+
+    def set_channel_test_result(self, channel_index: int, result: dict[str, Any]) -> None:
+        if not 0 <= channel_index < len(self.test_statuses):
+            return
+        self._test_results[channel_index] = result
+        status = str(result.get("status") or "failed")
+        status_text = self.tr("device.calibration_status." + status)
+        metrics = result.get("metrics") if isinstance(result.get("metrics"), dict) else {}
+        detail = self.tr(
+            "device.calibration_result_detail",
+            status=status_text,
+            finite=f"{float(metrics.get('finite_fraction', 0.0) or 0.0) * 100:.1f}%",
+            flat=f"{float(metrics.get('flat_fraction', 0.0) or 0.0) * 100:.1f}%",
+            saturation=f"{float(metrics.get('saturation_fraction', 0.0) or 0.0) * 100:.1f}%",
+        )
+        self.test_statuses[channel_index].setText(detail)
+        selected_port = str(result.get("selected_port") or "").strip()
+        if selected_port:
+            self.calibration_port.setText(selected_port)
+        self.calibration_status.setText(str(result.get("detail") or detail))
+
+    def set_calibration_saved(self, result: dict[str, Any]) -> None:
+        self.calibration_path.setText(
+            self.tr("device.calibration_saved", path=str(result.get("channel_config_path") or ""))
+        )
+        self.calibration_status.setText(self.tr("device.calibration_ready"))
+
+    def set_protocol_status(self, status: str) -> None:
+        key = self._protocol_status_key(status)
+        self.protocol_status.setText(
+            self.tr("device.protocol_status", status=self.tr("device.protocol_status." + key))
+        )
 
 
 class DiagnosticsPage(Page):
@@ -997,6 +1304,9 @@ class ResultPage(Page):
             (tr("result.dropped_frames"), str(result.dropped_frame_count)),
             (tr("result.flat_channels"), str(result.flat_channel_count)),
         ]))
+        denoising = _denoising_section(tr, result)
+        if denoising is not None:
+            self.layout.addWidget(denoising)
         path = Section(tr(path_key))
         path_value = str(result.path)
         path.layout.addWidget(label(path_value, "path"))
@@ -1068,6 +1378,10 @@ class DatasetSummaryPage(Page):
         session_table.setSortingEnabled(True)
         session_table.setMinimumHeight(min(420, max(150, session_table.sizeHintForRow(0) * len(session_rows) + 44)))
         self.layout.addWidget(session_table)
+
+        denoising = _denoising_section(tr, result)
+        if denoising is not None:
+            self.layout.addWidget(denoising)
 
         files = Section(tr("dataset_summary.files"))
         file_rows = _dataset_file_rows(result)
