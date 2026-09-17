@@ -179,12 +179,79 @@ def _load_denoising_metrics(result: Dataset) -> tuple[Path, dict[str, Any] | Non
     return candidates[0].parent, None
 
 
+def _load_denoising_preprocessing(output_dir: Path) -> dict[str, Any]:
+    try:
+        value = json.loads((output_dir / "preprocessing.json").read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _denoising_parameter_text(tr, preprocessing: dict[str, Any]) -> str:
+    config = preprocessing.get("pipeline_config", {})
+    if not isinstance(config, dict):
+        return "—"
+    bandpass = config.get("bandpass_hz", [])
+    line_noise = config.get("line_noise_hz", [])
+    try:
+        bandpass_text = f"{float(bandpass[0]):g}–{float(bandpass[1]):g} Hz"
+    except (IndexError, TypeError, ValueError):
+        bandpass_text = "—"
+    try:
+        line_text = ", ".join(f"{float(value):g} Hz" for value in line_noise) or "—"
+    except (TypeError, ValueError):
+        line_text = "—"
+    order = config.get("bandpass_order", "—")
+    quality = config.get("notch_quality_factor", "—")
+    max_gap = config.get("max_interpolation_s", "—")
+    return tr(
+        "result.denoising.parameters_value",
+        bandpass=bandpass_text,
+        order=order,
+        line_noise=line_text,
+        quality=quality,
+        max_gap=max_gap,
+    )
+
+
+def _denoising_metadata_table(tr, metrics: dict[str, Any], preprocessing: dict[str, Any]) -> QTableWidget:
+    table = _readonly_table((tr("result.denoising.metadata"), tr("result.denoising.value")))
+    table.setObjectName("denoisingMetadataTable")
+    table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+    table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+    input_hashes = preprocessing.get("input_hashes", {})
+    if not isinstance(input_hashes, dict):
+        input_hashes = {}
+    hash_rows = []
+    for name in ("raw_brainflow.tsv", "raw_columns.tsv", "session.json", "events.tsv", "protocol.json"):
+        digest = str(input_hashes.get(name) or "").strip()
+        if digest:
+            hash_rows.append(f"{name}: {digest}")
+    pipeline_hash = str(preprocessing.get("pipeline_sha256") or "").strip()
+    if pipeline_hash:
+        hash_rows.append(f"pipeline.json: {pipeline_hash}")
+    rows = [
+        (tr("result.denoising.parameters"), _denoising_parameter_text(tr, preprocessing)),
+        (tr("result.denoising.input_hash"), "\n".join(hash_rows) or "—"),
+        (tr("result.denoising.generated_at"), str(metrics.get("generated_at") or "—")),
+    ]
+    for row_values in rows:
+        row = table.rowCount()
+        table.insertRow(row)
+        for column, value in enumerate(row_values):
+            table.setItem(row, column, _table_item(value))
+    table.resizeRowsToContents()
+    return table
+
+
 def _denoising_section(tr, result: Dataset) -> Section | None:
     output_dir, metrics = _load_denoising_metrics(result)
     if metrics is None:
         return None
+    preprocessing = _load_denoising_preprocessing(output_dir)
     section = Section(tr("result.denoising.title"))
     section.layout.addWidget(label(tr("result.denoising.note"), "muted"))
+    section.layout.addWidget(_denoising_metadata_table(tr, metrics, preprocessing))
     table = _readonly_table((tr("result.denoising.track"), tr("result.denoising.line_noise"), tr("result.denoising.target_snr"), tr("result.denoising.trials"), tr("result.denoising.rejected")))
     table.setObjectName("denoisingMetricsTable")
     header = table.horizontalHeader()

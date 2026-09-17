@@ -84,6 +84,20 @@ class OpenBCIImportUiTests(unittest.TestCase):
                     "60hz": {"trial_count": 1, "rejected_trial_count": 0},
                 },
             }), encoding="utf-8")
+            (derived / "preprocessing.json").write_text(json.dumps({
+                "pipeline_config": {
+                    "bandpass_hz": [1.0, 45.0],
+                    "bandpass_order": 4,
+                    "line_noise_hz": [50.0, 60.0],
+                    "notch_quality_factor": 30.0,
+                    "max_interpolation_s": 0.2,
+                },
+                "pipeline_sha256": "pipeline-hash",
+                "input_hashes": {
+                    "raw_brainflow.tsv": "raw-hash",
+                    "events.tsv": "events-hash",
+                },
+            }), encoding="utf-8")
             window.show_result(dataset)
             self.assertEqual("result", window.current_page)
             self.assertEqual("DatasetSummaryPage", type(window.pages["result"]).__name__)
@@ -97,6 +111,17 @@ class OpenBCIImportUiTests(unittest.TestCase):
             denoising_table = window.pages["result"].findChild(QTableWidget, "denoisingMetricsTable")
             self.assertIsNotNone(denoising_table)
             self.assertEqual(3, denoising_table.rowCount())
+            metadata_table = window.pages["result"].findChild(QTableWidget, "denoisingMetadataTable")
+            self.assertIsNotNone(metadata_table)
+            self.assertEqual(3, metadata_table.rowCount())
+            metadata_texts = [
+                metadata_table.item(row, column).text()
+                for row in range(metadata_table.rowCount())
+                for column in range(metadata_table.columnCount())
+            ]
+            self.assertIn("处理参数", metadata_texts)
+            self.assertIn("输入 hash", metadata_texts)
+            self.assertTrue(any("raw_brainflow.tsv: raw-hash" in value for value in metadata_texts))
             self.assertEqual(4, file_table.columnCount())
             self.assertEqual(1, file_table.rowCount())
             session_texts = [
