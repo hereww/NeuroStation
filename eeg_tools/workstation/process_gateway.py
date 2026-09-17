@@ -233,21 +233,17 @@ class AcquisitionProcessGateway:
                 "metrics": {},
                 "detail": "Selected channel metrics were not returned.",
             }
-        channel_status = "passed"
-        if str(channel_check.get("status") if isinstance(channel_check, dict) else "") in {
-            "failed",
-            "warning",
-        }:
-            flat_fraction = float(selected.get("flat_fraction", 1.0) or 1.0)
-            saturation_fraction = float(selected.get("saturation_fraction", 1.0) or 1.0)
-            finite_fraction = float(selected.get("finite_fraction", 0.0) or 0.0)
-            if finite_fraction < 0.99 or flat_fraction >= 0.95 or saturation_fraction >= 0.95:
-                channel_status = "failed"
-                detail = "Channel is mostly flat, saturated, or contains invalid samples."
-            else:
-                channel_status = "warning"
-                detail = "Channel samples are changing, but the overall preflight has a warning."
+        flat_fraction = float(selected.get("flat_fraction", 1.0) or 1.0)
+        saturation_fraction = float(selected.get("saturation_fraction", 1.0) or 1.0)
+        finite_fraction = float(selected.get("finite_fraction", 0.0) or 0.0)
+        if finite_fraction < 0.99 or flat_fraction >= 0.95 or saturation_fraction >= 0.95:
+            channel_status = "failed"
+            detail = "Channel is mostly flat, saturated, or contains invalid samples."
+        elif str(report.get("status") or "") in {"failed", "degraded"}:
+            channel_status = "warning"
+            detail = "The selected channel is changing, but the overall preflight requires review."
         else:
+            channel_status = "passed"
             detail = "Channel samples are finite and changing."
         return {
             "status": channel_status,

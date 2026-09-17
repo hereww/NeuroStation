@@ -573,7 +573,7 @@ class MainWindow(QMainWindow):
         self._record("capture", "ssvep task started", mode=CaptureMode(config.mode).value)
 
     def preflight_cyton(self):
-        if self.preflight_thread is not None:
+        if self.preflight_thread is not None or self.channel_calibration_thread is not None:
             return
         page = self.pages.get("devices")
         if page is not None and hasattr(page, "preflight_status"):
@@ -1091,6 +1091,9 @@ class MainWindow(QMainWindow):
         if self.preflight_thread is not None:
             self.preflight_thread.quit()
             self.preflight_thread.wait(4000)
+        if self.channel_calibration_thread is not None:
+            self.channel_calibration_thread.quit()
+            self.channel_calibration_thread.wait(4000)
         self.gateway.cancel()
         if self.persist_settings:
             self.settings.setValue("window/geometry", self.saveGeometry())
