@@ -21,6 +21,7 @@ class GatewayContractTests(unittest.TestCase):
             name="Cyton session",
             user_id="U0001",
             user_name="Test user",
+            eye_side="left",
             acknowledge_flicker_risk=True,
         )
         config.validate()

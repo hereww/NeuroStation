@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 import os
 from pathlib import Path
+import re
 from typing import Protocol
 from datetime import datetime
 from dataclasses import asdict
@@ -35,6 +36,15 @@ MEDICAL_OPTIONS = (
     "diabetes",
     "other",
 )
+
+
+def is_confirmed_position(value: Any) -> bool:
+    """Return whether a position is an operator-confirmed placement label."""
+
+    if not isinstance(value, str):
+        return False
+    normalized = value.strip().casefold()
+    return normalized not in {"", "unspecified", "unknown", "unassigned", "未指定", "未设置"}
 
 
 @dataclass(frozen=True)
@@ -110,6 +120,28 @@ class CaptureMode(str, Enum):
     IMPORTED_OPENBCI = "imported_openbci"
 
 
+class EyeSide(str, Enum):
+    LEFT = "left"
+    RIGHT = "right"
+
+    @property
+    def label_zh(self) -> str:
+        return "左眼" if self is EyeSide.LEFT else "右眼"
+
+
+def dataset_name_for_eye(name: str, eye_side: EyeSide | str) -> str:
+    """Return a stable dataset name with exactly one Chinese eye suffix."""
+
+    try:
+        side = EyeSide(eye_side)
+    except ValueError as error:
+        raise ValueError("validation.eye_side") from error
+    base = re.sub(r"(?:_(?:左眼|右眼))+$", "", str(name).strip())
+    if not base:
+        raise ValueError("validation.identity")
+    return f"{base}_{side.label_zh}"
+
+
 def default_save_directory() -> Path:
     override = os.environ.get("NEUROSTATION_DATASETS")
     if override:
@@ -154,7 +186,7 @@ class CaptureConfig:
     refresh_rate: int = 60
     mode: CaptureMode = CaptureMode.CYTON
     port: str = "AUTO"
-    screen_index: int = 0
+    eye_side: EyeSide | str = ""
     acknowledge_flicker_risk: bool = False
     channel_config: Path | None = None
     allow_draft_hardware_config: bool = False
@@ -179,8 +211,10 @@ class CaptureConfig:
             raise ValueError("validation.mode") from error
         if mode is not CaptureMode.CYTON:
             raise ValueError("validation.real_hardware_only")
-        if type(self.screen_index) is not int or self.screen_index < 0:
-            raise ValueError("validation.screen")
+        try:
+            EyeSide(self.eye_side)
+        except ValueError as error:
+            raise ValueError("validation.eye_side") from error
         if not self.port.strip():
             raise ValueError("validation.port")
         if not self.acknowledge_flicker_risk:
@@ -205,6 +239,10 @@ class CaptureConfig:
     @property
     def expected_events(self) -> int:
         return 3 + 2 * self.trials
+
+    @property
+    def dataset_name(self) -> str:
+        return dataset_name_for_eye(self.name, self.eye_side)
 
 
 class Phase(str, Enum):
@@ -248,6 +286,9 @@ class Dataset:
     event_count: int
     path: Path
     created_at: str
+    eye_side: str = ""
+    screen_index: int | None = None
+    screen_name: str = ""
     simulated: bool = False
     persisted: bool = False
     source: CaptureMode = CaptureMode.CYTON
@@ -293,6 +334,9 @@ class TaskSnapshot:
     resting: bool = False
     event_count: int = 0
     speed: float = 1
+    eye_side: str = ""
+    screen_index: int | None = None
+    screen_name: str = ""
     result: Dataset | None = None
     error: str = ""
 

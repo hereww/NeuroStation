@@ -11,7 +11,7 @@ from typing import Any
 
 from PySide6.QtCore import Signal, Qt, QUrl
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QLineEdit,
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QLineEdit,
     QSpinBox, QComboBox, QCheckBox, QFileDialog, QProgressBar, QStyle,
     QAbstractItemView, QHeaderView, QTableWidget, QTableWidgetItem,
     QDialog, QDialogButtonBox, QMessageBox, QTextEdit, QPushButton,
@@ -30,8 +30,13 @@ from .components import (
     label,
 )
 from .gateway import CaptureConfig, CaptureMode, TaskSnapshot, Phase, Dataset, format_duration
-from eeg_tools.config import is_confirmed_position
-from neurostation_contract import GENDERS, MEDICAL_OPTIONS, UserProfile
+from neurostation_contract import (
+    GENDERS,
+    MEDICAL_OPTIONS,
+    UserProfile,
+    dataset_name_for_eye,
+    is_confirmed_position,
+)
 
 
 def _readonly_table(headers: tuple[str, ...]) -> QTableWidget:
@@ -1038,7 +1043,17 @@ class SSVEPPage(Page):
         port_picker_layout.addWidget(self.port, 1)
         port_picker_layout.addWidget(action(tr("action.scan_ports"), self.serial_scan_requested.emit))
         self.port_status = label(tr("field.port_auto"), "muted")
-        self.screen = self._spin(0, 15, config.screen_index)
+        self.eye_side = QComboBox()
+        self.eye_side.addItem(tr("field.eye_select"), "")
+        self.eye_side.addItem(tr("eye.left"), "left")
+        self.eye_side.addItem(tr("eye.right"), "right")
+        config_eye_side = getattr(config.eye_side, "value", config.eye_side)
+        if str(config_eye_side) in {"left", "right"}:
+            self.eye_side.setCurrentIndex(
+                max(0, self.eye_side.findData(str(config_eye_side)))
+            )
+        self.screen_mapping = label("", "muted")
+        self.dataset_preview = label("", "estimate")
         self.save = QLineEdit(str(config.save_directory))
         picker = QWidget()
         picker_layout = QHBoxLayout(picker)
@@ -1070,7 +1085,7 @@ class SSVEPPage(Page):
         form.addRow(label(tr("ssvep.step_identity"), "sectionTitle"), QWidget())
         for key, widget in (("field.user", self.user_picker), ("field.participant", self.participant), ("field.name", self.name),
                             ("field.mode", self.mode), ("field.port", port_picker),
-                            ("field.screen", self.screen),
+                            ("field.eye_side", self.eye_side),
                             ("field.stimulus", self.stimulus), ("field.rest", self.rest),
                              ("field.repetitions", self.repetitions), ("field.refresh", label("60 Hz")),
                              ("field.save", picker),
@@ -1083,6 +1098,8 @@ class SSVEPPage(Page):
         section.layout.addWidget(label(tr("ssvep.step_protocol"), "sectionTitle"))
         section.layout.addLayout(form)
         section.layout.addWidget(self.port_status)
+        section.layout.addWidget(self.screen_mapping)
+        section.layout.addWidget(self.dataset_preview)
         section.layout.addWidget(label(tr("ssvep.refresh_note"), "muted"))
         self.estimate = label("", "estimate")
         section.layout.addWidget(self.estimate)
@@ -1102,10 +1119,14 @@ class SSVEPPage(Page):
             spin.valueChanged.connect(self._update_estimate)
         self.mode.currentIndexChanged.connect(self._mode_changed)
         self.port.textChanged.connect(lambda _text: self._update_device_summary())
+        self.eye_side.currentIndexChanged.connect(lambda _index: self._update_name_preview())
+        self.name.textChanged.connect(lambda _text: self._update_name_preview())
         self.user.currentIndexChanged.connect(self._user_changed)
         self.channel_manual.toggled.connect(self._channel_manual_changed)
         self.set_users(users, selected_id=config.user_id)
         self._mode_changed()
+        self._update_screen_mapping()
+        self._update_name_preview()
         self._update_estimate()
 
     @staticmethod
@@ -1131,7 +1152,7 @@ class SSVEPPage(Page):
             stimulus_seconds=self.stimulus.value(), rest_seconds=self.rest.value(),
             repetitions=self.repetitions.value(), save_directory=Path(self.save.text()).expanduser(),
             mode=CaptureMode(self.mode.currentData()), port=self.port.text().strip(),
-            screen_index=self.screen.value(),
+            eye_side=str(self.eye_side.currentData() or ""),
             acknowledge_flicker_risk=self.acknowledge.isChecked(),
             channel_config=Path(channel_config).expanduser() if channel_config else None,
             allow_draft_hardware_config=self.allow_draft.isChecked())
@@ -1168,6 +1189,52 @@ class SSVEPPage(Page):
         config = self.config()
         self.estimate.setText(self.tr("ssvep.estimate", total=format_duration(config.total_seconds),
             recording=format_duration(config.recording_seconds), trials=config.trials))
+
+    @staticmethod
+    def _ordered_screens():
+        application = QApplication.instance()
+        if application is None:
+            return ()
+        return tuple(
+            sorted(
+                enumerate(application.screens()),
+                key=lambda item: (
+                    int(item[1].geometry().x()),
+                    int(item[1].geometry().y()),
+                    str(item[1].name()),
+                ),
+            )
+        )
+
+    def _update_screen_mapping(self):
+        screens = self._ordered_screens()
+        if len(screens) < 2:
+            self.screen_mapping.setText(self.tr("ssvep.screen_mapping_missing"))
+            return
+        left_index, left = screens[0]
+        right_index, right = screens[-1]
+        self.screen_mapping.setText(
+            self.tr(
+                "ssvep.screen_mapping",
+                left=f"{left_index} · {left.name()}",
+                right=f"{right_index} · {right.name()}",
+            )
+        )
+
+    def _update_name_preview(self):
+        base = self.name.text().strip()
+        eye_side = str(self.eye_side.currentData() or "")
+        if not base or not eye_side:
+            self.dataset_preview.setText(self.tr("ssvep.dataset_name_pending"))
+            return
+        try:
+            generated = dataset_name_for_eye(base, eye_side)
+        except ValueError:
+            self.dataset_preview.setText(self.tr("ssvep.dataset_name_pending"))
+            return
+        self.dataset_preview.setText(
+            self.tr("ssvep.dataset_name_preview", name=generated)
+        )
 
     def _choose_directory(self):
         path = QFileDialog.getExistingDirectory(self, self.tr("field.save"), self.save.text())
@@ -1221,7 +1288,6 @@ class SSVEPPage(Page):
         if self.channel_browse is not None:
             self.channel_browse.setEnabled(manual_channels)
         self.allow_draft.setEnabled(True)
-        self.screen.setEnabled(True)
         self.acknowledge.setEnabled(True)
         self._update_device_summary()
 
@@ -1238,6 +1304,8 @@ class SSVEPPage(Page):
         try:
             config = self.config()
             config.validate()
+            if len(self._ordered_screens()) < 2:
+                raise ValueError("validation.screens")
         except ValueError as error:
             self.error.setText(self.tr(str(error)))
             return
@@ -1313,7 +1381,28 @@ class TaskPage(Page):
             str(snapshot.event_count), format_duration(snapshot.demo_elapsed)]
         for node, value in zip(self.stats.values, values):
             node.setText(value)
-        self.capture_label.setText(self.tr("task.capture." + config.mode.value))
+        eye_label = (
+            self.tr("eye." + str(getattr(config.eye_side, "value", config.eye_side)))
+            if str(getattr(config.eye_side, "value", config.eye_side)) in {"left", "right"}
+            else self.tr("dataset_summary.unlabeled")
+        )
+        screen_text = (
+            " · ".join(
+                item
+                for item in (str(snapshot.screen_index), snapshot.screen_name)
+                if item
+            )
+            if snapshot.screen_index is not None
+            else self.tr("dataset_summary.unlabeled")
+        )
+        self.capture_label.setText(
+            self.tr(
+                "task.capture_eye",
+                mode=self.tr("task.capture." + config.mode.value),
+                eye=eye_label,
+                screen=screen_text,
+            )
+        )
         self.speed_label.setText(self.tr("task.realtime", duration=format_duration(config.recording_seconds)))
 
 
@@ -1353,6 +1442,8 @@ class ResultPage(Page):
         self.layout.addWidget(label(tr(notice_key), "notice"))
         self.layout.addWidget(KeyValues([
             (tr("field.participant"), result.participant),
+            (tr("field.eye_side"), tr("eye." + result.eye_side) if result.eye_side in {"left", "right"} else tr("dataset_summary.unlabeled")),
+            (tr("field.screen"), " · ".join(item for item in (str(result.screen_index), result.screen_name) if item) if result.screen_index is not None else tr("dataset_summary.unlabeled")),
             (tr("field.user_id"), result.user_id or tr("users.unlinked")),
             (tr("field.user_name"), result.user_name or tr("users.unlinked")),
             (tr("field.user_status"), tr("users.link_" + result.user_link_status)),
@@ -1405,6 +1496,8 @@ class DatasetSummaryPage(Page):
         )
         session_rows = [
             (tr("dataset_summary.session"), result.name),
+            (tr("field.eye_side"), tr("eye." + result.eye_side) if result.eye_side in {"left", "right"} else tr("dataset_summary.unlabeled")),
+            (tr("field.screen"), " · ".join(item for item in (str(result.screen_index), result.screen_name) if item) if result.screen_index is not None else tr("dataset_summary.unlabeled")),
             (tr("dataset_summary.source"), source_name),
             (tr("field.participant"), result.participant or tr("dataset_summary.unlabeled")),
             (tr("dataset_summary.markers"), tr("dataset_summary.no_markers") if result.imported else str(result.event_count)),

@@ -13,6 +13,13 @@ from typing import Any
 EVENT_FIELDS = [
     "event_id",
     "event_name",
+    "eye_side",
+    "dataset_name_base",
+    "dataset_name",
+    "screen_index",
+    "screen_name",
+    "screen_geometry",
+    "screen_mapping",
     "source",
     "label_source",
     "trial_index",

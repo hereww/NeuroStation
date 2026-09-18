@@ -107,7 +107,7 @@ class OpenBCIImportUiTests(unittest.TestCase):
             file_table = window.pages["result"].findChild(QTableWidget, "datasetFilesTable")
             self.assertIsNotNone(session_table)
             self.assertIsNotNone(file_table)
-            self.assertEqual(14, session_table.rowCount())
+            self.assertEqual(16, session_table.rowCount())
             denoising_table = window.pages["result"].findChild(QTableWidget, "denoisingMetricsTable")
             self.assertIsNotNone(denoising_table)
             self.assertEqual(3, denoising_table.rowCount())
@@ -130,6 +130,7 @@ class OpenBCIImportUiTests(unittest.TestCase):
                 for column in range(session_table.columnCount())
             ]
             self.assertIn("工作站副本路径", session_texts)
+            self.assertIn("未标注", session_texts)
             self.assertEqual("BrainFlow-RAW_0.csv", file_table.item(0, 0).text())
             raw_table = window.pages["result"].findChild(QTableWidget, "datasetRawPreviewTable")
             self.assertIsNotNone(raw_table)

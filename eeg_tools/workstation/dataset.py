@@ -31,6 +31,9 @@ class DatasetRecord:
     recorded_samples_per_channel: int
     event_count: int
     simulated: bool
+    eye_side: str = ""
+    screen_index: int | None = None
+    screen_name: str = ""
     source: str = "cyton"
     sampling_rate_hz: int = 250
     channel_count: int = 8
@@ -335,6 +338,19 @@ class DatasetRepository:
                 or value.get("origin") == "imported_openbci"
                 or source == "imported_openbci"
             )
+            raw_screen_index = value.get("screen_index")
+            screen_index = (
+                int(raw_screen_index)
+                if raw_screen_index is not None and str(raw_screen_index).strip() != ""
+                else None
+            )
+            display = value.get("display")
+            active_display = display.get("active") if isinstance(display, dict) else None
+            screen_name = (
+                str(active_display.get("name") or "")
+                if isinstance(active_display, dict)
+                else ""
+            )
             return DatasetRecord(
                 session_id=str(value.get("session_id") or session_path.parent.name),
                 status=str(value.get("status") or "completed"),
@@ -354,6 +370,9 @@ class DatasetRepository:
                 ),
                 event_count=int(value.get("event_count", 0)),
                 simulated=bool(value.get("simulated", False)),
+                eye_side=str(value.get("eye_side") or ""),
+                screen_index=screen_index,
+                screen_name=screen_name,
                 source=source,
                 sampling_rate_hz=sampling_rate,
                 channel_count=int(value.get("channel_count", 8) or 8),

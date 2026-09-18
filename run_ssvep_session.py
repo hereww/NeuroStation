@@ -38,7 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--stimulus-seconds", type=float)
     parser.add_argument("--rest-seconds", type=float)
     parser.add_argument("--countdown-seconds", type=float)
-    parser.add_argument("--screen-index", type=int, default=0)
+    parser.add_argument("--eye-side", choices=("left", "right"), required=True)
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--acknowledge-flicker-risk", action="store_true")
     parser.add_argument("--allow-draft-protocol", action="store_true")
@@ -83,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
         "--user-name", arguments.user_name,
         "--board", "cyton",
         "--port", arguments.port,
-        "--screen-index", str(arguments.screen_index),
+        "--eye-side", arguments.eye_side,
     ]
     optional_values = (
         ("--repetitions", arguments.repetitions),

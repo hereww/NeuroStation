@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from neurostation_contract import is_confirmed_position
+
 
 class ConfigError(ValueError):
     """Raised when an acquisition configuration is incomplete or inconsistent."""
@@ -54,15 +56,6 @@ def _nonempty_string(value: Any, key: str, source: Path) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ConfigError(f"'{key}' must be a non-empty string in {source}")
     return value
-
-
-def is_confirmed_position(value: Any) -> bool:
-    """Return whether a position is an operator-confirmed placement label."""
-
-    if not isinstance(value, str):
-        return False
-    normalized = value.strip().casefold()
-    return normalized not in {"", "unspecified", "unknown", "unassigned", "未指定", "未设置"}
 
 
 def validate_stimulus_config(config: dict[str, Any], source: Path) -> list[str]:

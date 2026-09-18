@@ -25,6 +25,7 @@ from neurostation_contract import (
     CaptureMode,
     Dataset,
     DeviceInfo,
+    EyeSide,
     Phase,
     TaskSnapshot,
 )
@@ -159,7 +160,7 @@ class AcquisitionProcessGateway:
                 "--participant",
                 config.user_id or config.participant,
                 "--session-name",
-                config.name,
+                config.dataset_name,
                 "--user-id",
                 config.user_id,
                 "--user-name",
@@ -174,8 +175,8 @@ class AcquisitionProcessGateway:
                 str(config.stimulus_seconds),
                 "--rest-seconds",
                 str(config.rest_seconds),
-                "--screen-index",
-                str(config.screen_index),
+                "--eye-side",
+                EyeSide(config.eye_side).value,
                 "--status-file",
                 str(self._status_file),
                 "--cancel-file",
@@ -305,6 +306,7 @@ class AcquisitionProcessGateway:
             remaining=protocol.recording_duration_s,
             trial_count=protocol.trial_count,
             speed=1,
+            eye_side=EyeSide(config.eye_side).value,
         )
         creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
         try:
@@ -520,6 +522,16 @@ class AcquisitionProcessGateway:
             resting=value.get("trial_phase") == "rest",
             event_count=int(value.get("event_count", 0)),
             speed=1,
+            eye_side=str(value.get("eye_side") or EyeSide(self.config.eye_side).value),
+            screen_index=(
+                int(value["screen_index"])
+                if value.get("screen_index") is not None
+                and str(value.get("screen_index")).strip() != ""
+                else None
+            ),
+            screen_name=str(
+                ((value.get("display") or {}).get("active") or {}).get("name") or ""
+            ),
             result=result,
             error=str(value.get("result", {}).get("error") or "") if isinstance(value.get("result"), dict) else "",
         )
@@ -595,6 +607,16 @@ class AcquisitionProcessGateway:
             event_count=int(session.get("event_count", 0)),
             path=output.resolve(),
             created_at=created_at,
+            eye_side=str(session.get("eye_side") or ""),
+            screen_index=(
+                int(session["screen_index"])
+                if session.get("screen_index") is not None
+                and str(session.get("screen_index")).strip() != ""
+                else None
+            ),
+            screen_name=str(
+                ((session.get("display") or {}).get("active") or {}).get("name") or ""
+            ),
             simulated=bool(session.get("simulated", False)),
             persisted=True,
             source=source,

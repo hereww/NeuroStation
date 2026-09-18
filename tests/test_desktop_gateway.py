@@ -94,10 +94,11 @@ class DesktopGatewayTests(unittest.TestCase):
                 dataset_root=Path(directory),
             )
             config = CaptureConfig(
-                participant="P001",
-                name="real hardware boundary",
-                mode=CaptureMode.CYTON,
-                acknowledge_flicker_risk=True,
+            participant="P001",
+            name="real hardware boundary",
+            mode=CaptureMode.CYTON,
+            eye_side="left",
+            acknowledge_flicker_risk=True,
             )
             with self.assertRaisesRegex(ValueError, "validation.user_not_found"):
                 gateway.start_ssvep(config, 1)

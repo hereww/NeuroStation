@@ -81,6 +81,12 @@ python -m apps.workstation_ui.main
 - 采集时长：93 秒，另有 5 秒准备倒计时；
 - Cyton 目标采样率：250 Hz、8 通道。
 
+每次 SSVEP 任务只采集一只眼，开始前必须选择“左眼”或“右眼”。程序在采集
+worker 启动时按显示器物理横坐标重新排序：最左屏绑定左眼，最右屏绑定右眼；
+选中屏幕显示 10 / 12 / 15 / 20 Hz 四目标刺激，另一块屏幕全屏保持黑色。可视
+采集少于两块显示器时会被阻止，多于两块时中间显示器不参与刺激。数据集名称会
+自动生成 `原名称_左眼` 或 `原名称_右眼`，已有眼别后缀会先去重。
+
 协议文件状态为 `draft_for_workstation_mvp`。程序会校验刺激频率是否能整除配置的刷新率，但不会替代实际显示器刷新率和端到端光学时序校准。
 
 ## OpenBCI Cyton 使用流程
@@ -112,7 +118,8 @@ python check_cyton_live.py --port AUTO --seconds 15
 ```powershell
 python run_ssvep_session.py `
   --port AUTO `
-  --channel-config configs\channel_config_v1.json
+  --channel-config configs\channel_config_v1.json `
+  --eye-side left
 ```
 
 `AUTO` 会扫描可用串口并逐个尝试 BrainFlow `prepare_session()`。失败时会输出结构化 JSON 和可操作诊断；不会把原生 traceback 当成唯一错误信息。真实采集结束或中止后，数据和会话状态会写入输出目录。
@@ -132,6 +139,11 @@ python run_ssvep_session.py `
 | `quality.json` | 有效比例、RMS、采样数、时间戳和掉帧摘要 |
 | `frame_timing.tsv` | 视觉预览/刺激帧的计划时间和实际时间 |
 | `manifest.csv` | 输出文件大小和 SHA-256 清单 |
+
+新 SSVEP 会话的 `session.json`、`ssvep_config.json`、状态文件、`events.tsv` 和
+`frame_timing.tsv` 会记录 `eye_side`、基础数据集名称、生成后的会话名称以及实际
+刺激屏幕的编号、名称和几何信息。旧会话缺少这些字段时仍可读取，并在 UI 中显示
+为“未标注”。
 
 新采集会话中的 `events.tsv` 会区分 `presented_target_id`（软件呈现目标）、
 `gaze_target_id`（人工/自报标记）和 `eeg_predicted_target_id`（离线算法推断）。
@@ -179,6 +191,7 @@ python run_ssvep_session.py --help
 ```powershell
 python run_ssvep_session.py `
   --channel-config configs\channel_config_v1.json `
+  --eye-side left `
   --validate-only
 ```
 
