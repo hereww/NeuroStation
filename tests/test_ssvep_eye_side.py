@@ -131,6 +131,16 @@ class SsvepEyeSideTests(unittest.TestCase):
 
 
 class CliEyeSideTests(unittest.TestCase):
+    def test_compatibility_cli_validation_does_not_require_eye_side(self) -> None:
+        import run_ssvep_session
+
+        result = run_ssvep_session.main([
+            "--validate-only",
+            "--channel-config",
+            "configs/channel_config_v1_auto.json",
+        ])
+        self.assertEqual(0, result)
+
     def test_compatibility_cli_forwards_eye_side(self) -> None:
         import run_ssvep_session
 
