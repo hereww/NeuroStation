@@ -142,6 +142,7 @@ class DatasetImportTests(unittest.TestCase):
 
             record = DatasetRepository(root).list_records()[0]
             self.assertEqual("Legacy", record.session_name)
+            self.assertEqual("", record.eye_side)
             self.assertEqual("cyton", record.source)
             self.assertEqual(500, record.recorded_samples_per_channel)
             self.assertEqual(250, record.sampling_rate_hz)

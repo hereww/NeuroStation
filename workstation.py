@@ -15,6 +15,8 @@ from neurostation_contract import (
     PRODUCT_VERSION,
     RELEASE_DATE,
     CaptureMode,
+    default_user_channel_config_path,
+    default_user_protocol_path,
 )
 from neurostation_diagnostics import DiagnosticStore
 
@@ -41,14 +43,24 @@ def _configure_bundled_native_libraries() -> None:
 def build_diagnostics(gateway=None) -> dict:
     """Build the same metadata-only report shown by the desktop diagnostics page."""
 
-    protocol_path = ROOT / "configs" / "protocols" / "ssvep_four_target_v2.json"
-    final_channel_path = ROOT / "configs" / "channel_config_v1.json"
+    bundled_protocol_path = ROOT / "configs" / "protocols" / "ssvep_four_target_v2.json"
+    protocol_path = (
+        default_user_protocol_path()
+        if default_user_protocol_path().is_file()
+        else bundled_protocol_path
+    )
+    final_channel_path = default_user_channel_config_path()
+    bundled_final_channel_path = ROOT / "configs" / "channel_config_v1.json"
     auto_channel_path = ROOT / "configs" / "channel_config_v1_auto.json"
     template_channel_path = ROOT / "configs" / "channel_config_v1_template.json"
     channel_path = (
         final_channel_path
         if final_channel_path.is_file()
-        else (auto_channel_path if auto_channel_path.is_file() else template_channel_path)
+        else (
+            bundled_final_channel_path
+            if bundled_final_channel_path.is_file()
+            else (auto_channel_path if auto_channel_path.is_file() else template_channel_path)
+        )
     )
 
     if gateway is None:
@@ -125,13 +137,18 @@ def main() -> int:
     arguments = parser.parse_args()
     from eeg_tools.workstation.desktop_gateway import DesktopGateway
 
-    channel_config = ROOT / "configs" / "channel_config_v1.json"
+    channel_config = default_user_channel_config_path()
+    if not channel_config.is_file():
+        channel_config = ROOT / "configs" / "channel_config_v1.json"
     if not channel_config.is_file():
         channel_config = ROOT / "configs" / "channel_config_v1_auto.json"
     if not channel_config.is_file():
         channel_config = ROOT / "configs" / "channel_config_v1_template.json"
+    protocol_path = default_user_protocol_path()
+    if not protocol_path.is_file():
+        protocol_path = ROOT / "configs" / "protocols" / "ssvep_four_target_v2.json"
     gateway = DesktopGateway(
-        protocol_path=ROOT / "configs" / "protocols" / "ssvep_four_target_v2.json",
+        protocol_path=protocol_path,
         channel_config_path=channel_config,
         dataset_root=arguments.dataset_root,
     )

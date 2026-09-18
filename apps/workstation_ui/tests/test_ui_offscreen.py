@@ -107,14 +107,44 @@ class QtOffscreenTests(unittest.TestCase):
         page.channel.setText(str(channel_path))
         self.assertEqual(channel_path, page.config().channel_config)
 
+    def test_device_page_has_one_test_action_per_channel(self):
+        self.window.navigate("devices")
+        page = self.window.pages["devices"]
+        self.assertEqual(8, page.calibration_table.rowCount())
+        self.assertEqual(8, len(page.test_buttons))
+        self.assertTrue(all(button.isEnabled() for button in page.test_buttons))
+
+        page.set_channel_test_busy(2, True)
+        self.assertTrue(all(not button.isEnabled() for button in page.test_buttons))
+        page.set_channel_test_busy(-1, False)
+        self.assertTrue(all(button.isEnabled() for button in page.test_buttons))
+
+        page.set_channel_test_result(2, {
+            "status": "passed",
+            "detail": "ok",
+            "metrics": {
+                "finite_fraction": 1.0,
+                "flat_fraction": 0.0,
+                "saturation_fraction": 0.0,
+            },
+        })
+        self.assertIn("通过", page.test_statuses[2].text())
+
     def test_capture_form_requires_a_real_user_and_photosensitivity_ack(self):
         from apps.workstation_ui.gateway import CaptureMode
 
         page = self.window.pages["ssvep"]
+        self.assertEqual("", page.eye_side.currentData())
+        self.assertIn("屏幕映射不可用", page.screen_mapping.text())
+        self.assertIn("选择眼别", page.dataset_preview.text())
         page._start()
         self.assertTrue(page.error.text())
         self._add_user()
         page.acknowledge.setChecked(True)
+        page._start()
+        self.assertEqual(self.window.tr("validation.eye_side"), page.error.text())
+        page.eye_side.setCurrentIndex(page.eye_side.findData("left"))
+        self.assertIn("_左眼", page.dataset_preview.text())
         config = page.config()
         self.assertEqual(CaptureMode.CYTON, config.mode)
         config.validate()
@@ -182,6 +212,7 @@ class QtOffscreenTests(unittest.TestCase):
             user_id="U0001",
             participant="U0001",
             name="real hardware routing",
+            eye_side="left",
             acknowledge_flicker_risk=True,
         )
         self.window.start_ssvep(config, 1)
@@ -212,6 +243,7 @@ class QtOffscreenTests(unittest.TestCase):
             user_id="U0001",
             participant="U0001",
             name="blocked hardware",
+            eye_side="left",
             acknowledge_flicker_risk=True,
         )
         self.window.start_ssvep(config, 1)
@@ -233,6 +265,7 @@ class QtOffscreenTests(unittest.TestCase):
             user_id="U0001",
             participant="U0001",
             name="warning hardware",
+            eye_side="left",
             acknowledge_flicker_risk=True,
             allow_draft_hardware_config=False,
         )
@@ -266,6 +299,7 @@ class QtOffscreenTests(unittest.TestCase):
             user_id="U0001",
             participant="U0001",
             name="packet warning hardware",
+            eye_side="left",
             acknowledge_flicker_risk=True,
             allow_draft_hardware_config=False,
         )
@@ -306,6 +340,7 @@ class QtOffscreenTests(unittest.TestCase):
             user_id="U0001",
             participant="U0001",
             name="degraded hardware",
+            eye_side="left",
             acknowledge_flicker_risk=True,
         )
         self.window._pending_ssvep = (config, 1)
@@ -326,6 +361,7 @@ class QtOffscreenTests(unittest.TestCase):
             participant="U0001",
             user_id="U0001",
             name="task view",
+            eye_side="left",
             acknowledge_flicker_risk=True,
         )
         self.window.pages["task"].update_snapshot(

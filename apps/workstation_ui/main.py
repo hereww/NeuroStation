@@ -6,7 +6,14 @@ import importlib
 from pathlib import Path
 import sys
 
-from neurostation_contract import CaptureMode, PRODUCT_NAME, PRODUCT_SEMVER, PRODUCT_VERSION
+from neurostation_contract import (
+    CaptureMode,
+    PRODUCT_NAME,
+    PRODUCT_SEMVER,
+    PRODUCT_VERSION,
+    default_user_channel_config_path,
+    default_user_protocol_path,
+)
 
 
 def main() -> int:
@@ -54,9 +61,21 @@ def main() -> int:
         from neurostation_contract import default_save_directory
 
         session_root = default_save_directory()
+    bundled_protocol_path = root / "configs" / "protocols" / "ssvep_four_target_v2.json"
+    bundled_channel_path = root / "configs" / "channel_config_v1_auto.json"
+    protocol_path = (
+        default_user_protocol_path()
+        if default_user_protocol_path().is_file()
+        else bundled_protocol_path
+    )
+    channel_config_path = (
+        default_user_channel_config_path()
+        if default_user_channel_config_path().is_file()
+        else bundled_channel_path
+    )
     gateway = DesktopGateway(
-        protocol_path=root / "configs" / "protocols" / "ssvep_four_target_v2.json",
-        channel_config_path=root / "configs" / "channel_config_v1_auto.json",
+        protocol_path=protocol_path,
+        channel_config_path=channel_config_path,
         dataset_root=session_root,
     )
     window = MainWindow(

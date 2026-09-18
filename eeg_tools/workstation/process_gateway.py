@@ -25,6 +25,7 @@ from neurostation_contract import (
     CaptureMode,
     Dataset,
     DeviceInfo,
+    EyeSide,
     Phase,
     TaskSnapshot,
 )
@@ -159,7 +160,7 @@ class AcquisitionProcessGateway:
                 "--participant",
                 config.user_id or config.participant,
                 "--session-name",
-                config.name,
+                config.dataset_name,
                 "--user-id",
                 config.user_id,
                 "--user-name",
@@ -174,8 +175,8 @@ class AcquisitionProcessGateway:
                 str(config.stimulus_seconds),
                 "--rest-seconds",
                 str(config.rest_seconds),
-                "--screen-index",
-                str(config.screen_index),
+                "--eye-side",
+                EyeSide(config.eye_side).value,
                 "--status-file",
                 str(self._status_file),
                 "--cancel-file",
@@ -194,6 +195,66 @@ class AcquisitionProcessGateway:
         report = run_cyton_preflight(port or self.config.port, seconds=seconds)
         self._preflight_report = report.as_dict()
         return self._preflight_report
+
+    def test_cyton_channel(
+        self,
+        channel_number: int,
+        seconds: float = 3.0,
+        port: str = "AUTO",
+    ) -> dict[str, Any]:
+        """Run a short real Cyton sample and return one channel's checks."""
+
+        if not 1 <= int(channel_number) <= 8:
+            raise ValueError("validation.calibration_channel")
+        report = self.preflight_cyton(seconds=seconds, port=port or "AUTO")
+        checks = report.get("checks", [])
+        channel_check = next(
+            (
+                check
+                for check in checks
+                if isinstance(check, dict) and check.get("name") == "channels"
+            ),
+            None,
+        )
+        metrics = channel_check.get("metrics", {}) if isinstance(channel_check, dict) else {}
+        channel_metrics = metrics.get("channels", []) if isinstance(metrics, dict) else []
+        selected = next(
+            (
+                item
+                for item in channel_metrics
+                if isinstance(item, dict) and int(item.get("channel", 0) or 0) == int(channel_number)
+            ),
+            None,
+        )
+        if selected is None:
+            return {
+                "status": "failed",
+                "channel": int(channel_number),
+                "report": report,
+                "metrics": {},
+                "detail": "Selected channel metrics were not returned.",
+            }
+        flat_fraction = float(selected.get("flat_fraction", 1.0) or 1.0)
+        saturation_fraction = float(selected.get("saturation_fraction", 1.0) or 1.0)
+        finite_fraction = float(selected.get("finite_fraction", 0.0) or 0.0)
+        if finite_fraction < 0.99 or flat_fraction >= 0.95 or saturation_fraction >= 0.95:
+            channel_status = "failed"
+            detail = "Channel is mostly flat, saturated, or contains invalid samples."
+        elif str(report.get("status") or "") in {"failed", "degraded"}:
+            channel_status = "warning"
+            detail = "The selected channel is changing, but the overall preflight requires review."
+        else:
+            channel_status = "passed"
+            detail = "Channel samples are finite and changing."
+        return {
+            "status": channel_status,
+            "channel": int(channel_number),
+            "selected_port": report.get("selected_port", ""),
+            "report_status": report.get("status", "unknown"),
+            "report": report,
+            "metrics": selected,
+            "detail": detail,
+        }
 
     def start_ssvep(self, config: CaptureConfig, speed: float = 1) -> TaskSnapshot:
         if self.snapshot.active:
@@ -245,6 +306,7 @@ class AcquisitionProcessGateway:
             remaining=protocol.recording_duration_s,
             trial_count=protocol.trial_count,
             speed=1,
+            eye_side=EyeSide(config.eye_side).value,
         )
         creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
         try:
@@ -460,6 +522,16 @@ class AcquisitionProcessGateway:
             resting=value.get("trial_phase") == "rest",
             event_count=int(value.get("event_count", 0)),
             speed=1,
+            eye_side=str(value.get("eye_side") or EyeSide(self.config.eye_side).value),
+            screen_index=(
+                int(value["screen_index"])
+                if value.get("screen_index") is not None
+                and str(value.get("screen_index")).strip() != ""
+                else None
+            ),
+            screen_name=str(
+                ((value.get("display") or {}).get("active") or {}).get("name") or ""
+            ),
             result=result,
             error=str(value.get("result", {}).get("error") or "") if isinstance(value.get("result"), dict) else "",
         )
@@ -535,6 +607,16 @@ class AcquisitionProcessGateway:
             event_count=int(session.get("event_count", 0)),
             path=output.resolve(),
             created_at=created_at,
+            eye_side=str(session.get("eye_side") or ""),
+            screen_index=(
+                int(session["screen_index"])
+                if session.get("screen_index") is not None
+                and str(session.get("screen_index")).strip() != ""
+                else None
+            ),
+            screen_name=str(
+                ((session.get("display") or {}).get("active") or {}).get("name") or ""
+            ),
             simulated=bool(session.get("simulated", False)),
             persisted=True,
             source=source,

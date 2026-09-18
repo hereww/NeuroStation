@@ -22,11 +22,62 @@ from .dataset import DatasetRecord, DatasetRepository
 from .openbci_workspace import OpenBCIWorkspaceError, OpenBCIWorkspaceManager
 from .process_gateway import AcquisitionProcessGateway
 from .device_discovery import discover_serial_ports
-from eeg_tools.config import ConfigError, validate_channel_config
+from .ssvep import SSVEPProtocol, SSVEPProtocolError
+from eeg_tools.config import ConfigError, is_confirmed_position, validate_channel_config
+from eeg_tools.session_files import iso_now
+from neurostation_contract import (
+    default_user_channel_config_path,
+    default_user_protocol_path,
+)
 from .users import UserProfile, UserRegistry
 
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def _write_json_pending(path: Path, value: dict[str, object]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".pending")
+    temporary.write_text(
+        json.dumps(value, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return temporary
+
+
+def _write_json_atomic(path: Path, value: dict[str, object]) -> None:
+    temporary = _write_json_pending(path, value)
+    temporary.replace(path)
+
+
+def _write_json_pair_atomic(
+    updates: tuple[tuple[Path, dict[str, object]], ...],
+) -> None:
+    """Commit related JSON files together and restore the previous pair on failure."""
+
+    previous: dict[Path, bytes | None] = {}
+    pending: list[tuple[Path, Path]] = []
+    try:
+        for path, value in updates:
+            previous[path] = path.read_bytes() if path.is_file() else None
+            pending.append((path, _write_json_pending(path, value)))
+        for path, temporary in pending:
+            temporary.replace(path)
+    except Exception:
+        for path, content in previous.items():
+            try:
+                if content is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    restore = path.with_name(path.name + ".restore")
+                    restore.write_bytes(content)
+                    restore.replace(path)
+            except OSError:
+                pass
+        raise
+    finally:
+        for _, temporary in pending:
+            temporary.unlink(missing_ok=True)
 
 
 class MetadataGateway:
@@ -248,6 +299,9 @@ class MetadataGateway:
             event_count=record.event_count,
             path=record.output_dir.resolve(),
             created_at=record.session_id,
+            eye_side=record.eye_side,
+            screen_index=record.screen_index,
+            screen_name=record.screen_name,
             simulated=record.simulated,
             persisted=True,
             source=source,
@@ -297,6 +351,14 @@ class DesktopGateway:
     @property
     def config(self) -> CaptureConfig:
         return self._active.config
+
+    @property
+    def protocol_path(self) -> Path:
+        return self._acquisition.protocol_path
+
+    @property
+    def channel_config_path(self) -> Path:
+        return self._acquisition.channel_config_path
 
     @property
     def device(self) -> DeviceInfo:
@@ -356,6 +418,120 @@ class DesktopGateway:
 
     def preflight_cyton(self, seconds: float = 3.0, port: str = "AUTO") -> dict[str, object]:
         return self._acquisition.preflight_cyton(seconds, port)
+
+    def test_cyton_channel(
+        self,
+        channel_number: int,
+        seconds: float = 3.0,
+        port: str = "AUTO",
+    ) -> dict[str, object]:
+        return self._acquisition.test_cyton_channel(channel_number, seconds, port)
+
+    def load_channel_calibration(self) -> dict[str, object] | None:
+        path = default_user_channel_config_path()
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            return None
+        return value if isinstance(value, dict) else None
+
+    def save_channel_calibration(self, calibration: dict[str, object]) -> dict[str, object]:
+        """Persist a reviewed channel map and activate the formal protocol copy."""
+
+        if not isinstance(calibration, dict):
+            raise ValueError("validation.calibration_config")
+        channels = calibration.get("channels")
+        if not isinstance(channels, list) or len(channels) != 8:
+            raise ValueError("validation.calibration_channels")
+        if any(not isinstance(item, dict) for item in channels):
+            raise ValueError("validation.calibration_config")
+        positions = [
+            str(item.get("electrode_position") or "").strip()
+            for item in channels
+        ]
+        if len(positions) != 8 or any(not is_confirmed_position(position) for position in positions):
+            raise ValueError("validation.calibration_missing")
+        if len(set(position.casefold() for position in positions)) != len(positions):
+            raise ValueError("validation.calibration_duplicate")
+        tests = calibration.get("tests")
+        if (
+            not isinstance(tests, list)
+            or len(tests) != 8
+            or any(
+                not isinstance(item, dict) or str(item.get("status") or "") != "passed"
+                for item in tests
+            )
+        ):
+            raise ValueError("validation.calibration_test_required")
+        for key in ("reference", "bias", "ground"):
+            auxiliary = calibration.get(key)
+            position = auxiliary.get("position") if isinstance(auxiliary, dict) else None
+            if not is_confirmed_position(position):
+                raise ValueError("validation.calibration_aux_missing")
+        if not bool(calibration.get("protocol_reviewed")):
+            raise ValueError("validation.calibration_protocol_ack")
+
+        completed_at = iso_now()
+        channel_path = default_user_channel_config_path()
+        channel_value = {
+            **calibration,
+            "config_version": "CHANNEL-V1-FORMAL",
+            "profile_type": "calibrated",
+            "board": "OpenBCI Cyton",
+            "serial_port": str(calibration.get("serial_port") or "AUTO"),
+            "sampling_rate_hz": 250,
+            "channel_order": [f"CH{index}" for index in range(1, 9)],
+            "calibration": {
+                "completed_at": completed_at,
+                "operator_confirmed": True,
+                "tests": tests,
+            },
+        }
+        channel_value.pop("protocol_reviewed", None)
+        try:
+            channel_warnings = validate_channel_config(channel_value, channel_path)
+        except ConfigError as error:
+            raise ValueError("validation.calibration_validation") from error
+        if channel_warnings:
+            raise ValueError("validation.calibration_validation")
+
+        try:
+            protocol_value = json.loads(
+                self._acquisition.protocol_path.read_text(encoding="utf-8")
+            )
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            raise ValueError("validation.hardware_config") from error
+        if not isinstance(protocol_value, dict):
+            raise ValueError("validation.hardware_config")
+        try:
+            protocol = SSVEPProtocol.load(self._acquisition.protocol_path)
+        except (OSError, SSVEPProtocolError) as error:
+            raise ValueError("validation.hardware_config") from error
+        if (
+            protocol.refresh_rate_hz != 60
+            or protocol.sampling_rate_hz != 250
+            or protocol.channel_count != 8
+        ):
+            raise ValueError("validation.calibration_validation")
+        protocol_value["status"] = "formal_candidate"
+        protocol_value["formal_approval"] = {
+            "approved_at": completed_at,
+            "operator_confirmed": True,
+            "screen_refresh_rate_hz": 60,
+            "channel_config_path": str(channel_path),
+        }
+        protocol_path = default_user_protocol_path()
+        _write_json_pair_atomic(((channel_path, channel_value), (protocol_path, protocol_value)))
+
+        # Activate the user-scoped files immediately; a restart is not required.
+        self._metadata.protocol_path = protocol_path
+        self._acquisition.protocol_path = protocol_path
+        self._acquisition.channel_config_path = channel_path
+        return {
+            "channel_config_path": str(channel_path),
+            "protocol_path": str(protocol_path),
+            "completed_at": completed_at,
+        }
 
     def start_ssvep(self, config: CaptureConfig, speed: float = 1) -> TaskSnapshot:
         self._ensure_available()
