@@ -1211,6 +1211,9 @@ class SSVEPPage(Page):
         if len(screens) < 2:
             self.screen_mapping.setText(self.tr("ssvep.screen_mapping_missing"))
             return
+        if int(screens[0][1].geometry().x()) == int(screens[-1][1].geometry().x()):
+            self.screen_mapping.setText(self.tr("ssvep.screen_mapping_horizontal_missing"))
+            return
         left_index, left = screens[0]
         right_index, right = screens[-1]
         self.screen_mapping.setText(
@@ -1304,8 +1307,11 @@ class SSVEPPage(Page):
         try:
             config = self.config()
             config.validate()
-            if len(self._ordered_screens()) < 2:
+            screens = self._ordered_screens()
+            if len(screens) < 2:
                 raise ValueError("validation.screens")
+            if int(screens[0][1].geometry().x()) == int(screens[-1][1].geometry().x()):
+                raise ValueError("validation.screens_horizontal")
         except ValueError as error:
             self.error.setText(self.tr(str(error)))
             return

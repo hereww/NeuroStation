@@ -85,11 +85,19 @@ class AcquisitionWorkerTests(unittest.TestCase):
         gateway._runtime_dir = ROOT / ".tmp-test-worker"
         gateway._status_file = gateway._runtime_dir / "status.json"
         gateway._cancel_file = gateway._runtime_dir / "cancel.request"
-        command = gateway._command(CaptureConfig(mode=CaptureMode.CYTON, eye_side="left"))
+        config = CaptureConfig(
+            mode=CaptureMode.CYTON,
+            name="task",
+            eye_side="left",
+            acknowledge_flicker_risk=True,
+        )
+        command = gateway._command(config)
         board_index = command.index("--board")
         self.assertEqual("cyton", command[board_index + 1])
         eye_index = command.index("--eye-side")
         self.assertEqual("left", command[eye_index + 1])
+        session_index = command.index("--session-name")
+        self.assertEqual("task", command[session_index + 1])
 
 
 if __name__ == "__main__":

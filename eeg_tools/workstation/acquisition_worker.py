@@ -31,6 +31,7 @@ from neurostation_contract import (
     PRODUCT_VERSION,
     RELEASE_DATE,
     dataset_name_for_eye,
+    normalize_dataset_name_base,
 )
 
 from .ssvep import SSVEPProtocol, SSVEPProtocolError
@@ -120,6 +121,12 @@ def _resolve_eye_screens(application: Any) -> dict[str, dict[str, Any]]:
     if len(screens) < 2:
         raise RuntimeError(
             "validation.screens: SSVEP left/right eye acquisition requires at least two displays"
+        )
+    x_positions = [int(screen.geometry().x()) for screen in screens]
+    if min(x_positions) == max(x_positions):
+        raise RuntimeError(
+            "validation.screens_horizontal: SSVEP left/right eye acquisition "
+            "requires displays with distinct horizontal positions"
         )
     ordered = sorted(
         enumerate(screens),
@@ -787,7 +794,8 @@ def main(argv: list[str] | None = None) -> int:
     if not arguments.headless and not arguments.acknowledge_flicker_risk:
         parser.error("visual stimulus requires --acknowledge-flicker-risk")
     try:
-        dataset_name = dataset_name_for_eye(arguments.session_name, arguments.eye_side)
+        dataset_name_base = normalize_dataset_name_base(arguments.session_name)
+        dataset_name = dataset_name_for_eye(dataset_name_base, arguments.eye_side)
     except ValueError as error:
         parser.error(str(error))
     try:
@@ -928,7 +936,7 @@ def main(argv: list[str] | None = None) -> int:
                 "event_id": event_id,
                 "event_name": name,
                 "eye_side": arguments.eye_side,
-                "dataset_name_base": arguments.session_name,
+                "dataset_name_base": dataset_name_base,
                 "dataset_name": dataset_name,
                 "screen_index": selected_screen_index if selected_screen_index is not None else "",
                 "screen_name": str((display_metadata.get("active") or {}).get("name") or ""),
@@ -970,7 +978,7 @@ def main(argv: list[str] | None = None) -> int:
             requested_serial_port=arguments.port if arguments.board == "cyton" else None,
             screen_index=selected_screen_index,
             eye_side=arguments.eye_side,
-            dataset_name_base=arguments.session_name,
+            dataset_name_base=dataset_name_base,
             dataset_name=dataset_name,
             display=display_metadata,
             screen_mapping={
@@ -1134,7 +1142,7 @@ def main(argv: list[str] | None = None) -> int:
                     trial_index=trial.index,
                     eye_side=arguments.eye_side,
                     screen_index=selected_screen_index or 0,
-                    dataset_name_base=arguments.session_name,
+                    dataset_name_base=dataset_name_base,
                     dataset_name=dataset_name,
                     screen_name=str((display_metadata.get("active") or {}).get("name") or ""),
                     screen_geometry=_screen_geometry_text(display_metadata.get("active") or {}),
@@ -1243,12 +1251,12 @@ def main(argv: list[str] | None = None) -> int:
                 "rest_seconds": arguments.rest_seconds,
                 "countdown_seconds": arguments.countdown_seconds,
                 "eye_side": arguments.eye_side,
-                "dataset_name_base": arguments.session_name,
+                "dataset_name_base": dataset_name_base,
                 "dataset_name": dataset_name,
             },
             "provenance": protocol_provenance,
             "eye_side": arguments.eye_side,
-            "dataset_name_base": arguments.session_name,
+            "dataset_name_base": dataset_name_base,
             "dataset_name": dataset_name,
             "display": display_metadata,
         },
@@ -1291,7 +1299,7 @@ def main(argv: list[str] | None = None) -> int:
         "status": status,
         "participant_id": arguments.participant,
         "session_name": dataset_name,
-        "dataset_name_base": arguments.session_name,
+        "dataset_name_base": dataset_name_base,
         "eye_side": arguments.eye_side,
         "user_id": arguments.user_id,
         "user_name": arguments.user_name,

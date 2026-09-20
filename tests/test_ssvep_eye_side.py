@@ -5,7 +5,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from neurostation_contract import CaptureConfig, dataset_name_for_eye
+from neurostation_contract import (
+    CaptureConfig,
+    dataset_name_for_eye,
+    normalize_dataset_name_base,
+)
 from eeg_tools.session_files import EVENT_FIELDS
 from eeg_tools.workstation.acquisition_worker import (
     _resolve_eye_screens,
@@ -48,6 +52,7 @@ class _Application:
 
 class SsvepEyeSideTests(unittest.TestCase):
     def test_dataset_name_has_one_eye_suffix_and_rejects_invalid_side(self) -> None:
+        self.assertEqual("task", normalize_dataset_name_base("task_右眼_左眼"))
         self.assertEqual("task_左眼", dataset_name_for_eye("task", "left"))
         self.assertEqual("task_右眼", dataset_name_for_eye("task_左眼", "right"))
         self.assertEqual(
@@ -89,6 +94,13 @@ class SsvepEyeSideTests(unittest.TestCase):
     def test_single_screen_blocks_visual_mapping(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "validation.screens"):
             _resolve_eye_screens(_Application([_Screen("only", 0)]))
+
+    def test_vertical_only_layout_blocks_left_right_mapping(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "validation.screens_horizontal"):
+            _resolve_eye_screens(_Application([
+                _Screen("top", 0, 0),
+                _Screen("bottom", 0, 1080),
+            ]))
 
     def test_worker_requires_eye_side_and_frame_log_has_capture_metadata(self) -> None:
         parser = build_parser()

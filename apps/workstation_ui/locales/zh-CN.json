@@ -175,6 +175,7 @@
   "eye.right": "右眼",
   "ssvep.screen_mapping": "自动屏幕映射：左眼 → {left}；右眼 → {right}；仅选中眼别对应屏幕闪烁，另一块屏幕保持黑屏。",
   "ssvep.screen_mapping_missing": "屏幕映射不可用：正式左右眼采集至少需要两块显示器。",
+  "ssvep.screen_mapping_horizontal_missing": "屏幕映射不可用：显示器没有可区分的左右横坐标，请将显示器横向排列后重试。",
   "ssvep.dataset_name_preview": "本次数据集名称：{name}",
   "ssvep.dataset_name_pending": "选择眼别后将自动追加“_左眼”或“_右眼”。",
   "field.channel_config": "通道配置 JSON（Cyton）",

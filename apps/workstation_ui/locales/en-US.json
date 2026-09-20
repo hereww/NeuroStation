@@ -175,6 +175,7 @@
   "eye.right": "Right eye",
   "ssvep.screen_mapping": "Automatic display mapping: left eye → {left}; right eye → {right}; only the selected eye display flickers and the other display stays black.",
   "ssvep.screen_mapping_missing": "Display mapping unavailable: formal left/right acquisition requires at least two displays.",
+  "ssvep.screen_mapping_horizontal_missing": "Display mapping unavailable: the displays have no distinct horizontal positions. Arrange them side by side and retry.",
   "ssvep.dataset_name_preview": "Dataset name for this run: {name}",
   "ssvep.dataset_name_pending": "Choose an eye side to append “_左眼” or “_右眼” automatically.",
   "field.channel_config": "Channel configuration JSON (Cyton)",

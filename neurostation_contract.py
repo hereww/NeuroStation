@@ -129,6 +129,15 @@ class EyeSide(str, Enum):
         return "左眼" if self is EyeSide.LEFT else "右眼"
 
 
+def normalize_dataset_name_base(name: str) -> str:
+    """Remove trailing eye suffixes and return the canonical base name."""
+
+    base = re.sub(r"(?:_(?:左眼|右眼))+$", "", str(name).strip())
+    if not base:
+        raise ValueError("validation.identity")
+    return base
+
+
 def dataset_name_for_eye(name: str, eye_side: EyeSide | str) -> str:
     """Return a stable dataset name with exactly one Chinese eye suffix."""
 
@@ -136,9 +145,7 @@ def dataset_name_for_eye(name: str, eye_side: EyeSide | str) -> str:
         side = EyeSide(eye_side)
     except ValueError as error:
         raise ValueError("validation.eye_side") from error
-    base = re.sub(r"(?:_(?:左眼|右眼))+$", "", str(name).strip())
-    if not base:
-        raise ValueError("validation.identity")
+    base = normalize_dataset_name_base(name)
     return f"{base}_{side.label_zh}"
 
 

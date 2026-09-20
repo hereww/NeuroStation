@@ -160,7 +160,7 @@ class AcquisitionProcessGateway:
                 "--participant",
                 config.user_id or config.participant,
                 "--session-name",
-                config.dataset_name,
+                config.name,
                 "--user-id",
                 config.user_id,
                 "--user-name",
