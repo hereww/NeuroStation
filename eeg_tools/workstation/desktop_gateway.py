@@ -298,7 +298,7 @@ class MetadataGateway:
             samples_per_channel=record.recorded_samples_per_channel,
             event_count=record.event_count,
             path=record.output_dir.resolve(),
-            created_at=record.session_id,
+            created_at=record.recorded_at or record.session_id,
             eye_side=record.eye_side,
             screen_index=record.screen_index,
             screen_name=record.screen_name,

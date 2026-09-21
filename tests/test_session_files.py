@@ -42,6 +42,17 @@ class SessionFileTests(unittest.TestCase):
             lines = path.read_text(encoding="utf-8").splitlines()
             self.assertEqual("sample_index\tboard_row_0\tboard_row_1", lines[0])
             self.assertEqual("0\t7\t1", lines[1])
+            timestamp_path = Path(directory) / "timestamp.tsv"
+            write_brainflow_tsv(
+                timestamp_path,
+                np.array([[1789611228.1234567]]),
+                None,
+                sampling_rate_hz=250,
+            )
+            self.assertEqual(
+                "0\t1789611228.1234567",
+                timestamp_path.read_text(encoding="utf-8").splitlines()[1],
+            )
             definitions_for_cyton = brainflow_column_definitions(6, 32)
             self.assertIn("timestamp_s", {item["column_name"] for item in definitions_for_cyton})
             self.assertIn("marker", {item["column_name"] for item in definitions_for_cyton})

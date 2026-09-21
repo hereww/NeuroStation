@@ -39,6 +39,7 @@ class DatasetRecord:
     channel_count: int = 8
     files: tuple[str, ...] = ()
     source_path: str = ""
+    recorded_at: str = ""
     imported: bool = False
     origin: str = "acquired"
     fingerprint: str = ""
@@ -152,7 +153,11 @@ class DatasetRepository:
                 or record.fingerprint not in trashed_fingerprints
             )
         ]
-        return sorted(records, key=lambda item: item.session_id, reverse=True)
+        return sorted(
+            records,
+            key=lambda item: (item.recorded_at, item.session_id),
+            reverse=True,
+        )
 
     def list_trashed_records(self) -> list[DatasetRecord]:
         """Return dataset directories moved to the recoverable trash."""
@@ -351,6 +356,10 @@ class DatasetRepository:
                 if isinstance(active_display, dict)
                 else ""
             )
+            source_path = str(
+                value.get("source_path") or value.get("source_directory") or ""
+            )
+            recorded_at = cls._recorded_at(value, imported, source_path)
             return DatasetRecord(
                 session_id=str(value.get("session_id") or session_path.parent.name),
                 status=str(value.get("status") or "completed"),
@@ -377,9 +386,8 @@ class DatasetRepository:
                 sampling_rate_hz=sampling_rate,
                 channel_count=int(value.get("channel_count", 8) or 8),
                 files=cls._record_file_names(value),
-                source_path=str(
-                    value.get("source_path") or value.get("source_directory") or ""
-                ),
+                source_path=source_path,
+                recorded_at=recorded_at,
                 imported=imported,
                 origin=str(
                     value.get("origin", "imported_openbci" if imported else "acquired")
@@ -395,6 +403,52 @@ class DatasetRepository:
             )
         except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
             return None
+
+    @classmethod
+    def _recorded_at(
+        cls, value: dict[str, Any], imported: bool, source_path: str
+    ) -> str:
+        """Return the acquisition timestamp, not the workstation import time."""
+
+        if imported:
+            source_recorded_at = str(
+                value.get("source_recorded_at") or value.get("recorded_at") or ""
+            ).strip()
+            return (
+                source_recorded_at
+                or cls._openbci_recorded_at(
+                    source_path,
+                    str(value.get("source_directory") or ""),
+                    str(value.get("session_name") or ""),
+                    str(value.get("session_id") or ""),
+                )
+                or str(value.get("created_at") or "").strip()
+            )
+        return str(
+            value.get("recorded_at")
+            or value.get("started_at")
+            or value.get("created_at")
+            or ""
+        ).strip()
+
+    @staticmethod
+    def _openbci_recorded_at(*values: str) -> str:
+        """Extract an OpenBCI GUI recording time from its session directory."""
+
+        for value in values:
+            match = re.search(
+                r"OpenBCISession_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})",
+                value,
+            )
+            if match is None:
+                continue
+            try:
+                return datetime.strptime(
+                    "_".join(match.groups()), "%Y-%m-%d_%H-%M-%S"
+                ).isoformat(timespec="seconds")
+            except ValueError:
+                continue
+        return ""
 
     @staticmethod
     def _openbci_session_directories(source_root: Path) -> list[Path]:
@@ -519,6 +573,7 @@ class DatasetRepository:
                 channel_count=channel_count,
                 files=file_names,
                 source_path=str(source_directory.resolve()),
+                recorded_at=self._openbci_recorded_at(source_directory.name),
                 imported=True,
                 origin="imported_openbci",
                 fingerprint=fingerprint,
@@ -617,6 +672,7 @@ class DatasetRepository:
             saved_record["created_at"] = datetime.now().astimezone().isoformat(
                 timespec="milliseconds"
             )
+            saved_record["source_recorded_at"] = record.recorded_at
             saved_record["source_directory"] = str(source_directory.resolve())
             saved_record["raw_files"] = [
                 {

@@ -11,8 +11,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 HAS_QT = importlib.util.find_spec("PySide6") is not None
 
 
-def write_csv(path: Path) -> None:
-    rows = ["\t".join([str(index), *(["0"] * 23)]) for index in range(3)]
+def write_csv(path: Path, count: int = 3) -> None:
+    rows = ["\t".join([str(index), *(["0"] * 23)]) for index in range(count)]
     path.write_text("\n".join(rows) + "\n", encoding="utf-8")
 
 
@@ -101,7 +101,7 @@ class OpenBCIImportUiTests(unittest.TestCase):
             window.show_result(dataset)
             self.assertEqual("result", window.current_page)
             self.assertEqual("DatasetSummaryPage", type(window.pages["result"]).__name__)
-            from PySide6.QtWidgets import QLabel, QPushButton, QTableWidget
+            from PySide6.QtWidgets import QLabel, QPushButton, QComboBox, QTableWidget
 
             session_table = window.pages["result"].findChild(QTableWidget, "datasetSessionTable")
             file_table = window.pages["result"].findChild(QTableWidget, "datasetFilesTable")
@@ -134,15 +134,28 @@ class OpenBCIImportUiTests(unittest.TestCase):
             self.assertEqual("BrainFlow-RAW_0.csv", file_table.item(0, 0).text())
             raw_table = window.pages["result"].findChild(QTableWidget, "datasetRawPreviewTable")
             self.assertIsNotNone(raw_table)
-            self.assertEqual(24, raw_table.columnCount())
+            self.assertEqual(25, raw_table.columnCount())
             self.assertEqual(3, raw_table.rowCount())
             self.assertFalse(raw_table.item(0, 0).flags() & self.qt.ItemFlag.ItemIsEditable)
+            self.assertEqual("1", raw_table.item(0, 0).text())
             raw_headers = [
                 raw_table.horizontalHeaderItem(column).text()
                 for column in range(raw_table.columnCount())
             ]
-            self.assertIn("未命名列 1", raw_headers[0])
-            self.assertIn("Column 1", raw_headers[0])
+            self.assertEqual("序号", raw_headers[0])
+            self.assertIn("package_num", raw_headers[1])
+            self.assertTrue(any("other_ch1" in header for header in raw_headers))
+            self.assertTrue(any("other_ch7" in header for header in raw_headers))
+            self.assertTrue(any("analog_ch1" in header for header in raw_headers))
+            self.assertTrue(any("analog_ch3" in header for header in raw_headers))
+            preview_columns = window.pages["result"].findChild(
+                QComboBox, "datasetPreviewColumns"
+            )
+            self.assertIsNotNone(preview_columns)
+            self.assertEqual(
+                ("all", "other", "analog"),
+                tuple(preview_columns.itemData(index) for index in range(preview_columns.count())),
+            )
             window.navigate("datasets")
             buttons = window.pages["datasets"].findChildren(QPushButton)
             open_button = next(button for button in buttons if button.text() == "打开数据集")
@@ -152,7 +165,11 @@ class OpenBCIImportUiTests(unittest.TestCase):
 
     def test_standard_brainflow_preview_headers_have_chinese_meanings(self):
         from apps.workstation_ui.i18n import Translator
-        from apps.workstation_ui.pages import _preview_header_labels
+        from apps.workstation_ui.pages import (
+            _preview_column_indexes,
+            _preview_header_labels,
+            _sort_preview_rows_by_sample_index,
+        )
 
         labels = _preview_header_labels(
             Translator("zh-CN"),
@@ -163,12 +180,106 @@ class OpenBCIImportUiTests(unittest.TestCase):
                 "timestamp_s",
                 "marker",
                 "accel_x",
+                "other_ch1",
+                "analog_ch1",
             ),
         )
         self.assertEqual("样本序号（sample_index）", labels[0])
         self.assertEqual("EEG 通道 1（eeg_ch1）", labels[1])
         self.assertEqual("设备时间戳（秒）（timestamp_s）", labels[3])
         self.assertEqual("事件标记码（marker）", labels[4])
+        self.assertEqual("其他辅助通道 1（other_ch1）", labels[6])
+        self.assertEqual("模拟辅助通道 1（analog_ch1）", labels[7])
+        self.assertEqual(
+            (0, 2, 3, 4, 6),
+            _preview_column_indexes(
+                (
+                    "sample_index",
+                    "eeg_ch1",
+                    "package_num",
+                    "timestamp_s",
+                    "marker",
+                    "accel_x",
+                    "other_ch1",
+                    "analog_ch1",
+                ),
+                "other",
+            ),
+        )
+        self.assertEqual(
+            (0, 2, 3, 4, 7),
+            _preview_column_indexes(
+                (
+                    "sample_index",
+                    "eeg_ch1",
+                    "package_num",
+                    "timestamp_s",
+                    "marker",
+                    "accel_x",
+                    "other_ch1",
+                    "analog_ch1",
+                ),
+                "analog",
+            ),
+        )
+        self.assertEqual(
+            [
+                ["1", "101"],
+                ["2", "202"],
+                ["10", "303"],
+                ["", "404"],
+            ],
+            _sort_preview_rows_by_sample_index(
+                ("sample_index", "package_num"),
+                [
+                    ["10", "303"],
+                    ["", "404"],
+                    ["2", "202"],
+                    ["1", "101"],
+                ],
+            ),
+        )
+
+    def test_dataset_list_sorts_by_original_openbci_recording_time(self):
+        from PySide6.QtWidgets import QLabel
+
+        from apps.workstation_ui.app import MainWindow
+        from eeg_tools.workstation.desktop_gateway import MetadataGateway
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "Recordings"
+            older = source / "OpenBCISession_2026-01-04_08-00-00"
+            newer = source / "OpenBCISession_2026-01-05_09-30-00"
+            older.mkdir(parents=True)
+            newer.mkdir(parents=True)
+            write_csv(older / "BrainFlow-RAW_0.csv")
+            write_csv(newer / "BrainFlow-RAW_0.csv", count=4)
+            gateway = MetadataGateway(
+                protocol_path=Path("configs/protocols/ssvep_four_target_v2.json"),
+                dataset_root=root / "Datasets",
+            )
+            gateway.import_openbci_recordings(source)
+            window = MainWindow(gateway=gateway, timer_enabled=False)
+
+            window.navigate("datasets")
+            page = window.pages["datasets"]
+            titles = [
+                item.findChild(QLabel, "sectionTitle").text()
+                for item in page._records_widgets
+            ]
+            text = [
+                child.text()
+                for item in page._records_widgets
+                for child in item.findChildren(QLabel)
+            ]
+
+            self.assertEqual([newer.name, older.name], titles)
+            self.assertIn("采集时间", text)
+            self.assertIn("2026-01-05 09:30:00", text)
+            self.assertTrue(any(value.startswith("原始来源路径: OpenBCISession_") for value in text))
+            self.assertTrue(any(value.startswith("工作站副本路径: imported_openbci_") for value in text))
+            window.close()
 
 
 if __name__ == "__main__":

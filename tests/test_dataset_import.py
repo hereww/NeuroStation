@@ -52,9 +52,42 @@ class DatasetImportTests(unittest.TestCase):
             self.assertEqual(250, record.sampling_rate_hz)
             self.assertEqual(8, record.channel_count)
             self.assertEqual(0.02, record.duration_s)
+            self.assertEqual("2026-01-01T00:00:00", record.recorded_at)
             self.assertEqual({first.name, second.name}, set(record.files))
             self.assertEqual(before, {path.name: path.read_bytes() for path in session.iterdir()})
             self.assertTrue((record.output_dir / "session.json").is_file())
+            metadata = json.loads((record.output_dir / "session.json").read_text(encoding="utf-8"))
+            self.assertEqual("2026-01-01T00:00:00", metadata["source_recorded_at"])
+
+    def test_existing_import_uses_original_session_time_not_import_time(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "Datasets"
+            imported = root / "imports" / "imported_openbci_OpenBCISession_2026-01-06_12-34-56"
+            imported.mkdir(parents=True)
+            (imported / "session.json").write_text(
+                json.dumps(
+                    {
+                        "session_id": imported.name,
+                        "session_name": "OpenBCISession_2026-01-06_12-34-56",
+                        "duration_s": 1,
+                        "recorded_samples_per_channel": 250,
+                        "sampling_rate_hz": 250,
+                        "source": "imported_openbci",
+                        "imported": True,
+                        "source_path": str(
+                            Path("C:/OpenBCI/Recordings/OpenBCISession_2026-01-06_12-34-56")
+                        ),
+                        "created_at": "2026-02-01T00:00:00+08:00",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            record = DatasetRepository(root).list_records()[0]
+            gateway = MetadataGateway(protocol_path=PROTOCOL, dataset_root=root)
+
+            self.assertEqual("2026-01-06T12:34:56", record.recorded_at)
+            self.assertEqual("2026-01-06T12:34:56", gateway.datasets[0].created_at)
 
     def test_txt_metadata_and_duplicate_or_changed_source_behavior(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -260,6 +293,7 @@ class DatasetImportTests(unittest.TestCase):
             self.assertEqual(1, len(gateway.datasets))
             self.assertTrue(gateway.datasets[0].imported)
             self.assertEqual("imported_openbci", gateway.datasets[0].source.value)
+            self.assertEqual("2026-01-03T00:00:00", gateway.datasets[0].created_at)
 
     def test_desktop_gateway_exposes_default_import_flag(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -16,6 +16,7 @@ from typing import Any, Callable
 
 from eeg_tools.config import ConfigError, validate_channel_config
 from eeg_tools.session_files import (
+    format_raw_number,
     iso_now,
     sha256,
     write_brainflow_tsv,
@@ -742,8 +743,12 @@ class _LiveWaveformWriter:
                 float(data[row, column]) if 0 <= row < data.shape[0] else float("nan")
                 for row in self.eeg_rows
             ]
-            values = [self.sample_index, f"{timestamp:.10g}", f"{marker:.10g}"]
-            values.extend(f"{value:.10g}" for value in eeg)
+            values = [
+                self.sample_index,
+                format_raw_number(timestamp),
+                format_raw_number(marker),
+            ]
+            values.extend(format_raw_number(value) for value in eeg)
             self.handle.write("\t".join(str(value) for value in values) + "\n")
             self.sample_index += 1
             self.last_timestamp = timestamp

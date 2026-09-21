@@ -76,6 +76,22 @@ def _format_file_size(size: int | None) -> str:
     return f"{size / (1024 * 1024 * 1024):.2f} GB"
 
 
+def _dataset_timestamp(timestamp: str) -> float:
+    try:
+        return datetime.fromisoformat(timestamp.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return float("-inf")
+
+
+def _format_dataset_timestamp(timestamp: str) -> str:
+    try:
+        return datetime.fromisoformat(timestamp.replace("Z", "+00:00")).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+    except ValueError:
+        return timestamp or "—"
+
+
 def _dataset_file_rows(result: Dataset) -> list[tuple[str, str, str, str]]:
     """Build a metadata-only file table; raw EEG content is never loaded."""
 
@@ -290,6 +306,47 @@ def _denoising_section(tr, result: Dataset) -> Section | None:
     return section
 
 
+_OPENBCI_BRAINFLOW_RAW_COLUMNS = (
+    "package_num",
+    "eeg_ch1",
+    "eeg_ch2",
+    "eeg_ch3",
+    "eeg_ch4",
+    "eeg_ch5",
+    "eeg_ch6",
+    "eeg_ch7",
+    "eeg_ch8",
+    "accel_x",
+    "accel_y",
+    "accel_z",
+    "other_ch1",
+    "other_ch2",
+    "other_ch3",
+    "other_ch4",
+    "other_ch5",
+    "other_ch6",
+    "other_ch7",
+    "analog_ch1",
+    "analog_ch2",
+    "analog_ch3",
+    "timestamp_s",
+    "marker",
+)
+
+
+def _headerless_brainflow_raw_columns(
+    path: Path, column_count: int
+) -> tuple[str, ...] | None:
+    """Restore OpenBCI field names omitted by BrainFlow's raw CSV export."""
+
+    if (
+        column_count == len(_OPENBCI_BRAINFLOW_RAW_COLUMNS)
+        and re.fullmatch(r"BrainFlow-RAW_.*\.csv", path.name, re.IGNORECASE)
+    ):
+        return _OPENBCI_BRAINFLOW_RAW_COLUMNS
+    return None
+
+
 def _read_data_preview(path: Path, limit: int = 100) -> tuple[tuple[str, ...], list[list[str]]]:
     """Read only a bounded prefix for the Excel-like read-only data preview."""
 
@@ -325,13 +382,41 @@ def _read_data_preview(path: Path, limit: int = 100) -> tuple[tuple[str, ...], l
     if column_count == 0:
         return (), []
     if headers is None:
-        headers = [f"Column {index}" for index in range(1, column_count + 1)]
+        headers = list(
+            _headerless_brainflow_raw_columns(path, column_count)
+            or tuple(f"Column {index}" for index in range(1, column_count + 1))
+        )
     elif len(headers) < column_count:
         headers.extend(
             f"Column {index}" for index in range(len(headers) + 1, column_count + 1)
         )
     normalized = [row + [""] * (column_count - len(row)) for row in rows]
     return tuple(headers[:column_count]), normalized
+
+
+def _sort_preview_rows_by_sample_index(
+    headers: tuple[str, ...], rows: list[list[str]]
+) -> list[list[str]]:
+    """Present raw preview rows in stable numeric sample-index order."""
+
+    try:
+        sample_index_column = next(
+            index
+            for index, header in enumerate(headers)
+            if header.casefold() == "sample_index"
+        )
+    except StopIteration:
+        return rows
+
+    def sort_key(item: tuple[int, list[str]]) -> tuple[bool, int, int]:
+        original_position, row = item
+        try:
+            sample_index = int(row[sample_index_column].strip())
+        except (IndexError, ValueError):
+            return True, 0, original_position
+        return False, sample_index, original_position
+
+    return [row for _, row in sorted(enumerate(rows), key=sort_key)]
 
 
 def _preview_header_labels(tr, headers: tuple[str, ...]) -> tuple[str, ...]:
@@ -374,6 +459,25 @@ def _preview_header_labels(tr, headers: tuple[str, ...]) -> tuple[str, ...]:
             display = tr(key, **values)
         labels.append(tr("dataset_summary.column.with_raw", label=display, raw=raw_name))
     return tuple(labels)
+
+
+def _preview_column_indexes(headers: tuple[str, ...], group: str) -> tuple[int, ...]:
+    """Keep identity fields visible while narrowing a raw-preview field group."""
+
+    if group == "all":
+        return tuple(range(len(headers)))
+    prefixes = {
+        "other": ("other_ch",),
+        "analog": ("analog_ch",),
+    }
+    required = {"sample_index", "package_num", "timestamp_s", "marker"}
+    selected_prefixes = prefixes.get(group, ())
+    return tuple(
+        index
+        for index, header in enumerate(headers)
+        if header.casefold() in required
+        or header.casefold().startswith(selected_prefixes)
+    )
 
 
 class UserDialog(QDialog):
@@ -1587,6 +1691,14 @@ class DatasetSummaryPage(Page):
             self.preview_file.addItems(list(raw_names))
             self.preview_file.setAccessibleName(tr("dataset_summary.preview_file"))
             preview.layout.addWidget(self.preview_file)
+            self.preview_columns = QComboBox()
+            self.preview_columns.setObjectName("datasetPreviewColumns")
+            self.preview_columns.setAccessibleName(tr("dataset_summary.preview_columns"))
+            preview_columns_form = QFormLayout()
+            preview_columns_form.addRow(
+                tr("dataset_summary.preview_columns"), self.preview_columns
+            )
+            preview.layout.addLayout(preview_columns_form)
             headers, values = _read_data_preview(result.path / raw_names[0])
             self.preview_table = _readonly_table(headers or (tr("dataset_summary.no_columns"),))
             self.preview_table.setObjectName("datasetRawPreviewTable")
@@ -1594,6 +1706,9 @@ class DatasetSummaryPage(Page):
             preview.layout.addWidget(self.preview_table)
             self._set_preview_table(headers, values)
             self.preview_file.currentTextChanged.connect(self._preview_file_changed)
+            self.preview_columns.currentIndexChanged.connect(
+                lambda _index: self._render_preview_table()
+            )
             self.layout.addWidget(preview)
         self.layout.addWidget(action(tr("app.datasets"), lambda: navigate("datasets"), True))
         self.layout.addStretch()
@@ -1605,27 +1720,71 @@ class DatasetSummaryPage(Page):
     def _set_preview_table(
         self, headers: tuple[str, ...], values: list[list[str]]
     ) -> None:
+        self._preview_headers = headers
+        self._preview_values = _sort_preview_rows_by_sample_index(headers, values)
+        previous_group = str(self.preview_columns.currentData() or "all")
+        groups = [("all", len(headers))]
+        for group, prefix in (("other", "other_ch"), ("analog", "analog_ch")):
+            count = sum(header.casefold().startswith(prefix) for header in headers)
+            if count:
+                groups.append((group, count))
+        self.preview_columns.blockSignals(True)
+        self.preview_columns.clear()
+        for group, count in groups:
+            self.preview_columns.addItem(
+                self.tr(f"dataset_summary.preview_column_group.{group}", count=count),
+                group,
+            )
+        self.preview_columns.setCurrentIndex(
+            max(0, self.preview_columns.findData(previous_group))
+        )
+        self.preview_columns.blockSignals(False)
+        self._render_preview_table()
+
+    def _render_preview_table(self) -> None:
         table = self.preview_table
+        headers = self._preview_headers
+        values = self._preview_values
         table.setSortingEnabled(False)
         table.clearContents()
-        table.setColumnCount(len(headers) or 1)
-        display_headers = _preview_header_labels(self.tr, headers)
-        table.setHorizontalHeaderLabels(
-            list(display_headers) or [self.tr("dataset_summary.no_columns")]
+        indexes = _preview_column_indexes(
+            headers, str(self.preview_columns.currentData() or "all")
         )
-        for index, raw_name in enumerate(headers):
-            header_item = table.horizontalHeaderItem(index)
+        if not headers:
+            table.setColumnCount(1)
+            table.setHorizontalHeaderLabels([self.tr("dataset_summary.no_columns")])
+            table.setRowCount(0)
+            return
+
+        display_headers = _preview_header_labels(self.tr, headers)
+        table.setColumnCount(len(indexes) + 1)
+        table.setHorizontalHeaderLabels(
+            [self.tr("dataset_summary.column.preview_row")]
+            + [display_headers[index] for index in indexes]
+        )
+        for column, index in enumerate(indexes, start=1):
+            raw_name = headers[index]
+            header_item = table.horizontalHeaderItem(column)
             if header_item is not None:
                 header_item.setToolTip(str(raw_name))
+        row_header = table.horizontalHeaderItem(0)
+        if row_header is not None:
+            row_header.setToolTip(self.tr("dataset_summary.column.preview_row"))
         table.setRowCount(0)
-        for values_row in values:
+        for row_number, values_row in enumerate(values, start=1):
             row = table.rowCount()
             table.insertRow(row)
-            for column, value in enumerate(values_row):
+            table.setItem(row, 0, _table_item(row_number))
+            for column, index in enumerate(indexes, start=1):
+                value = values_row[index] if index < len(values_row) else ""
                 table.setItem(row, column, _table_item(value))
-        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        table.setMinimumHeight(min(440, max(108, 30 * min(10, max(1, len(values))) + 44)))
-        table.setSortingEnabled(True)
+        table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.ResizeToContents
+        )
+        table.setMinimumHeight(
+            min(440, max(108, 30 * min(10, max(1, len(values))) + 44))
+        )
+        table.setSortingEnabled(False)
 
 
 class _DatasetCollectionPage(Page):
@@ -1665,7 +1824,7 @@ class _DatasetCollectionPage(Page):
         self.status_filter = QComboBox()
         self.status_filter.addItem(tr("datasets.filter_all_statuses"), "")
         for value in ("completed", "aborted", "error"):
-            self.status_filter.addItem(value, value)
+            self.status_filter.addItem(tr("datasets.status." + value), value)
         status_index = self.status_filter.findData(status_value)
         if status_index >= 0:
             self.status_filter.setCurrentIndex(status_index)
@@ -1695,9 +1854,23 @@ class _DatasetCollectionPage(Page):
         query = self.search.text().strip().casefold()
         source = str(self.source_filter.currentData() or "")
         status = str(self.status_filter.currentData() or "")
-        visible = tuple(dataset for dataset in reversed(self._datasets)
-                        if bool(dataset.deleted_at) == self._trashed
-                        and self._matches(dataset, query, source, status))
+        visible = tuple(
+            sorted(
+                (
+                    dataset
+                    for dataset in self._datasets
+                    if bool(dataset.deleted_at) == self._trashed
+                    and self._matches(dataset, query, source, status)
+                ),
+                key=lambda dataset: (
+                    _dataset_timestamp(
+                        dataset.deleted_at if self._trashed else dataset.created_at
+                    ),
+                    dataset.id,
+                ),
+                reverse=True,
+            )
+        )
         if not visible:
             empty_key = "datasets.empty_trash" if self._trashed else "datasets.empty"
             empty = label(self.tr(empty_key), "muted")
@@ -1710,7 +1883,17 @@ class _DatasetCollectionPage(Page):
                 self._records_widgets.append(item)
 
     def _matches(self, dataset: Dataset, query: str, source: str, status: str) -> bool:
-        haystack = " ".join((dataset.name, dataset.participant, dataset.user_id, dataset.user_name)).casefold()
+        haystack = " ".join(
+            (
+                dataset.id,
+                dataset.name,
+                dataset.participant,
+                dataset.user_id,
+                dataset.user_name,
+                dataset.source_path,
+                " ".join(dataset.files),
+            )
+        ).casefold()
         return (
             (not query or query in haystack)
             and (not source or dataset.source.value == source)
@@ -1725,27 +1908,75 @@ class _DatasetCollectionPage(Page):
         )
         if trashed:
             item.layout.addWidget(label(self.tr("datasets.deleted_at", value=dataset.deleted_at or "—"), "muted"))
-        elif dataset.simulated or dataset.source in {
+
+        source_label = self.tr("datasets.source." + dataset.source.value)
+        status_key = dataset.status if dataset.status in {"completed", "aborted", "error"} else "unknown"
+        status_label = self.tr("datasets.status." + status_key)
+        summary = QHBoxLayout()
+        summary.addWidget(label(source_label, "muted"))
+        summary.addWidget(label("·", "muted"))
+        summary.addWidget(label(status_label, "muted"))
+        summary.addStretch()
+        item.layout.addLayout(summary)
+
+        if dataset.simulated or dataset.source in {
             CaptureMode.DEMO,
             CaptureMode.VISUAL_PREVIEW,
             CaptureMode.SYNTHETIC,
         }:
             item.layout.addWidget(label(self.tr("result.legacy_readonly"), "muted"))
-        elif dataset.id == self._latest:
-            item.layout.addWidget(label(self.tr("datasets.latest." + dataset.source.value), "muted"))
-        elif dataset.source is CaptureMode.IMPORTED_OPENBCI:
-            item.layout.addWidget(label(self.tr("result.imported_openbci_saved"), "muted"))
-        else:
-            item.layout.addWidget(label(self.tr("result.cyton_saved"), "muted"))
-        item.layout.addWidget(label(self.tr("datasets.details", participant=dataset.participant,
-            duration=format_duration(dataset.recording_seconds), samples=f"{dataset.samples_per_channel:,}",
-            events=dataset.event_count)))
+
+        metrics = QGridLayout()
+        metrics.setHorizontalSpacing(24)
+        metrics.setVerticalSpacing(8)
+        metric_rows = (
+            (
+                self.tr("dataset_summary.recorded_at"),
+                _format_dataset_timestamp(dataset.created_at),
+            ),
+            (self.tr("dataset_summary.session_id"), dataset.id),
+            (self.tr("field.participant"), dataset.participant or self.tr("dataset_summary.unlabeled")),
+            (self.tr("dataset_summary.duration"), format_duration(dataset.recording_seconds)),
+            (self.tr("dataset_summary.sampling_rate"), f"{dataset.sampling_rate_hz:g} Hz"),
+            (self.tr("dataset_summary.channel_count"), f"{dataset.channel_count} CH"),
+            (self.tr("dataset_summary.samples_per_channel"), f"{dataset.samples_per_channel:,}"),
+            (self.tr("dataset_summary.file_count"), str(len(dataset.files)) if dataset.files else "—"),
+            (
+                self.tr("dataset_summary.markers"),
+                self.tr("dataset_summary.no_markers")
+                if dataset.imported
+                else str(dataset.event_count),
+            ),
+        )
+        for index, (key, value) in enumerate(metric_rows):
+            row = index // 2
+            column = (index % 2) * 2
+            metrics.addWidget(label(key, "muted"), row, column)
+            value_label = label(value)
+            value_label.setToolTip(value)
+            metrics.addWidget(value_label, row, column + 1)
+        metrics.setColumnStretch(1, 1)
+        metrics.setColumnStretch(3, 1)
+        item.layout.addLayout(metrics)
+
         item.layout.addWidget(label(
             self.tr("datasets.user_details", user_id=dataset.user_id or self.tr("users.unlinked"),
                user_name=dataset.user_name or self.tr("users.unlinked"),
                status=self.tr("users.link_" + dataset.user_link_status)), "muted"))
-        item.layout.addWidget(label(
-            str(dataset.path), "path"))
+
+        if dataset.source_path:
+            source_path = label(
+                self.tr("dataset_summary.original_source") + ": " + Path(dataset.source_path).name,
+                "path",
+            )
+            source_path.setToolTip(dataset.source_path)
+            item.layout.addWidget(source_path)
+        workstation_path = label(
+            self.tr("dataset_summary.workstation_copy") + ": " + dataset.path.name,
+            "path",
+        )
+        workstation_path.setToolTip(str(dataset.path))
+        item.layout.addWidget(workstation_path)
         controls = QHBoxLayout()
         if not trashed:
             controls.addWidget(action(self.tr("action.view_dataset"), lambda _checked=False, d=dataset: self._show_result_callback(d)))

@@ -55,6 +55,12 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def format_raw_number(value: float) -> str:
+    """Preserve all meaningful IEEE-754 decimal digits in raw exports."""
+
+    return format(float(value), ".17g")
+
+
 def write_events(path: Path, events: list[dict[str, Any]]) -> None:
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=EVENT_FIELDS, delimiter="\t")
@@ -180,7 +186,10 @@ def write_brainflow_tsv(
         for sample_index in range(sample_count):
             writer.writerow(
                 [sample_index]
-                + [f"{float(raw_data[row, sample_index]):.10g}" for row in range(row_count)]
+                + [
+                    format_raw_number(raw_data[row, sample_index])
+                    for row in range(row_count)
+                ]
             )
     return definitions
 
