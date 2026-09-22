@@ -106,11 +106,10 @@ class OpenBCIWorkspaceManager:
         }
         if sys.platform == "win32":
             creation_flags = (
-                getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-                | getattr(subprocess, "DETACHED_PROCESS", 0)
+                getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+                | getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
             )
-            if creation_flags:
-                options["creationflags"] = creation_flags
+            options["creationflags"] = creation_flags
         process = subprocess.Popen(self._launch_command(state.executable), **options)
         return process.pid
 

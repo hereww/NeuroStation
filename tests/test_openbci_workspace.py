@@ -139,7 +139,7 @@ class OpenBCIWorkspaceManagerTests(unittest.TestCase):
                 str((root / "Datasets").resolve()),
                 options["env"]["NEUROSTATION_DATASETS"],
             )
-            self.assertTrue(options.get("creationflags", 0))
+            self.assertEqual(0x00000208, options["creationflags"])
 
 
 if __name__ == "__main__":
