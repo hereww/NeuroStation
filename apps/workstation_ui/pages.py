@@ -1027,6 +1027,7 @@ class HomePage(Page):
 
 
 class DevicesPage(Page):
+    DEFAULT_CHANNEL_POSITIONS = ("Fp1", "Fp2", "C3", "C4", "P7", "P8", "O1", "O2")
     ELECTRODE_POSITIONS = (
         "Fp1", "Fp2", "AF3", "AF4", "Fz", "Cz", "C3", "C4",
         "P3", "P4", "P7", "P8", "T7", "T8", "O1", "O2", "Oz",
@@ -1034,6 +1035,7 @@ class DevicesPage(Page):
     AUXILIARY_POSITIONS = ("ear_clip", "left_earlobe", "right_earlobe", "mastoid")
 
     calibration_test_requested = Signal(int)
+    calibration_test_stop_requested = Signal()
     calibration_save_requested = Signal(object)
 
     def __init__(
@@ -1045,6 +1047,7 @@ class DevicesPage(Page):
         save_calibration=None,
         channel_config=None,
         protocol_status="draft",
+        channel_test_stop=None,
     ):
         super().__init__(tr, tr("nav.devices"), tr("device.serial_note"))
         device = Section("OpenBCI Cyton · AUTO")
@@ -1099,6 +1102,13 @@ class DevicesPage(Page):
         self.calibration_signal = CalibrationSignalWidget()
         self.calibration_signal.set_empty_text(tr("device.calibration_signal_waiting"))
         signal_layout.addWidget(self.calibration_signal, 1)
+        self.calibration_test_toggle = action(
+            tr("device.calibration_start_test"),
+            self._toggle_channel_test,
+            True,
+        )
+        self.calibration_test_toggle.setObjectName("startChannelCalibrationButton")
+        signal_layout.addWidget(self.calibration_test_toggle)
         self.calibration_signal_status = label(tr("device.calibration_signal_idle"), "muted")
         signal_layout.addWidget(self.calibration_signal_status)
         visual_row.addWidget(signal_panel, 1)
@@ -1135,7 +1145,10 @@ class DevicesPage(Page):
             position.setEditable(True)
             position.addItem("", "")
             position.addItems(self.ELECTRODE_POSITIONS)
-            position.setCurrentText(str(channel.get("electrode_position") or ""))
+            configured_position = str(channel.get("electrode_position") or "").strip()
+            if configured_position.casefold() in {"", "unspecified", "未指定"}:
+                configured_position = self.DEFAULT_CHANNEL_POSITIONS[index]
+            position.setCurrentText(configured_position)
             if position.lineEdit() is not None:
                 position.lineEdit().setPlaceholderText(tr("device.calibration_position_placeholder"))
             position.currentTextChanged.connect(self._calibration_form_changed)
@@ -1200,12 +1213,21 @@ class DevicesPage(Page):
 
         if channel_test is not None:
             self.calibration_test_requested.connect(channel_test)
+        if channel_test_stop is not None:
+            self.calibration_test_stop_requested.connect(channel_test_stop)
         if save_calibration is not None:
             self.calibration_save_requested.connect(save_calibration)
 
     def _test_channel(self, channel_index: int) -> None:
         self._select_calibration_channel(channel_index)
         self.calibration_test_requested.emit(channel_index)
+
+    def _toggle_channel_test(self) -> None:
+        if getattr(self, "_channel_test_busy", False):
+            self.calibration_test_stop_requested.emit()
+            return
+        index = int(self.calibration_channel_selector.currentData() or 0)
+        self._test_channel(index)
 
     def _select_calibration_channel(self, channel_index: int) -> None:
         try:
@@ -1360,11 +1382,17 @@ class DevicesPage(Page):
         })
 
     def set_channel_test_busy(self, channel_index: int, busy: bool) -> None:
+        self._channel_test_busy = bool(busy)
         if busy and 0 <= int(channel_index) < 8:
             self._select_calibration_channel(int(channel_index))
         self.calibration_signal.set_active(busy)
         self.calibration_channel_selector.setEnabled(not busy)
         self.head_map.setEnabled(not busy)
+        self.calibration_test_toggle.setEnabled(True)
+        self.calibration_test_toggle.setText(
+            self.tr("device.calibration_stop_test") if busy
+            else self.tr("device.calibration_start_test")
+        )
         self.calibration_signal_status.setText(
             self.tr("device.calibration_signal_running") if busy
             else self.tr("device.calibration_signal_idle")
@@ -1372,6 +1400,11 @@ class DevicesPage(Page):
         for button in self.test_buttons:
             button.setEnabled(not busy)
         self.save_calibration_button.setEnabled(not busy)
+
+    def set_channel_test_stopping(self, stopping: bool) -> None:
+        if stopping:
+            self.calibration_test_toggle.setEnabled(False)
+            self.calibration_test_toggle.setText(self.tr("device.calibration_stopping_test"))
 
     def set_channel_test_result(self, channel_index: int, result: dict[str, Any]) -> None:
         if not 0 <= channel_index < len(self.test_statuses):

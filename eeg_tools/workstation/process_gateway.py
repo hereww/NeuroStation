@@ -196,15 +196,17 @@ class AcquisitionProcessGateway:
     def _run_preflight(
         self,
         *,
-        seconds: float = 3.0,
+        seconds: float | None = 3.0,
         port: str = "AUTO",
         sample_callback=None,
+        cancel_event=None,
     ) -> dict[str, Any]:
         from .preflight import run_cyton_preflight
         report = run_cyton_preflight(
             port or self.config.port,
             seconds=seconds,
             sample_callback=sample_callback,
+            cancel_event=cancel_event,
         )
         self._preflight_report = report.as_dict()
         return self._preflight_report
@@ -212,9 +214,10 @@ class AcquisitionProcessGateway:
     def test_cyton_channel(
         self,
         channel_number: int,
-        seconds: float = 3.0,
+        seconds: float | None = 3.0,
         port: str = "AUTO",
         sample_callback=None,
+        cancel_event=None,
     ) -> dict[str, Any]:
         """Run a short real Cyton sample and return one channel's checks."""
 
@@ -227,7 +230,18 @@ class AcquisitionProcessGateway:
                 seconds=seconds,
                 port=port or "AUTO",
                 sample_callback=sample_callback,
+                cancel_event=cancel_event,
             )
+        if str(report.get("status") or "") == "cancelled":
+            return {
+                "status": "cancelled",
+                "channel": int(channel_number),
+                "selected_port": report.get("selected_port", ""),
+                "report_status": "cancelled",
+                "report": report,
+                "metrics": {},
+                "detail": "Channel test stopped by operator.",
+            }
         checks = report.get("checks", [])
         channel_check = next(
             (

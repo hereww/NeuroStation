@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
+import threading
 
 from PySide6.QtCore import QObject, QSettings, QThread, QTimer, Qt, Signal, Slot
 from PySide6.QtGui import QIcon, QPalette, QKeySequence, QShortcut
@@ -48,6 +49,10 @@ class _ChannelCalibrationWorker(QObject):
         self.gateway = gateway
         self.channel_number = channel_number
         self.port = port
+        self.cancel_event = threading.Event()
+
+    def request_stop(self) -> None:
+        self.cancel_event.set()
 
     def _emit_samples(self, payload):
         if isinstance(payload, dict):
@@ -58,9 +63,10 @@ class _ChannelCalibrationWorker(QObject):
         try:
             result = self.gateway.test_cyton_channel(
                 self.channel_number,
-                seconds=3.0,
+                seconds=None,
                 port=self.port,
                 sample_callback=self._emit_samples,
+                cancel_event=self.cancel_event,
             )
         except Exception as error:
             self.finished.emit(error)
@@ -350,6 +356,7 @@ class MainWindow(QMainWindow):
                 self.save_channel_calibration,
                 self._channel_config_value(),
                 self._protocol_status(),
+                channel_test_stop=self.stop_calibrate_cyton_channel,
             ),
         )
         self._replace_page("users", self._build_users_page())
@@ -667,6 +674,15 @@ class MainWindow(QMainWindow):
         self.channel_calibration_thread.finished.connect(self._channel_calibration_thread_finished)
         self.channel_calibration_thread.start()
         self._update_controls()
+
+    def stop_calibrate_cyton_channel(self):
+        worker = self.channel_calibration_worker
+        page = self.pages.get("devices")
+        if worker is None:
+            return
+        worker.request_stop()
+        if page is not None:
+            page.set_channel_test_stopping(True)
 
     def _channel_calibration_finished(self, result):
         page = self.pages.get("devices")
@@ -1100,6 +1116,8 @@ class MainWindow(QMainWindow):
         if self.preflight_thread is not None:
             self.preflight_thread.quit()
             self.preflight_thread.wait(4000)
+        if self.channel_calibration_worker is not None:
+            self.channel_calibration_worker.request_stop()
         if self.channel_calibration_thread is not None:
             self.channel_calibration_thread.quit()
             self.channel_calibration_thread.wait(4000)

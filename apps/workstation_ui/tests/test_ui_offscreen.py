@@ -115,6 +115,11 @@ class QtOffscreenTests(unittest.TestCase):
         self.assertEqual(8, page.calibration_channel_selector.count())
         self.assertIsNotNone(page.head_map)
         self.assertIsNotNone(page.calibration_signal)
+        self.assertEqual("开始脑电测试", page.calibration_test_toggle.text())
+        self.assertEqual(
+            ("Fp1", "Fp2", "C3", "C4", "P7", "P8", "O1", "O2"),
+            tuple(box.currentText() for box in page.position_boxes),
+        )
         self.assertTrue(all(button.isEnabled() for button in page.test_buttons))
 
         page._select_calibration_channel(2)
@@ -127,9 +132,23 @@ class QtOffscreenTests(unittest.TestCase):
         self.assertEqual(2, page.calibration_signal.sample_count)
         self.assertEqual(1.0, page.calibration_signal.variation)
 
+        started = []
+        stopped = []
+        page.calibration_test_requested.disconnect()
+        page.calibration_test_stop_requested.disconnect()
+        page.calibration_test_requested.connect(started.append)
+        page.calibration_test_stop_requested.connect(lambda: stopped.append(True))
+        page._select_calibration_channel(2)
+        page.calibration_test_toggle.click()
+        self.assertEqual([2], started)
+
         page.set_channel_test_busy(2, True)
+        self.assertEqual("停止脑电测试", page.calibration_test_toggle.text())
+        page.calibration_test_toggle.click()
+        self.assertEqual([True], stopped)
         self.assertTrue(all(not button.isEnabled() for button in page.test_buttons))
         page.set_channel_test_busy(-1, False)
+        self.assertEqual("开始脑电测试", page.calibration_test_toggle.text())
         self.assertTrue(all(button.isEnabled() for button in page.test_buttons))
 
         page.set_channel_test_result(2, {

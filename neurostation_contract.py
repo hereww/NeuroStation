@@ -380,9 +380,10 @@ class CaptureGateway(Protocol):
     def test_cyton_channel(
         self,
         channel_number: int,
-        seconds: float = 3.0,
+        seconds: float | None = 3.0,
         port: str = "AUTO",
         sample_callback=None,
+        cancel_event=None,
     ) -> dict[str, Any]: ...
 
     def load_channel_calibration(self) -> dict[str, Any] | None: ...

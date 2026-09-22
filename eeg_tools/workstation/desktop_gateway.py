@@ -422,15 +422,17 @@ class DesktopGateway:
     def test_cyton_channel(
         self,
         channel_number: int,
-        seconds: float = 3.0,
+        seconds: float | None = 3.0,
         port: str = "AUTO",
         sample_callback=None,
+        cancel_event=None,
     ) -> dict[str, object]:
         return self._acquisition.test_cyton_channel(
             channel_number,
             seconds,
             port,
             sample_callback=sample_callback,
+            cancel_event=cancel_event,
         )
 
     def load_channel_calibration(self) -> dict[str, object] | None:

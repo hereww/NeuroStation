@@ -1,0 +1,7 @@
+*** Begin Patch
+*** Update File: apps/workstation_ui/pages.py
+@@
+-    ELECTRODE_POSITIONS = (
++    DEFAULT_CHANNEL_POSITIONS = ("Fp1", "Fp2", "C3", "C4", "P7", "P8", "O1", "O2")
++    ELECTRODE_POSITIONS = (
+*** End Patch
