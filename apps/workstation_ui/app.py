@@ -41,12 +41,17 @@ class _PreflightWorker(QObject):
 
 class _ChannelCalibrationWorker(QObject):
     finished = Signal(object)
+    samples = Signal(object)
 
     def __init__(self, gateway: CaptureGateway, channel_number: int, port: str):
         super().__init__()
         self.gateway = gateway
         self.channel_number = channel_number
         self.port = port
+
+    def _emit_samples(self, payload):
+        if isinstance(payload, dict):
+            self.samples.emit({"channel": self.channel_number, **payload})
 
     @Slot()
     def run(self):
@@ -55,6 +60,7 @@ class _ChannelCalibrationWorker(QObject):
                 self.channel_number,
                 seconds=3.0,
                 port=self.port,
+                sample_callback=self._emit_samples,
             )
         except Exception as error:
             self.finished.emit(error)
@@ -651,6 +657,9 @@ class MainWindow(QMainWindow):
         )
         self.channel_calibration_worker.moveToThread(self.channel_calibration_thread)
         self.channel_calibration_thread.started.connect(self.channel_calibration_worker.run)
+        self.channel_calibration_worker.samples.connect(
+            page.append_channel_calibration_samples
+        )
         self.channel_calibration_worker.finished.connect(self._channel_calibration_finished)
         self.channel_calibration_worker.finished.connect(self.channel_calibration_thread.quit)
         self.channel_calibration_worker.finished.connect(self.channel_calibration_worker.deleteLater)

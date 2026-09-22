@@ -16,6 +16,32 @@ def write_csv(path: Path, count: int = 3) -> None:
     path.write_text("\n".join(rows) + "\n", encoding="utf-8")
 
 
+def write_openbci_txt(path: Path) -> None:
+    headers = [
+        "Sample Index",
+        *(f"Column {index}" for index in range(1, 22)),
+        "Timestamp",
+        "Marker",
+        "Timestamp (Formatted)",
+    ]
+    row = ["0.0"] * len(headers)
+    row[22] = "1.7889205923351054E9"
+    row[23] = "0.0"
+    row[24] = "2026-09-09 10:23:12.335"
+    path.write_text(
+        "\n".join(
+            (
+                "%OpenBCI Raw EXG Data",
+                "%Number of channels = 8",
+                ", ".join(headers),
+                ", ".join(row),
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 @unittest.skipUnless(HAS_QT, "PySide6 not installed; pure logic tests still run")
 class OpenBCIImportUiTests(unittest.TestCase):
     @classmethod
@@ -134,27 +160,46 @@ class OpenBCIImportUiTests(unittest.TestCase):
             self.assertEqual("BrainFlow-RAW_0.csv", file_table.item(0, 0).text())
             raw_table = window.pages["result"].findChild(QTableWidget, "datasetRawPreviewTable")
             self.assertIsNotNone(raw_table)
-            self.assertEqual(25, raw_table.columnCount())
+            self.assertEqual(15, raw_table.columnCount())
             self.assertEqual(3, raw_table.rowCount())
             self.assertFalse(raw_table.item(0, 0).flags() & self.qt.ItemFlag.ItemIsEditable)
             self.assertEqual("1", raw_table.item(0, 0).text())
+            preview_columns = window.pages["result"].findChild(
+                QComboBox, "datasetPreviewColumns"
+            )
+            self.assertIsNotNone(preview_columns)
+            self.assertEqual("all", preview_columns.currentData())
+            preview_headers = [
+                raw_table.horizontalHeaderItem(column).text()
+                for column in range(raw_table.columnCount())
+            ]
+            self.assertTrue(any("eeg_ch1" in header for header in preview_headers))
+            self.assertFalse(any("other_ch1" in header for header in preview_headers))
+            self.assertFalse(any("analog_ch1" in header for header in preview_headers))
             raw_headers = [
                 raw_table.horizontalHeaderItem(column).text()
                 for column in range(raw_table.columnCount())
             ]
             self.assertEqual("序号", raw_headers[0])
             self.assertIn("package_num", raw_headers[1])
-            self.assertTrue(any("other_ch1" in header for header in raw_headers))
-            self.assertTrue(any("other_ch7" in header for header in raw_headers))
+            self.assertFalse(any("other_ch1" in header for header in raw_headers))
+            self.assertFalse(any("other_ch7" in header for header in raw_headers))
             self.assertTrue(any("analog_ch1" in header for header in raw_headers))
             self.assertTrue(any("analog_ch3" in header for header in raw_headers))
-            preview_columns = window.pages["result"].findChild(
-                QComboBox, "datasetPreviewColumns"
-            )
-            self.assertIsNotNone(preview_columns)
             self.assertEqual(
-                ("all", "other", "analog"),
+                ("all",),
                 tuple(preview_columns.itemData(index) for index in range(preview_columns.count())),
+            )
+            from dataclasses import replace
+            from apps.workstation_ui.gateway import CaptureMode
+            window.show_result(replace(dataset, imported=False, source=CaptureMode.CYTON))
+            result_page = window.pages["result"]
+            self.assertEqual("ResultPage", type(result_page).__name__)
+            result_preview = result_page.findChild(QComboBox, "datasetPreviewColumns")
+            self.assertIsNotNone(result_preview)
+            self.assertEqual(
+                ("all",),
+                tuple(result_preview.itemData(index) for index in range(result_preview.count())),
             )
             window.navigate("datasets")
             buttons = window.pages["datasets"].findChildren(QPushButton)
@@ -191,7 +236,7 @@ class OpenBCIImportUiTests(unittest.TestCase):
         self.assertEqual("其他辅助通道 1（other_ch1）", labels[6])
         self.assertEqual("模拟辅助通道 1（analog_ch1）", labels[7])
         self.assertEqual(
-            (0, 2, 3, 4, 6),
+            (0, 1, 2, 3, 4, 5),
             _preview_column_indexes(
                 (
                     "sample_index",
@@ -203,11 +248,11 @@ class OpenBCIImportUiTests(unittest.TestCase):
                     "other_ch1",
                     "analog_ch1",
                 ),
-                "other",
+                "all",
             ),
         )
         self.assertEqual(
-            (0, 2, 3, 4, 7),
+            (0, 1, 2, 3, 4),
             _preview_column_indexes(
                 (
                     "sample_index",
@@ -220,6 +265,22 @@ class OpenBCIImportUiTests(unittest.TestCase):
                     "analog_ch1",
                 ),
                 "analog",
+            ),
+        )
+        self.assertEqual(
+            (0, 1, 2, 3, 4),
+            _preview_column_indexes(
+                (
+                    "sample_index",
+                    "eeg_ch1",
+                    "package_num",
+                    "timestamp_s",
+                    "marker",
+                    "accel_x",
+                    "other_ch1",
+                    "analog_ch1",
+                ),
+                "other",
             ),
         )
         self.assertEqual(
@@ -239,6 +300,59 @@ class OpenBCIImportUiTests(unittest.TestCase):
                 ],
             ),
         )
+
+    def test_imported_brainflow_preview_preserves_openbci_timestamp_precision(self):
+        from apps.workstation_ui.pages import _read_data_preview
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            csv_path = root / "BrainFlow-RAW_2026-09-09_10-18-18_0.csv"
+            values = ["0"] * 24
+            values[22] = "1788920592.335105"
+            csv_path.write_text("\t".join(values) + "\n", encoding="utf-8")
+            write_openbci_txt(root / "OpenBCI-RAW-2026-09-09_10-23-12.txt")
+
+            headers, rows = _read_data_preview(csv_path)
+
+            self.assertEqual("timestamp_s", headers[22])
+            self.assertEqual("1788920592.3351054", rows[0][22])
+
+    def test_formal_preview_restores_integer_timestamp_precision_from_events(self):
+        from apps.workstation_ui.pages import _read_data_preview
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw_path = root / "raw_brainflow.tsv"
+            headers = [
+                "sample_index",
+                "package_num",
+                *(f"eeg_ch{index}" for index in range(1, 9)),
+                "accel_x",
+                "accel_y",
+                "accel_z",
+                *(f"other_ch{index}" for index in range(1, 8)),
+                *(f"analog_ch{index}" for index in range(1, 4)),
+                "timestamp_s",
+                "marker",
+            ]
+            rows = []
+            for sample_index in range(3):
+                values = [str(sample_index)] + ["0"] * 24
+                values[23] = "1789611232"
+                rows.append("\t".join(values))
+            raw_path.write_text("\t".join(headers) + "\n" + "\n".join(rows) + "\n", encoding="utf-8")
+            (root / "events.tsv").write_text(
+                "event_id\tevent_name\tsample_index\tsample_time_s\n"
+                "1\tacquisition_start\t0\t1789611232.6144743\n"
+                "2\tstimulus_onset\t2\t1789611232.6224743\n",
+                encoding="utf-8",
+            )
+
+            headers, rows = _read_data_preview(raw_path)
+
+            self.assertEqual("1789611232.6144743", rows[0][23])
+            self.assertEqual("1789611232.6184743", rows[1][23])
+            self.assertEqual("1789611232.6224743", rows[2][23])
 
     def test_dataset_list_sorts_by_original_openbci_recording_time(self):
         from PySide6.QtWidgets import QLabel

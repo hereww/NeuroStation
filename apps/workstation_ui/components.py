@@ -1,9 +1,10 @@
 """Reusable Qt presentation components."""
 from collections import deque
 from math import cos, exp, isfinite, pi, sin
+from pathlib import Path
 
-from PySide6.QtCore import Qt, QSize, QTimer
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
+from PySide6.QtCore import Qt, QSize, QTimer, QRect, Signal
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QWidget, QLabel, QPushButton, QToolButton, QVBoxLayout, QHBoxLayout, QGridLayout,
     QFrame, QStyle, QSizePolicy,
@@ -114,6 +115,257 @@ CHANNEL_COLORS = (
     (92, 143, 84),
     (92, 125, 143),
 )
+
+
+class HeadElectrodeMap(QWidget):
+    """Clickable schematic for assigning and reviewing scalp electrode sites."""
+
+    position_clicked = Signal(str)
+    channel_clicked = Signal(int)
+
+    SITE_COORDS = {
+        # The eight default sites follow OpenBCI GUI's
+        # electrode_positions_default.txt coordinate ratios.
+        "Fp1": (0.375, 0.084), "Fp2": (0.625, 0.084),
+        "C3": (0.300, 0.500), "C4": (0.700, 0.500),
+        "P7": (0.1575, 0.770), "P8": (0.8425, 0.770),
+        "O1": (0.375, 0.916), "O2": (0.625, 0.916),
+        "AF3": (0.335, 0.220), "AF4": (0.665, 0.220),
+        "Fz": (0.500, 0.220), "Cz": (0.500, 0.500),
+        "P3": (0.350, 0.720), "P4": (0.650, 0.720),
+        "T7": (0.084, 0.500), "T8": (0.916, 0.500),
+        "Oz": (0.500, 0.950),
+    }
+
+    def __init__(self, channel_names: tuple[str, ...] = CHANNEL_NAMES):
+        super().__init__()
+        self.setMinimumSize(330, 300)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setAccessibleName("Head electrode map")
+        self._channel_names = tuple(channel_names)
+        self._assignments = ["" for _ in self._channel_names]
+        self._selected_channel = 0
+        self._hint_text = "Click a site to assign the selected channel"
+        asset_path = Path(__file__).resolve().parents[2] / "assets" / "calibration_head_plot_v1.png"
+        self._head_plot = QPixmap(str(asset_path)) if asset_path.is_file() else QPixmap()
+
+    def set_hint_text(self, text: str) -> None:
+        self._hint_text = str(text or "")
+        self.update()
+
+    def set_assignments(self, assignments: tuple[str, ...] | list[str]) -> None:
+        values = [str(value or "").strip() for value in assignments]
+        self._assignments = (values + [""] * len(self._channel_names))[:len(self._channel_names)]
+        self.update()
+
+    def set_selected_channel(self, channel_index: int) -> None:
+        if 0 <= int(channel_index) < len(self._channel_names):
+            self._selected_channel = int(channel_index)
+            self.update()
+
+    def _site_points(self) -> dict[str, tuple[float, float]]:
+        plot = self._plot_rect()
+        return {
+            name: (plot.left() + x * plot.width(), plot.top() + y * plot.height())
+            for name, (x, y) in self.SITE_COORDS.items()
+        }
+
+    def _plot_rect(self) -> QRect:
+        bounds = self.rect().adjusted(12, 8, -12, -24)
+        side = min(bounds.width(), bounds.height())
+        return QRect(
+            bounds.left() + (bounds.width() - side) // 2,
+            bounds.top() + (bounds.height() - side) // 2,
+            side,
+            side,
+        )
+
+    def _channel_site(self, channel_index: int) -> str:
+        assignment = self._assignments[channel_index].strip()
+        if assignment.casefold() in {name.casefold() for name in self.SITE_COORDS}:
+            return next(
+                name for name in self.SITE_COORDS
+                if name.casefold() == assignment.casefold()
+            )
+        if channel_index < len(self._channel_names):
+            default = self._channel_names[channel_index]
+            if default in self.SITE_COORDS:
+                return default
+        return "Cz"
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() != Qt.MouseButton.LeftButton:
+            return super().mousePressEvent(event)
+        position = event.position()
+        nearest = min(
+            self._site_points().items(),
+            key=lambda item: (item[1][0] - position.x()) ** 2 + (item[1][1] - position.y()) ** 2,
+        )
+        distance = (nearest[1][0] - position.x()) ** 2 + (nearest[1][1] - position.y()) ** 2
+        if distance <= 28 ** 2:
+            selected = next(
+                (index for index, value in enumerate(self._assignments) if value.casefold() == nearest[0].casefold()),
+                None,
+            )
+            if selected is not None:
+                self.channel_clicked.emit(selected)
+            self.position_clicked.emit(nearest[0])
+        super().mousePressEvent(event)
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        dark = self.palette().window().color().lightness() < 128
+        muted = QColor("#a6b6c1" if dark else "#677781")
+        ink = QColor("#e0e9ef" if dark else "#263c48")
+        surface = QColor("#1b222a" if dark else "#f5f7f8")
+        accent = QColor("#69c8d3" if dark else "#087c88")
+        plot = self._plot_rect()
+        painter.setBrush(surface)
+        if not self._head_plot.isNull():
+            scaled = self._head_plot.scaled(
+                plot.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            target = QRect(
+                plot.left() + (plot.width() - scaled.width()) // 2,
+                plot.top() + (plot.height() - scaled.height()) // 2,
+                scaled.width(),
+                scaled.height(),
+            )
+            painter.drawPixmap(target, scaled)
+        else:
+            painter.setPen(QPen(muted, 2))
+            painter.drawEllipse(plot)
+        painter.setPen(QPen(muted, 1))
+        painter.drawText(8, self.height() - 7, self._hint_text)
+
+        points = self._site_points()
+        active_sites = {self._channel_site(index) for index in range(len(self._channel_names))}
+        # Keep extra anatomical sites available as click targets without
+        # changing the OpenBCI-like eight-channel visual at rest.
+        for name, (x, y) in points.items():
+            if name in active_sites:
+                continue
+            painter.setPen(QPen(muted, 1))
+            painter.setBrush(surface)
+            painter.drawEllipse(int(x - 4), int(y - 4), 8, 8)
+
+        for channel_index in range(len(self._channel_names)):
+            name = self._channel_site(channel_index)
+            x, y = points[name]
+            selected = channel_index == self._selected_channel
+            color = QColor(*CHANNEL_COLORS[channel_index % len(CHANNEL_COLORS)])
+            radius = max(11, int(plot.width() * 0.028))
+            painter.setPen(QPen(accent if selected else color, 3 if selected else 1))
+            painter.setBrush(color)
+            painter.drawEllipse(int(x - radius), int(y - radius), radius * 2, radius * 2)
+            painter.setPen(QPen(QColor("#ffffff"), 1))
+            painter.drawText(
+                QRect(int(x - radius), int(y - radius), radius * 2, radius * 2),
+                Qt.AlignmentFlag.AlignCenter,
+                str(channel_index + 1),
+            )
+            painter.setPen(QPen(ink, 1))
+            painter.drawText(int(x - 14), int(y + radius + 16), name)
+
+
+class CalibrationSignalWidget(QWidget):
+    """Single-channel rolling trace used while confirming a physical electrode."""
+
+    def __init__(self):
+        super().__init__()
+        self.setMinimumSize(360, 220)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._values = deque(maxlen=1250)
+        self._channel_label = "CH1"
+        self._status = ""
+        self._active = False
+        self._empty_text = "Waiting for calibration samples"
+
+    def set_empty_text(self, text: str) -> None:
+        self._empty_text = str(text or "")
+        self.update()
+
+    def set_channel(self, channel_label: str) -> None:
+        self._channel_label = str(channel_label or "CH1")
+        self.update()
+
+    def set_status(self, status: str) -> None:
+        self._status = str(status or "")
+        self.update()
+
+    def set_active(self, active: bool) -> None:
+        self._active = bool(active)
+        if active:
+            self._values.clear()
+        self.update()
+
+    def clear(self) -> None:
+        self._values.clear()
+        self.update()
+
+    def append_samples(self, values: list[float] | tuple[float, ...]) -> None:
+        for value in values:
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                continue
+            if isfinite(number):
+                self._values.append(number)
+        self.update()
+
+    @property
+    def sample_count(self) -> int:
+        return len(self._values)
+
+    @property
+    def variation(self) -> float:
+        if not self._values:
+            return 0.0
+        return max(self._values) - min(self._values)
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        dark = self.palette().window().color().lightness() < 128
+        grid = QColor("#34434e" if dark else "#dfe6e9")
+        ink = QColor("#e0e9ef" if dark else "#263c48")
+        muted = QColor("#a6b6c1" if dark else "#677781")
+        accent = QColor("#69c8d3" if dark else "#087c88")
+        left, right = 48, max(55, self.width() - 14)
+        top, bottom = 34, max(48, self.height() - 24)
+        center = (top + bottom) / 2
+        painter.setPen(ink)
+        painter.drawText(10, 19, self._channel_label)
+        painter.setPen(muted)
+        painter.drawText(56, 19, self._status)
+        painter.setPen(QPen(grid, 1))
+        painter.drawRect(int(left), int(top), int(right - left), int(bottom - top))
+        painter.drawLine(int(left), int(center), int(right), int(center))
+        for tick in range(1, 5):
+            x = left + (right - left) * tick / 5
+            painter.drawLine(int(x), int(top), int(x), int(bottom))
+        values = list(self._values)
+        if values:
+            scale = max(25.0, max(abs(value) for value in values) * 1.15)
+            path = QPainterPath()
+            for index, value in enumerate(values):
+                x = left + (right - left) * index / max(1, len(values) - 1)
+                y = center - max(-scale, min(scale, value)) / scale * (bottom - top) * 0.46
+                if index == 0:
+                    path.moveTo(x, y)
+                else:
+                    path.lineTo(x, y)
+            painter.setPen(QPen(accent, 1.5 if self._active else 1.0))
+            painter.drawPath(path)
+        else:
+            painter.setPen(muted)
+            painter.drawText(int(left + 12), int(center + 4), self._empty_text)
+        painter.setPen(muted)
+        painter.drawText(int(left), self.height() - 7, "-5 s")
+        painter.drawText(int(right - 12), self.height() - 7, "0 s")
 
 
 class _Biquad:

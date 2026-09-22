@@ -191,8 +191,21 @@ class AcquisitionProcessGateway:
         return command
 
     def preflight_cyton(self, seconds: float = 3.0, port: str = "AUTO") -> dict[str, Any]:
+        return self._run_preflight(seconds=seconds, port=port)
+
+    def _run_preflight(
+        self,
+        *,
+        seconds: float = 3.0,
+        port: str = "AUTO",
+        sample_callback=None,
+    ) -> dict[str, Any]:
         from .preflight import run_cyton_preflight
-        report = run_cyton_preflight(port or self.config.port, seconds=seconds)
+        report = run_cyton_preflight(
+            port or self.config.port,
+            seconds=seconds,
+            sample_callback=sample_callback,
+        )
         self._preflight_report = report.as_dict()
         return self._preflight_report
 
@@ -201,12 +214,20 @@ class AcquisitionProcessGateway:
         channel_number: int,
         seconds: float = 3.0,
         port: str = "AUTO",
+        sample_callback=None,
     ) -> dict[str, Any]:
         """Run a short real Cyton sample and return one channel's checks."""
 
         if not 1 <= int(channel_number) <= 8:
             raise ValueError("validation.calibration_channel")
-        report = self.preflight_cyton(seconds=seconds, port=port or "AUTO")
+        if sample_callback is None:
+            report = self.preflight_cyton(seconds=seconds, port=port or "AUTO")
+        else:
+            report = self._run_preflight(
+                seconds=seconds,
+                port=port or "AUTO",
+                sample_callback=sample_callback,
+            )
         checks = report.get("checks", [])
         channel_check = next(
             (

@@ -112,7 +112,20 @@ class QtOffscreenTests(unittest.TestCase):
         page = self.window.pages["devices"]
         self.assertEqual(8, page.calibration_table.rowCount())
         self.assertEqual(8, len(page.test_buttons))
+        self.assertEqual(8, page.calibration_channel_selector.count())
+        self.assertIsNotNone(page.head_map)
+        self.assertIsNotNone(page.calibration_signal)
         self.assertTrue(all(button.isEnabled() for button in page.test_buttons))
+
+        page._select_calibration_channel(2)
+        page._assign_map_position("C3")
+        self.assertEqual("C3", page.position_boxes[2].currentText())
+        page.append_channel_calibration_samples({
+            "channel": 3,
+            "channels": [[1.0], [2.0], [3.0, 4.0], [4.0], [5.0], [6.0], [7.0], [8.0]],
+        })
+        self.assertEqual(2, page.calibration_signal.sample_count)
+        self.assertEqual(1.0, page.calibration_signal.variation)
 
         page.set_channel_test_busy(2, True)
         self.assertTrue(all(not button.isEnabled() for button in page.test_buttons))

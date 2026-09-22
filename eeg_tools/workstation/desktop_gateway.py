@@ -424,8 +424,14 @@ class DesktopGateway:
         channel_number: int,
         seconds: float = 3.0,
         port: str = "AUTO",
+        sample_callback=None,
     ) -> dict[str, object]:
-        return self._acquisition.test_cyton_channel(channel_number, seconds, port)
+        return self._acquisition.test_cyton_channel(
+            channel_number,
+            seconds,
+            port,
+            sample_callback=sample_callback,
+        )
 
     def load_channel_calibration(self) -> dict[str, object] | None:
         path = default_user_channel_config_path()

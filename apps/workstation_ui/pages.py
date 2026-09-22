@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 import json
 from pathlib import Path
 import math
@@ -26,6 +27,8 @@ from .components import (
     AppTile,
     StaticTargets,
     WaveformWidget,
+    HeadElectrodeMap,
+    CalibrationSignalWidget,
     action,
     label,
 )
@@ -347,6 +350,190 @@ def _headerless_brainflow_raw_columns(
     return None
 
 
+def _fixed_decimal_text(value: str) -> str:
+    """Render scientific notation without losing the source precision."""
+
+    try:
+        decimal = Decimal(value.strip())
+    except (InvalidOperation, ValueError):
+        return value
+    if not decimal.is_finite():
+        return value
+    return format(decimal, "f")
+
+
+def _openbci_raw_timestamp_values(path: Path, limit: int) -> list[str]:
+    """Read high-precision timestamps from the paired OpenBCI GUI export."""
+
+    candidates = sorted(path.parent.glob("OpenBCI-RAW-*.txt"))
+    for candidate in candidates:
+        values: list[str] = []
+        timestamp_index: int | None = None
+        try:
+            with candidate.open(
+                "r", encoding="utf-8-sig", errors="replace", newline=""
+            ) as handle:
+                reader = csv.reader(handle, delimiter=",")
+                for row in reader:
+                    if not row or not any(cell.strip() for cell in row):
+                        continue
+                    first = row[0].strip()
+                    if first.startswith("%"):
+                        continue
+                    if timestamp_index is None:
+                        try:
+                            float(first)
+                        except ValueError:
+                            timestamp_index = next(
+                                (
+                                    index
+                                    for index, header in enumerate(row)
+                                    if header.strip().casefold() == "timestamp"
+                                ),
+                                None,
+                            )
+                            continue
+                        timestamp_index = 22
+                    try:
+                        float(first)
+                    except ValueError:
+                        continue
+                    if timestamp_index is None or timestamp_index >= len(row):
+                        continue
+                    values.append(_fixed_decimal_text(row[timestamp_index]))
+                    if len(values) >= limit:
+                        break
+        except (OSError, UnicodeError, csv.Error):
+            continue
+        if values:
+            return values
+    return []
+
+
+def _restore_imported_timestamp_precision(
+    path: Path, headers: tuple[str, ...], rows: list[list[str]]
+) -> None:
+    """Use the paired GUI export when BrainFlow CSV rounded timestamps."""
+
+    if not re.fullmatch(r"BrainFlow-RAW_.*\.csv", path.name, re.IGNORECASE):
+        return
+    try:
+        timestamp_index = next(
+            index
+            for index, header in enumerate(headers)
+            if header.casefold() == "timestamp_s"
+        )
+    except StopIteration:
+        return
+    source_values = _openbci_raw_timestamp_values(path, len(rows))
+    if not source_values or not rows:
+        return
+    try:
+        if abs(float(rows[0][timestamp_index]) - float(source_values[0])) > 1e-3:
+            return
+    except (IndexError, ValueError):
+        return
+    for row, value in zip(rows, source_values):
+        if timestamp_index < len(row):
+            row[timestamp_index] = value
+
+
+def _read_formal_timestamp_anchors(path: Path) -> list[tuple[int, str]]:
+    """Read high-precision event timestamps saved beside a formal dataset."""
+
+    events_path = path.parent / "events.tsv"
+    if not events_path.is_file():
+        return []
+    anchors: dict[int, str] = {}
+    try:
+        with events_path.open(
+            "r", encoding="utf-8-sig", errors="replace", newline=""
+        ) as handle:
+            for record in csv.DictReader(handle, delimiter="\t"):
+                try:
+                    sample_index = int(str(record.get("sample_index") or "").strip())
+                    timestamp = _fixed_decimal_text(
+                        str(record.get("sample_time_s") or "").strip()
+                    )
+                    if "." not in timestamp:
+                        continue
+                    float(timestamp)
+                except (TypeError, ValueError, InvalidOperation):
+                    continue
+                anchors[sample_index] = timestamp
+    except (OSError, UnicodeError, csv.Error):
+        return []
+    return sorted(anchors.items())
+
+
+def _restore_formal_timestamp_precision(
+    path: Path, headers: tuple[str, ...], rows: list[list[str]]
+) -> None:
+    """Recover preview precision for old formal files that stored integer timestamps.
+
+    Older packaged builds wrote the device timestamp column as whole seconds,
+    while the adjacent event log retained precise sample timestamps.  Use the
+    event timestamps only for the read-only preview; never rewrite the raw file.
+    """
+
+    if path.name.casefold() != "raw_brainflow.tsv" or not rows:
+        return
+    try:
+        timestamp_index = next(
+            index
+            for index, header in enumerate(headers)
+            if header.casefold() == "timestamp_s"
+        )
+        sample_index_column = next(
+            index
+            for index, header in enumerate(headers)
+            if header.casefold() == "sample_index"
+        )
+    except StopIteration:
+        return
+    if any(
+        timestamp_index >= len(row)
+        or "." in str(row[timestamp_index]).strip()
+        for row in rows
+    ):
+        return
+    anchors = _read_formal_timestamp_anchors(path)
+    if len(anchors) < 2:
+        return
+    anchor_values = dict(anchors)
+
+    def interpolate(sample_index: int) -> str | None:
+        if sample_index <= anchors[0][0]:
+            left, right = anchors[0], anchors[1]
+        elif sample_index >= anchors[-1][0]:
+            left, right = anchors[-2], anchors[-1]
+        else:
+            left, right = next(
+                (pair for pair in zip(anchors, anchors[1:]) if pair[0][0] <= sample_index <= pair[1][0]),
+                (anchors[-2], anchors[-1]),
+            )
+        left_index, left_value = left
+        right_index, right_value = right
+        if right_index == left_index:
+            return left_value
+        ratio = Decimal(sample_index - left_index) / Decimal(right_index - left_index)
+        value = Decimal(left_value) + (Decimal(right_value) - Decimal(left_value)) * ratio
+        text = format(value, "f")
+        return text.rstrip("0").rstrip(".") if "." in text else text
+
+    for row in rows:
+        try:
+            sample_index = int(str(row[sample_index_column]).strip())
+        except (IndexError, ValueError):
+            continue
+        if sample_index in anchor_values:
+            row[timestamp_index] = anchor_values[sample_index]
+            continue
+        value = interpolate(sample_index)
+        if value is not None:
+            row[timestamp_index] = value
+
+
 def _read_data_preview(path: Path, limit: int = 100) -> tuple[tuple[str, ...], list[list[str]]]:
     """Read only a bounded prefix for the Excel-like read-only data preview."""
 
@@ -391,7 +578,10 @@ def _read_data_preview(path: Path, limit: int = 100) -> tuple[tuple[str, ...], l
             f"Column {index}" for index in range(len(headers) + 1, column_count + 1)
         )
     normalized = [row + [""] * (column_count - len(row)) for row in rows]
-    return tuple(headers[:column_count]), normalized
+    normalized_headers = tuple(headers[:column_count])
+    _restore_imported_timestamp_precision(path, normalized_headers, normalized)
+    _restore_formal_timestamp_precision(path, normalized_headers, normalized)
+    return normalized_headers, normalized
 
 
 def _sort_preview_rows_by_sample_index(
@@ -462,22 +652,133 @@ def _preview_header_labels(tr, headers: tuple[str, ...]) -> tuple[str, ...]:
 
 
 def _preview_column_indexes(headers: tuple[str, ...], group: str) -> tuple[int, ...]:
-    """Keep identity fields visible while narrowing a raw-preview field group."""
+    """Select preview columns without changing their source-file order."""
 
+    hidden_prefixes = ("other_ch", "analog_ch")
     if group == "all":
-        return tuple(range(len(headers)))
-    prefixes = {
-        "other": ("other_ch",),
-        "analog": ("analog_ch",),
-    }
+        return tuple(
+            index
+            for index, header in enumerate(headers)
+            if not header.casefold().startswith(hidden_prefixes)
+        )
     required = {"sample_index", "package_num", "timestamp_s", "marker"}
-    selected_prefixes = prefixes.get(group, ())
     return tuple(
         index
         for index, header in enumerate(headers)
-        if header.casefold() in required
-        or header.casefold().startswith(selected_prefixes)
+        if not header.casefold().startswith(hidden_prefixes)
+        and (
+            header.casefold() in required
+            or header.casefold().startswith("eeg_ch")
+        )
     )
+
+
+def _dataset_raw_preview_section(tr, result: Dataset) -> Section | None:
+    raw_names = _dataset_raw_file_names(result)
+    if not raw_names:
+        return None
+
+    preview = Section(tr("dataset_summary.data_preview"))
+    preview.layout.addWidget(label(tr("dataset_summary.data_preview_note"), "muted"))
+    preview_file = QComboBox()
+    preview_file.addItems(list(raw_names))
+    preview_file.setAccessibleName(tr("dataset_summary.preview_file"))
+    preview.layout.addWidget(preview_file)
+    preview_columns = QComboBox()
+    preview_columns.setObjectName("datasetPreviewColumns")
+    preview_columns.setAccessibleName(tr("dataset_summary.preview_columns"))
+    preview_columns_form = QFormLayout()
+    preview_columns_form.addRow(
+        tr("dataset_summary.preview_columns"), preview_columns
+    )
+    preview.layout.addLayout(preview_columns_form)
+
+    headers, values = _read_data_preview(result.path / raw_names[0])
+    preview_table = _readonly_table(headers or (tr("dataset_summary.no_columns"),))
+    preview_table.setObjectName("datasetRawPreviewTable")
+    preview_table.setAccessibleName(tr("dataset_summary.raw_preview_table"))
+    preview.layout.addWidget(preview_table)
+
+    state_headers = headers
+    state_values = _sort_preview_rows_by_sample_index(headers, values)
+
+    def render_preview_table() -> None:
+        preview_table.setSortingEnabled(False)
+        preview_table.clearContents()
+        indexes = _preview_column_indexes(
+            state_headers, str(preview_columns.currentData() or "all")
+        )
+        if not state_headers:
+            preview_table.setColumnCount(1)
+            preview_table.setHorizontalHeaderLabels(
+                [tr("dataset_summary.no_columns")]
+            )
+            preview_table.setRowCount(0)
+            return
+
+        display_headers = _preview_header_labels(tr, state_headers)
+        preview_table.setColumnCount(len(indexes) + 1)
+        preview_table.setHorizontalHeaderLabels(
+            [tr("dataset_summary.column.preview_row")]
+            + [display_headers[index] for index in indexes]
+        )
+        for column, index in enumerate(indexes, start=1):
+            header_item = preview_table.horizontalHeaderItem(column)
+            if header_item is not None:
+                header_item.setToolTip(str(state_headers[index]))
+        row_header = preview_table.horizontalHeaderItem(0)
+        if row_header is not None:
+            row_header.setToolTip(tr("dataset_summary.column.preview_row"))
+        preview_table.setRowCount(0)
+        for row_number, values_row in enumerate(state_values, start=1):
+            row = preview_table.rowCount()
+            preview_table.insertRow(row)
+            preview_table.setItem(row, 0, _table_item(row_number))
+            for column, index in enumerate(indexes, start=1):
+                value = values_row[index] if index < len(values_row) else ""
+                preview_table.setItem(row, column, _table_item(value))
+        preview_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.ResizeToContents
+        )
+        preview_table.horizontalScrollBar().setValue(
+            preview_table.horizontalScrollBar().minimum()
+        )
+        preview_table.setMinimumHeight(
+            min(440, max(108, 30 * min(10, max(1, len(state_values))) + 44))
+        )
+        preview_table.setSortingEnabled(False)
+
+    def set_preview_table(new_headers: tuple[str, ...], new_values: list[list[str]]) -> None:
+        nonlocal state_headers, state_values
+        state_headers = new_headers
+        state_values = _sort_preview_rows_by_sample_index(new_headers, new_values)
+        current_group = preview_columns.currentData()
+        previous_group = str(current_group) if current_group else ""
+        groups = [("all", len(_preview_column_indexes(new_headers, "all")))]
+        preview_columns.blockSignals(True)
+        preview_columns.clear()
+        for group, count in groups:
+            preview_columns.addItem(
+                tr(f"dataset_summary.preview_column_group.{group}", count=count),
+                group,
+            )
+        target_group = previous_group
+        if not target_group:
+            target_group = "all"
+        target_index = preview_columns.findData(target_group)
+        preview_columns.setCurrentIndex(max(0, target_index))
+        preview_columns.blockSignals(False)
+        render_preview_table()
+
+    def preview_file_changed(name: str) -> None:
+        set_preview_table(*_read_data_preview(result.path / name))
+
+    set_preview_table(headers, values)
+    preview_file.currentTextChanged.connect(preview_file_changed)
+    preview_columns.currentIndexChanged.connect(
+        lambda _index: render_preview_table()
+    )
+    return preview
 
 
 class UserDialog(QDialog):
@@ -775,6 +1076,35 @@ class DevicesPage(Page):
         port_form.addRow(tr("device.calibration_port"), self.calibration_port)
         calibration.layout.addLayout(port_form)
 
+        visual = Section(tr("device.calibration_visual_title"))
+        visual.layout.addWidget(label(tr("device.calibration_visual_note"), "muted"))
+        visual_row = QHBoxLayout()
+        self.head_map = HeadElectrodeMap()
+        self.head_map.set_hint_text(tr("device.calibration_map_hint"))
+        self.head_map.position_clicked.connect(self._assign_map_position)
+        self.head_map.channel_clicked.connect(self._select_calibration_channel)
+        visual_row.addWidget(self.head_map, 1)
+        signal_panel = QWidget()
+        signal_layout = QVBoxLayout(signal_panel)
+        signal_layout.setContentsMargins(0, 0, 0, 0)
+        current_form = QFormLayout()
+        self.calibration_channel_selector = QComboBox()
+        for index in range(8):
+            self.calibration_channel_selector.addItem(f"CH{index + 1}", index)
+        self.calibration_channel_selector.currentIndexChanged.connect(
+            self._selected_channel_changed
+        )
+        current_form.addRow(tr("device.calibration_selected_channel"), self.calibration_channel_selector)
+        signal_layout.addLayout(current_form)
+        self.calibration_signal = CalibrationSignalWidget()
+        self.calibration_signal.set_empty_text(tr("device.calibration_signal_waiting"))
+        signal_layout.addWidget(self.calibration_signal, 1)
+        self.calibration_signal_status = label(tr("device.calibration_signal_idle"), "muted")
+        signal_layout.addWidget(self.calibration_signal_status)
+        visual_row.addWidget(signal_panel, 1)
+        visual.layout.addLayout(visual_row)
+        calibration.layout.addWidget(visual)
+
         self.calibration_table = QTableWidget(8, 5)
         self.calibration_table.setObjectName("channelCalibrationTable")
         self.calibration_table.setHorizontalHeaderLabels([
@@ -816,12 +1146,13 @@ class DevicesPage(Page):
             self.calibration_table.setCellWidget(index, 3, result_label)
             test_button = action(
                 tr("device.calibration_test"),
-                lambda _checked=False, channel_index=index: self.calibration_test_requested.emit(channel_index),
+                lambda _checked=False, channel_index=index: self._test_channel(channel_index),
             )
             self.test_buttons.append(test_button)
             self.calibration_table.setCellWidget(index, 4, test_button)
             self.calibration_table.setRowHeight(index, 38)
         calibration.layout.addWidget(self.calibration_table)
+        self._sync_head_map()
 
         auxiliary_form = QFormLayout()
         self.reference_position = self._editable_choice(
@@ -872,6 +1203,73 @@ class DevicesPage(Page):
         if save_calibration is not None:
             self.calibration_save_requested.connect(save_calibration)
 
+    def _test_channel(self, channel_index: int) -> None:
+        self._select_calibration_channel(channel_index)
+        self.calibration_test_requested.emit(channel_index)
+
+    def _select_calibration_channel(self, channel_index: int) -> None:
+        try:
+            index = int(channel_index)
+        except (TypeError, ValueError):
+            return
+        if not 0 <= index < self.calibration_channel_selector.count():
+            return
+        if self.calibration_channel_selector.currentIndex() != index:
+            self.calibration_channel_selector.setCurrentIndex(index)
+        else:
+            self._selected_channel_changed(index)
+
+    def _selected_channel_changed(self, index: int) -> None:
+        index = int(index)
+        self.head_map.set_selected_channel(index)
+        position = ""
+        if hasattr(self, "position_boxes") and index < len(self.position_boxes):
+            position = self.position_boxes[index].currentText().strip()
+        suffix = f" · {position}" if position else ""
+        self.calibration_signal.set_channel(f"CH{index + 1}{suffix}")
+
+    def _assign_map_position(self, position: str) -> None:
+        index = int(self.calibration_channel_selector.currentData() or 0)
+        if not 0 <= index < len(self.position_boxes):
+            return
+        self.position_boxes[index].setCurrentText(str(position))
+        self._select_calibration_channel(index)
+        self.calibration_status.setText(
+            self.tr(
+                "device.calibration_position_assigned",
+                channel=f"CH{index + 1}",
+                position=position,
+            )
+        )
+
+    def _sync_head_map(self) -> None:
+        if hasattr(self, "head_map"):
+            self.head_map.set_assignments([box.currentText() for box in self.position_boxes])
+
+    def append_channel_calibration_samples(self, payload: dict[str, Any]) -> None:
+        if not isinstance(payload, dict):
+            return
+        try:
+            channel = int(payload.get("channel", 0)) - 1
+        except (TypeError, ValueError):
+            return
+        channels = payload.get("channels")
+        if not 0 <= channel < 8 or not isinstance(channels, list) or channel >= len(channels):
+            return
+        values = channels[channel]
+        if not isinstance(values, list):
+            return
+        self._select_calibration_channel(channel)
+        self.calibration_signal.append_samples(values)
+        self.calibration_signal_status.setText(
+            self.tr(
+                "device.calibration_signal_live",
+                channel=f"CH{channel + 1}",
+                samples=self.calibration_signal.sample_count,
+                variation=f"{self.calibration_signal.variation:.2f} uV",
+            )
+        )
+
     @staticmethod
     def _editable_choice(values: tuple[str, ...], current: str, placeholder: str) -> QComboBox:
         combo = QComboBox()
@@ -898,7 +1296,8 @@ class DevicesPage(Page):
             self.calibration_status.setText(self.tr("device.calibration_loaded", value=path))
 
     def _calibration_form_changed(self, *_args) -> None:
-        return
+        self._sync_head_map()
+        self._selected_channel_changed(self.calibration_channel_selector.currentIndex())
 
     def _save_calibration(self) -> None:
         positions = [box.currentText().strip() for box in self.position_boxes]
@@ -961,6 +1360,15 @@ class DevicesPage(Page):
         })
 
     def set_channel_test_busy(self, channel_index: int, busy: bool) -> None:
+        if busy and 0 <= int(channel_index) < 8:
+            self._select_calibration_channel(int(channel_index))
+        self.calibration_signal.set_active(busy)
+        self.calibration_channel_selector.setEnabled(not busy)
+        self.head_map.setEnabled(not busy)
+        self.calibration_signal_status.setText(
+            self.tr("device.calibration_signal_running") if busy
+            else self.tr("device.calibration_signal_idle")
+        )
         for button in self.test_buttons:
             button.setEnabled(not busy)
         self.save_calibration_button.setEnabled(not busy)
@@ -980,6 +1388,9 @@ class DevicesPage(Page):
             saturation=f"{float(metrics.get('saturation_fraction', 0.0) or 0.0) * 100:.1f}%",
         )
         self.test_statuses[channel_index].setText(detail)
+        self.calibration_signal.set_active(False)
+        self.calibration_signal.set_status(detail)
+        self.calibration_signal_status.setText(detail)
         selected_port = str(result.get("selected_port") or "").strip()
         if selected_port:
             self.calibration_port.setText(selected_port)
@@ -1575,6 +1986,9 @@ class ResultPage(Page):
         denoising = _denoising_section(tr, result)
         if denoising is not None:
             self.layout.addWidget(denoising)
+        raw_preview = _dataset_raw_preview_section(tr, result)
+        if raw_preview is not None:
+            self.layout.addWidget(raw_preview)
         path = Section(tr(path_key))
         path_value = str(result.path)
         path.layout.addWidget(label(path_value, "path"))
@@ -1683,108 +2097,11 @@ class DatasetSummaryPage(Page):
         files.layout.addWidget(file_table)
         self.layout.addWidget(files)
 
-        raw_names = _dataset_raw_file_names(result)
-        if raw_names:
-            preview = Section(tr("dataset_summary.data_preview"))
-            preview.layout.addWidget(label(tr("dataset_summary.data_preview_note"), "muted"))
-            self.preview_file = QComboBox()
-            self.preview_file.addItems(list(raw_names))
-            self.preview_file.setAccessibleName(tr("dataset_summary.preview_file"))
-            preview.layout.addWidget(self.preview_file)
-            self.preview_columns = QComboBox()
-            self.preview_columns.setObjectName("datasetPreviewColumns")
-            self.preview_columns.setAccessibleName(tr("dataset_summary.preview_columns"))
-            preview_columns_form = QFormLayout()
-            preview_columns_form.addRow(
-                tr("dataset_summary.preview_columns"), self.preview_columns
-            )
-            preview.layout.addLayout(preview_columns_form)
-            headers, values = _read_data_preview(result.path / raw_names[0])
-            self.preview_table = _readonly_table(headers or (tr("dataset_summary.no_columns"),))
-            self.preview_table.setObjectName("datasetRawPreviewTable")
-            self.preview_table.setAccessibleName(tr("dataset_summary.raw_preview_table"))
-            preview.layout.addWidget(self.preview_table)
-            self._set_preview_table(headers, values)
-            self.preview_file.currentTextChanged.connect(self._preview_file_changed)
-            self.preview_columns.currentIndexChanged.connect(
-                lambda _index: self._render_preview_table()
-            )
-            self.layout.addWidget(preview)
+        raw_preview = _dataset_raw_preview_section(tr, result)
+        if raw_preview is not None:
+            self.layout.addWidget(raw_preview)
         self.layout.addWidget(action(tr("app.datasets"), lambda: navigate("datasets"), True))
         self.layout.addStretch()
-
-    def _preview_file_changed(self, name: str) -> None:
-        headers, values = _read_data_preview(self._result_path / name)
-        self._set_preview_table(headers, values)
-
-    def _set_preview_table(
-        self, headers: tuple[str, ...], values: list[list[str]]
-    ) -> None:
-        self._preview_headers = headers
-        self._preview_values = _sort_preview_rows_by_sample_index(headers, values)
-        previous_group = str(self.preview_columns.currentData() or "all")
-        groups = [("all", len(headers))]
-        for group, prefix in (("other", "other_ch"), ("analog", "analog_ch")):
-            count = sum(header.casefold().startswith(prefix) for header in headers)
-            if count:
-                groups.append((group, count))
-        self.preview_columns.blockSignals(True)
-        self.preview_columns.clear()
-        for group, count in groups:
-            self.preview_columns.addItem(
-                self.tr(f"dataset_summary.preview_column_group.{group}", count=count),
-                group,
-            )
-        self.preview_columns.setCurrentIndex(
-            max(0, self.preview_columns.findData(previous_group))
-        )
-        self.preview_columns.blockSignals(False)
-        self._render_preview_table()
-
-    def _render_preview_table(self) -> None:
-        table = self.preview_table
-        headers = self._preview_headers
-        values = self._preview_values
-        table.setSortingEnabled(False)
-        table.clearContents()
-        indexes = _preview_column_indexes(
-            headers, str(self.preview_columns.currentData() or "all")
-        )
-        if not headers:
-            table.setColumnCount(1)
-            table.setHorizontalHeaderLabels([self.tr("dataset_summary.no_columns")])
-            table.setRowCount(0)
-            return
-
-        display_headers = _preview_header_labels(self.tr, headers)
-        table.setColumnCount(len(indexes) + 1)
-        table.setHorizontalHeaderLabels(
-            [self.tr("dataset_summary.column.preview_row")]
-            + [display_headers[index] for index in indexes]
-        )
-        for column, index in enumerate(indexes, start=1):
-            raw_name = headers[index]
-            header_item = table.horizontalHeaderItem(column)
-            if header_item is not None:
-                header_item.setToolTip(str(raw_name))
-        row_header = table.horizontalHeaderItem(0)
-        if row_header is not None:
-            row_header.setToolTip(self.tr("dataset_summary.column.preview_row"))
-        table.setRowCount(0)
-        for row_number, values_row in enumerate(values, start=1):
-            row = table.rowCount()
-            table.insertRow(row)
-            table.setItem(row, 0, _table_item(row_number))
-            for column, index in enumerate(indexes, start=1):
-                value = values_row[index] if index < len(values_row) else ""
-                table.setItem(row, column, _table_item(value))
-        table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.ResizeToContents
-        )
-        table.setMinimumHeight(
-            min(440, max(108, 30 * min(10, max(1, len(values))) + 44))
-        )
-        table.setSortingEnabled(False)
 
 
 class _DatasetCollectionPage(Page):

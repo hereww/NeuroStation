@@ -382,6 +382,7 @@ class CaptureGateway(Protocol):
         channel_number: int,
         seconds: float = 3.0,
         port: str = "AUTO",
+        sample_callback=None,
     ) -> dict[str, Any]: ...
 
     def load_channel_calibration(self) -> dict[str, Any] | None: ...

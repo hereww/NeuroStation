@@ -37,20 +37,22 @@ class PreflightReport:
 
 def run_cyton_preflight(
     requested_port: str = "AUTO",
-    seconds: float = 3.0,
+    seconds: float | None = 3.0,
     *,
     board_shim: Any | None = None,
     board_ids: Any | None = None,
     params: Any | None = None,
     prepare_board: Callable[..., tuple[Any, str, list[dict[str, str]]]] | None = None,
     sleep_fn: Callable[[float], None] = time.sleep,
+    sample_callback: Callable[[dict[str, Any]], None] | None = None,
+    cancel_event: Any | None = None,
 ) -> PreflightReport:
     """Open Cyton, collect a short sample, and return actionable checks.
 
     Dependencies are imported lazily so importing the desktop UI never opens a
     device or requires a native BrainFlow runtime.
     """
-    if seconds <= 0:
+    if seconds is not None and seconds <= 0:
         raise ValueError("seconds must be greater than zero")
     if board_shim is None or board_ids is None:
         from brainflow.board_shim import BoardIds, BoardShim
@@ -110,14 +112,73 @@ def run_cyton_preflight(
                 "selected_port": selected_port,
             },
         ))
-        board.start_stream()
-        streaming = True
-        sleep_fn(seconds)
-        data = board.get_board_data()
         import numpy as np
         eeg_channels = board_shim.get_eeg_channels(board_ids.CYTON_BOARD)
         timestamp_channel = board_shim.get_timestamp_channel(board_ids.CYTON_BOARD)
         sampling_rate = int(board_shim.get_sampling_rate(board_ids.CYTON_BOARD))
+
+        board.start_stream()
+        streaming = True
+
+        # The ordinary preflight keeps its original single-read behavior. The
+        # calibration page opts into short polling windows so it can render the
+        # selected channel while the operator moves the corresponding electrode.
+        chunks: list[Any] = []
+
+        def record_chunk(chunk: Any) -> None:
+            if getattr(chunk, "ndim", 0) != 2 or int(chunk.shape[1]) <= 0:
+                return
+            chunks.append(chunk)
+            if sample_callback is None:
+                return
+            try:
+                sample_callback({
+                    "channels": [
+                        np.asarray(chunk[index, :], dtype=float).tolist()
+                        for index in eeg_channels
+                    ],
+                    "sample_rate_hz": sampling_rate,
+                    "sample_count": int(chunk.shape[1]),
+                })
+            except Exception:
+                # A presentation callback must never interrupt hardware
+                # collection or turn a valid preflight into a failed one.
+                return
+
+        if sample_callback is None:
+            if seconds is None:
+                raise ValueError("seconds is required without a sample callback")
+            sleep_fn(seconds)
+            record_chunk(board.get_board_data())
+        else:
+            deadline = None if seconds is None else time.monotonic() + seconds
+            while deadline is None or deadline > time.monotonic():
+                if cancel_event is not None and cancel_event.is_set():
+                    break
+                remaining = 0.1 if deadline is None else max(0.0, deadline - time.monotonic())
+                sleep_fn(min(0.1, remaining))
+                if cancel_event is not None and cancel_event.is_set():
+                    break
+                record_chunk(board.get_board_data())
+            if cancel_event is None or not cancel_event.is_set():
+                record_chunk(board.get_board_data())
+
+        if cancel_event is not None and cancel_event.is_set():
+            # Stop is an intentional operator action, not a failed hardware
+            # check. The caller can discard this partial report without
+            # marking the channel as passed or failed.
+            return PreflightReport(
+                "cancelled",
+                requested_port,
+                selected_port,
+                tuple(checks),
+                "Calibration test stopped by operator.",
+            )
+
+        if chunks:
+            data = np.concatenate(chunks, axis=1)
+        else:
+            data = np.empty((0, 0))
         samples = int(data.shape[1]) if getattr(data, "ndim", 0) == 2 else 0
         checks.append(PreflightCheck(
             "sample_count", "passed" if samples > 0 else "failed",
