@@ -362,7 +362,11 @@ class DesktopGateway:
 
     @property
     def device(self) -> DeviceInfo:
-        return self._active.device
+        # Preflight runs before the acquisition gateway becomes active. Keep
+        # its handshake result visible on the device page and in the sidebar.
+        if self._acquisition.device.connected or self._active is self._acquisition:
+            return self._acquisition.device
+        return self._metadata.device
 
     @property
     def datasets(self) -> tuple[Dataset, ...]:

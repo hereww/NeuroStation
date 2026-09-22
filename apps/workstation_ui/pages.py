@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QLineEdit,
     QSpinBox, QComboBox, QCheckBox, QFileDialog, QProgressBar, QStyle,
     QAbstractItemView, QHeaderView, QTableWidget, QTableWidgetItem,
-    QDialog, QDialogButtonBox, QMessageBox, QTextEdit, QPushButton,
+    QDialog, QDialogButtonBox, QMessageBox, QTextEdit, QPushButton, QMenu,
 )
 from PySide6.QtGui import QDesktopServices
 
@@ -36,10 +36,17 @@ from .gateway import CaptureConfig, CaptureMode, TaskSnapshot, Phase, Dataset, f
 from neurostation_contract import (
     GENDERS,
     MEDICAL_OPTIONS,
+    DeviceInfo,
     UserProfile,
     dataset_name_for_eye,
     is_confirmed_position,
 )
+
+
+def _device_connection_text(tr, device: DeviceInfo | None) -> str:
+    if device is not None and device.connected and not device.simulated:
+        return tr("device.connection.connected", port=device.port or "AUTO")
+    return tr("device.connection.waiting")
 
 
 def _readonly_table(headers: tuple[str, ...]) -> QTableWidget:
@@ -127,13 +134,7 @@ def _dataset_file_rows(result: Dataset) -> list[tuple[str, str, str, str]]:
 
     rows: list[tuple[str, str, str, str]] = []
     for name in names:
-        path = result.path / name
-        # Imported sessions reserve session.json for workstation metadata and
-        # retain an original source session.json as source_session.json.
-        if result.imported and name == "session.json" and (result.path / "source_session.json").is_file():
-            path = result.path / "source_session.json"
-        elif not path.is_file() and name == "session.json":
-            path = result.path / "source_session.json"
+        path = _dataset_file_path(result, name)
         size: int | None = None
         modified_ns: int | None = None
         try:
@@ -162,6 +163,32 @@ def _dataset_file_rows(result: Dataset) -> list[tuple[str, str, str, str]]:
                 pass
         rows.append((name, kind, _format_file_size(size), modified))
     return rows
+
+
+def _dataset_file_path(result: Dataset, name: str) -> Path:
+    """Resolve a displayed dataset file to its local on-disk path."""
+
+    path = result.path / name
+    # Imported sessions reserve session.json for workstation metadata and
+    # retain the original source session.json as source_session.json.
+    if (
+        result.imported
+        and name == "session.json"
+        and (result.path / "source_session.json").is_file()
+    ):
+        return result.path / "source_session.json"
+    if not path.is_file() and name == "session.json":
+        return result.path / "source_session.json"
+    return path
+
+
+def _open_file_manager_folder(path: Path) -> bool:
+    """Open the system file manager at a file's containing directory."""
+
+    folder = path.parent
+    if not folder.is_dir():
+        return False
+    return bool(QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder))))
 
 
 def _dataset_raw_file_names(result: Dataset) -> tuple[str, ...]:
@@ -1015,15 +1042,19 @@ class UserManagementPage(Page):
 
 
 class HomePage(Page):
-    def __init__(self, tr, navigate):
+    def __init__(self, tr, navigate, device_info: DeviceInfo | None = None):
         super().__init__(tr, tr("home.ready"), tr("home.subtitle"))
-        device = Section("OpenBCI Cyton")
-        device.layout.addWidget(label("AUTO · 8 CH · 250 Hz"))
-        device.layout.addWidget(label(tr("device.connected"), "muted"))
-        self.layout.addWidget(device)
+        device_section = Section("OpenBCI Cyton")
+        device_section.layout.addWidget(label("AUTO · 8 CH · 250 Hz"))
+        self.device_status = label(_device_connection_text(tr, device_info), "muted")
+        device_section.layout.addWidget(self.device_status)
+        self.layout.addWidget(device_section)
         self.layout.addWidget(action(tr("home.check"), lambda: navigate("devices")))
         self.layout.addWidget(action(tr("home.apps"), lambda: navigate("apps"), True))
         self.layout.addStretch()
+
+    def set_device_info(self, device: DeviceInfo) -> None:
+        self.device_status.setText(_device_connection_text(self.tr, device))
 
 
 class DevicesPage(Page):
@@ -1048,16 +1079,19 @@ class DevicesPage(Page):
         channel_config=None,
         protocol_status="draft",
         channel_test_stop=None,
+        device_info: DeviceInfo | None = None,
     ):
         super().__init__(tr, tr("nav.devices"), tr("device.serial_note"))
-        device = Section("OpenBCI Cyton · AUTO")
-        device.layout.addWidget(KeyValues([
-            (tr("device.title"), tr("device.connected")),
+        device_section = Section("OpenBCI Cyton · AUTO")
+        self.device_summary = KeyValues([
+            (tr("device.title"), _device_connection_text(tr, device_info)),
             (tr("device.channels"), "8 CH / 250 Hz"),
             (tr("device.transport"), "USB Dongle"),
             (tr("device.owner"), "NeuroStation"),
-        ]))
-        self.layout.addWidget(device)
+        ])
+        self.device_status = self.device_summary.values[0]
+        device_section.layout.addWidget(self.device_summary)
+        self.layout.addWidget(device_section)
         mapping = Section(tr("device.mapping"))
         mapping.layout.addWidget(label(tr("device.mapping_fixed")))
         mapping.layout.addWidget(label(tr("device.mapping_note"), "muted"))
@@ -1441,6 +1475,9 @@ class DevicesPage(Page):
             self.tr("device.protocol_status", status=self.tr("device.protocol_status." + key))
         )
 
+    def set_device_info(self, device: DeviceInfo) -> None:
+        self.device_status.setText(_device_connection_text(self.tr, device))
+
 
 class DiagnosticsPage(Page):
     """Developer-facing runtime checks and recent metadata-only events."""
@@ -1529,7 +1566,7 @@ class DiagnosticsPage(Page):
 
 
 class AppsPage(Page):
-    def __init__(self, tr, navigate):
+    def __init__(self, tr, navigate, device_info: DeviceInfo | None = None):
         super().__init__(tr, tr("nav.apps"), tr("apps.subtitle"))
         grid = QGridLayout()
         grid.setSpacing(18)
@@ -1542,11 +1579,15 @@ class AppsPage(Page):
         for index, (title, subtitle, icon_type, callback) in enumerate(entries):
             grid.addWidget(AppTile(tr(title), tr(subtitle), icon_type, callback), index//2, index%2)
         self.layout.addLayout(grid)
-        device = Section("OpenBCI Cyton · AUTO · 8 CH · 250 Hz")
-        device.layout.addWidget(label(tr("device.connected"), "muted"))
-        self.layout.addWidget(device)
+        device_section = Section("OpenBCI Cyton · AUTO · 8 CH · 250 Hz")
+        self.device_status = label(_device_connection_text(tr, device_info), "muted")
+        device_section.layout.addWidget(self.device_status)
+        self.layout.addWidget(device_section)
         self.layout.addWidget(label(tr("apps.flow"), "muted"))
         self.layout.addStretch()
+
+    def set_device_info(self, device: DeviceInfo) -> None:
+        self.device_status.setText(_device_connection_text(self.tr, device))
 
 
 class SSVEPPage(Page):
@@ -2123,9 +2164,39 @@ class DatasetSummaryPage(Page):
             row = file_table.rowCount()
             file_table.insertRow(row)
             for column, value in enumerate(values):
-                file_table.setItem(row, column, _table_item(value))
+                item = _table_item(value)
+                if column == 0:
+                    item.setData(
+                        Qt.ItemDataRole.UserRole,
+                        str(_dataset_file_path(result, values[0])),
+                    )
+                file_table.setItem(row, column, item)
         file_table.resizeRowsToContents()
         file_table.setSortingEnabled(True)
+        file_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+
+        def show_file_context_menu(position) -> None:
+            item = file_table.itemAt(position)
+            if item is None:
+                return
+            row = item.row()
+            name_item = file_table.item(row, 0)
+            if name_item is None:
+                return
+            raw_path = name_item.data(Qt.ItemDataRole.UserRole)
+            file_path = Path(str(raw_path or ""))
+            if not file_path.is_file():
+                return
+            file_table.selectRow(row)
+            menu = QMenu(file_table)
+            open_action = menu.addAction(tr("dataset_summary.open_in_explorer"))
+            selected_action = menu.exec(
+                file_table.viewport().mapToGlobal(position)
+            )
+            if selected_action is open_action:
+                _open_file_manager_folder(file_path)
+
+        file_table.customContextMenuRequested.connect(show_file_context_menu)
         file_table.setMinimumHeight(min(360, max(84, file_table.sizeHintForRow(0) * max(1, len(file_rows)) + 44)))
         files.layout.addWidget(file_table)
         self.layout.addWidget(files)

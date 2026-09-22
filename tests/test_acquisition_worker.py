@@ -99,6 +99,26 @@ class AcquisitionWorkerTests(unittest.TestCase):
         session_index = command.index("--session-name")
         self.assertEqual("task", command[session_index + 1])
 
+    def test_process_gateway_reflects_cyton_handshake_in_device_state(self) -> None:
+        gateway = AcquisitionProcessGateway(
+            protocol_path=PROTOCOL,
+            channel_config_path=CHANNELS,
+        )
+        gateway._update_device_from_preflight({
+            "status": "passed",
+            "selected_port": "COM7",
+            "checks": [{"name": "handshake", "status": "passed"}],
+        })
+        self.assertTrue(gateway.device.connected)
+        self.assertEqual("COM7", gateway.device.port)
+
+        gateway._update_device_from_preflight({
+            "status": "failed",
+            "selected_port": "",
+            "checks": [{"name": "handshake", "status": "failed"}],
+        })
+        self.assertFalse(gateway.device.connected)
+
 
 if __name__ == "__main__":
     unittest.main()

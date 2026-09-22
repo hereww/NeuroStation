@@ -14,6 +14,42 @@ class OpenBCIWorkspaceError(RuntimeError):
     pass
 
 
+_WINDOWS_OPENBCI_JARS = (
+    "LSLLink.jar",
+    "OpenBCI_GUI.jar",
+    "core.jar",
+    "gluegen-rt.jar",
+    "jogl-all.jar",
+    "jna-platform.jar",
+    "jna.jar",
+    "jl1.0.1.jar",
+    "jsminim.jar",
+    "minim.jar",
+    "mp3spi1.9.5.jar",
+    "tritonus_aos.jar",
+    "tritonus_share.jar",
+    "jssc.jar",
+    "serial.jar",
+    "net.jar",
+    "grafica.jar",
+    "GifAnimation.jar",
+    "oscP5.jar",
+    "udp.jar",
+    "jSerialComm.jar",
+    "brainflow.jar",
+    "commons-codec-1.4.jar",
+    "commons-logging-1.1.1.jar",
+    "httpclient-4.1.2.jar",
+    "httpclient-cache-4.1.2.jar",
+    "httpcore-4.1.2.jar",
+    "httpmime-4.1.2.jar",
+    "httprequests_processing.jar",
+    "controlP5.jar",
+    "openbci_gui_helpers.jar",
+    "ssdp_client.jar",
+)
+
+
 @dataclass(frozen=True)
 class OpenBCIWorkspaceState:
     source_ready: bool
@@ -64,11 +100,55 @@ class OpenBCIWorkspaceManager:
         options: dict = {
             "cwd": str(state.executable.parent),
             "env": environment,
+            "stdin": subprocess.DEVNULL,
+            "stdout": subprocess.DEVNULL,
+            "stderr": subprocess.DEVNULL,
         }
         if sys.platform == "win32":
-            options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-        process = subprocess.Popen([str(state.executable)], **options)
+            creation_flags = (
+                getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                | getattr(subprocess, "DETACHED_PROCESS", 0)
+            )
+            if creation_flags:
+                options["creationflags"] = creation_flags
+        process = subprocess.Popen(self._launch_command(state.executable), **options)
         return process.pid
+
+    @classmethod
+    def _launch_command(cls, executable: Path) -> list[str]:
+        """Build the detached command used by the portable Windows launcher.
+
+        The exported Processing executable works on its own, but the portable
+        launcher shipped with OpenBCI GUI starts the bundled JVM explicitly.
+        That path also disables system proxies, which prevents startup from
+        waiting on an unreachable proxy in the workstation environment.
+        """
+
+        if sys.platform != "win32":
+            return [str(executable)]
+
+        runtime_root = executable.parent
+        javaw = runtime_root / "java" / "bin" / "javaw.exe"
+        library_root = runtime_root / "lib"
+        jars = [library_root / name for name in _WINDOWS_OPENBCI_JARS]
+        if not javaw.is_file() or not all(path.is_file() for path in jars):
+            return [str(executable)]
+
+        return [
+            str(javaw),
+            "-Djna.nosys=true",
+            "-Djava.net.useSystemProxies=false",
+            "-Dhttp.proxyHost=127.0.0.1",
+            "-Dhttp.proxyPort=1",
+            "-Dhttps.proxyHost=127.0.0.1",
+            "-Dhttps.proxyPort=1",
+            "-DsocksProxyHost=127.0.0.1",
+            "-DsocksProxyPort=1",
+            f"-Djava.library.path={library_root}",
+            "-classpath",
+            ";".join(str(path) for path in jars),
+            "OpenBCI_GUI",
+        ]
 
     @staticmethod
     def _overlay_ready(source: Path) -> bool:

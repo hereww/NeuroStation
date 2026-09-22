@@ -345,7 +345,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(outer)
         self.pages = {}
         self.screens = {}
-        self._replace_page("home", HomePage(self.tr, self.navigate))
+        self._replace_page("home", HomePage(self.tr, self.navigate, self.gateway.device))
         self._replace_page(
             "devices",
             DevicesPage(
@@ -357,10 +357,11 @@ class MainWindow(QMainWindow):
                 self._channel_config_value(),
                 self._protocol_status(),
                 channel_test_stop=self.stop_calibrate_cyton_channel,
+                device_info=self.gateway.device,
             ),
         )
         self._replace_page("users", self._build_users_page())
-        self._replace_page("apps", AppsPage(self.tr, self.navigate))
+        self._replace_page("apps", AppsPage(self.tr, self.navigate, self.gateway.device))
         detail = SSVEPPage(self.tr, self.draft_config, self.navigate, self.gateway.users)
         detail.start_requested.connect(self.start_ssvep)
         detail.serial_scan_requested.connect(self.scan_serial_ports)
@@ -1058,6 +1059,12 @@ class MainWindow(QMainWindow):
 
     def _update_controls(self):
         snapshot = self.gateway.snapshot
+        device = self.gateway.device
+        for key in ("home", "devices", "apps"):
+            page = self.pages.get(key)
+            setter = getattr(page, "set_device_info", None)
+            if callable(setter):
+                setter(device)
         # Before a task starts the selected form mode is meaningful; after a
         # task starts the gateway configuration becomes the source of truth.
         mode = CaptureMode(
@@ -1065,7 +1072,6 @@ class MainWindow(QMainWindow):
         )
         self.mode_banner_label.setText(self.tr("mode.banner", mode=self.tr("mode." + mode.value)))
         if snapshot.active:
-            device = self.gateway.device
             device_name, device_port, device_channels, device_rate = (
                 device.name, device.port, device.channels, device.sample_rate
             )

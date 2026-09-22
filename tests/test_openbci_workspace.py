@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from eeg_tools.workstation.openbci_workspace import OpenBCIWorkspaceManager
+from eeg_tools.workstation.openbci_workspace import (
+    OpenBCIWorkspaceManager,
+    OpenBCIWorkspaceState,
+    _WINDOWS_OPENBCI_JARS,
+)
 
 
 class OpenBCIWorkspaceManagerTests(unittest.TestCase):
@@ -67,6 +72,74 @@ class OpenBCIWorkspaceManagerTests(unittest.TestCase):
             self.assertTrue(OpenBCIWorkspaceManager._overlay_ready(source))
             (data / "zh-CN.json").write_text("{}", encoding="utf-8")
             self.assertFalse(OpenBCIWorkspaceManager._overlay_ready(source))
+
+    def test_windows_command_matches_portable_openbci_launcher(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = Path(directory)
+            executable = runtime / "OpenBCI_GUI.exe"
+            executable.write_bytes(b"placeholder")
+            (runtime / "java" / "bin").mkdir(parents=True)
+            (runtime / "java" / "bin" / "javaw.exe").write_bytes(b"placeholder")
+            (runtime / "lib").mkdir()
+            for name in _WINDOWS_OPENBCI_JARS:
+                (runtime / "lib" / name).write_bytes(b"placeholder")
+
+            with patch("eeg_tools.workstation.openbci_workspace.sys.platform", "win32"):
+                command = OpenBCIWorkspaceManager._launch_command(executable)
+
+            self.assertEqual(runtime / "java" / "bin" / "javaw.exe", Path(command[0]))
+            self.assertIn("-Djava.net.useSystemProxies=false", command)
+            self.assertIn("-Dhttp.proxyHost=127.0.0.1", command)
+            self.assertIn("-Dhttp.proxyPort=1", command)
+            self.assertIn("-Djava.library.path=" + str(runtime / "lib"), command)
+            self.assertEqual("OpenBCI_GUI", command[-1])
+            classpath = command[command.index("-classpath") + 1]
+            self.assertIn("OpenBCI_GUI.jar", classpath)
+            self.assertIn(";", classpath)
+
+    def test_windows_command_falls_back_when_portable_runtime_is_incomplete(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "OpenBCI_GUI.exe"
+            executable.write_bytes(b"placeholder")
+            with patch("eeg_tools.workstation.openbci_workspace.sys.platform", "win32"):
+                command = OpenBCIWorkspaceManager._launch_command(executable)
+            self.assertEqual([str(executable)], command)
+
+    def test_launch_detaches_gui_stdio_and_passes_dataset_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "OpenBCI_GUI.exe"
+            executable.write_bytes(b"placeholder")
+            manager = self.make_project(root)
+            state = OpenBCIWorkspaceState(
+                source_ready=True,
+                overlay_ready=True,
+                executable_ready=True,
+                revision="abc",
+                executable=executable,
+            )
+            with (
+                patch.object(manager, "status", return_value=state),
+                patch("eeg_tools.workstation.openbci_workspace.sys.platform", "win32"),
+                patch("eeg_tools.workstation.openbci_workspace.subprocess.Popen") as popen,
+            ):
+                popen.return_value.pid = 1234
+                process_id = manager.launch(
+                    locale="zh-CN",
+                    dataset_root=root / "Datasets",
+                )
+
+            self.assertEqual(1234, process_id)
+            options = popen.call_args.kwargs
+            self.assertIs(options["stdin"], subprocess.DEVNULL)
+            self.assertIs(options["stdout"], subprocess.DEVNULL)
+            self.assertIs(options["stderr"], subprocess.DEVNULL)
+            self.assertEqual("zh-CN", options["env"]["NEUROSTATION_LANGUAGE"])
+            self.assertEqual(
+                str((root / "Datasets").resolve()),
+                options["env"]["NEUROSTATION_DATASETS"],
+            )
+            self.assertTrue(options.get("creationflags", 0))
 
 
 if __name__ == "__main__":

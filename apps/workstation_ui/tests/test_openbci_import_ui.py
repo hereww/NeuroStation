@@ -184,8 +184,16 @@ class OpenBCIImportUiTests(unittest.TestCase):
             self.assertIn("package_num", raw_headers[1])
             self.assertFalse(any("other_ch1" in header for header in raw_headers))
             self.assertFalse(any("other_ch7" in header for header in raw_headers))
-            self.assertTrue(any("analog_ch1" in header for header in raw_headers))
-            self.assertTrue(any("analog_ch3" in header for header in raw_headers))
+            self.assertFalse(any("analog_ch1" in header for header in raw_headers))
+            self.assertFalse(any("analog_ch3" in header for header in raw_headers))
+            self.assertEqual(
+                str(dataset.path / "BrainFlow-RAW_0.csv"),
+                file_table.item(0, 0).data(self.qt.ItemDataRole.UserRole),
+            )
+            self.assertEqual(
+                self.qt.ContextMenuPolicy.CustomContextMenu,
+                file_table.contextMenuPolicy(),
+            )
             self.assertEqual(
                 ("all",),
                 tuple(preview_columns.itemData(index) for index in range(preview_columns.count())),

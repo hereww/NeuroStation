@@ -209,7 +209,25 @@ class AcquisitionProcessGateway:
             cancel_event=cancel_event,
         )
         self._preflight_report = report.as_dict()
+        self._update_device_from_preflight(self._preflight_report)
         return self._preflight_report
+
+    def _update_device_from_preflight(self, report: dict[str, Any]) -> None:
+        """Keep the UI device state in sync with the last Cyton handshake."""
+
+        selected_port = str(report.get("selected_port") or "").strip()
+        checks = report.get("checks")
+        handshake_passed = isinstance(checks, list) and any(
+            isinstance(check, dict)
+            and str(check.get("name") or "") == "handshake"
+            and str(check.get("status") or "") == "passed"
+            for check in checks
+        )
+        self.device = replace(
+            self.device,
+            port=selected_port or self.device.port,
+            connected=handshake_passed,
+        )
 
     def test_cyton_channel(
         self,
@@ -312,7 +330,7 @@ class AcquisitionProcessGateway:
             port=config.port,
             channels=8,
             sample_rate=250,
-            connected=False,
+            connected=self.device.connected,
             simulated=False,
         )
         self._runtime_dir = Path(tempfile.mkdtemp(prefix="neurostation-worker-"))
