@@ -1,4 +1,4 @@
-"""Launch the integrated NeuroStation desktop MVP."""
+"""Launch the integrated NeuroStation desktop workstation."""
 
 from __future__ import annotations
 
@@ -76,7 +76,7 @@ def build_diagnostics(gateway=None) -> dict:
             "release_date": RELEASE_DATE,
             "description": PRODUCT_DESCRIPTION,
             "release_note": (
-                "Windows standalone functional MVP for research and teaching validation; "
+                "Windows standalone release for research and teaching validation; "
                 "not a medical device."
             ),
         }

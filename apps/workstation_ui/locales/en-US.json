@@ -1,5 +1,5 @@
 {
-  "app.title": "NeuroStation MVP1.0.3 · EEG workstation",
+  "app.title": "NeuroStation 1.0 · EEG workstation",
   "mode.banner": "Current mode: {mode}",
   "mode.demo": "Legacy demo record (read-only)",
   "mode.preview": "Legacy visual preview record (read-only)",

@@ -5,18 +5,18 @@
 
 NeuroStation 是一个面向科研与教学技术验证的跨平台脑电采集工作站。项目把 PySide6 桌面界面、BrainFlow 采集 worker、SSVEP 刺激流程、OpenBCI Cyton 接入、会话文件和数据集浏览整合在同一套工作流中。
 
-当前交付版本为 **MVP1.0.3（语义版本 1.0.3）**，属于 MVP1.0 系列的功能维护版本。Windows 10/11 x64 提供无需 Python 环境的 standalone portable 包；Linux 和 macOS 主要用于源码测试与平台构建验收。
+当前交付版本为 **NeuroStation 1.0（语义版本 1.0.0）**。Windows 10/11 x64 提供无需 Python 环境的 standalone portable 包；Linux 和 macOS 主要用于源码测试与平台构建验收。
 
 ## 下载与版本边界
 
-- [下载 NeuroStation MVP1.0.3 Windows x64](https://github.com/hereww/NeuroStation/releases/latest)
-- [查看 MVP1.0.3 Release 说明](release/NeuroStation-MVP1.0.3-Windows-x64.md)
+- [下载 NeuroStation 1.0 Windows x64](https://github.com/hereww/NeuroStation/releases/latest)
+- [查看 NeuroStation 1.0 Release 说明](release/NeuroStation-1.0-Windows-x64.md)
 - [查看完整验收清单](docs/验收清单.md)
 - [查看跨平台方案](docs/跨平台脑电采集工作站方案.md)
 
 Windows 包是可直接解压运行的目录，不是 MSI 安装器，也不包含真实 Cyton 设备。当前生产入口只允许 OpenBCI Cyton 真实硬件采集；没有设备时只能查看历史记录、导入 OpenBCI 文件或运行诊断，不能生成模拟 EEG。
 
-### MVP1.0.3 更新内容
+### 1.0 更新内容
 
 - 新增透明的 SSVEP 离线 FFT 基线分析，生成 `analysis.json` 和 `trial_features.tsv`；
 - 新增 `raw_columns.tsv` 和目标标记审计字段，区分呈现目标、人工/自报目标与 EEG 推断目标；
@@ -26,7 +26,7 @@ Windows 包是可直接解压运行的目录，不是 MSI 安装器，也不包�
 - 固定 BrainFlow `5.22.2`，修复跨平台原生库混包、macOS runtime、Windows 路径和打包 smoke 问题；
 - 修复活动数据集遮蔽回收站记录和干净时间戳抖动重复告警问题。
 
-本项目不是医疗诊断设备。SSVEP 参数、通道位置、参考电极、BIAS、显示器刷新率和光学/marker 时序仍需在正式实验前人工复核。MVP1.0 的自动化测试不能替代 Cyton 实机、photodiode/TTL 和长时间稳定性验收。
+本项目不是医疗诊断设备。SSVEP 参数、通道位置、参考电极、BIAS、显示器刷新率和光学/marker 时序仍需在正式实验前人工复核。1.0 的自动化测试不能替代 Cyton 实机、photodiode/TTL 和长时间稳定性验收。
 
 ## 运行来源
 
@@ -39,7 +39,7 @@ Windows 包是可直接解压运行的目录，不是 MSI 安装器，也不包�
 
 ### 使用 Windows 发布包
 
-1. 下载并解压 `NeuroStation-MVP1.0.3-Windows-x64.zip`。
+1. 下载并解压 `NeuroStation-1.0-Windows-x64.zip`。
 2. 运行 `NeuroStation.dist\workstation.exe`。
 3. 首次使用先连接 Cyton USB dongle，选择采集用户并完成硬件预检。
 4. 需要查看运行环境时执行：
@@ -71,7 +71,7 @@ python -m apps.workstation_ui.main
 
 ## SSVEP 默认协议
 
-默认协议位于 `configs/protocols/ssvep_four_target_v2.json`，当前用于 MVP 技术验证：
+默认协议位于 `configs/protocols/ssvep_four_target_v2.json`，当前用于技术验证：
 
 - 显示刷新率：60 Hz；
 - 目标频率：10、12、15、20 Hz；
@@ -160,7 +160,7 @@ python analyze_ssvep_session.py .\path\to\session_YYYYMMDD_HHMMSS_mmm
 
 ### 离线去噪研究管线
 
-MVP1.0.3 支线提供可审计的 SciPy 离线去噪流程。它不会修改
+1.0 提供可审计的 SciPy 离线去噪流程。它不会修改
 `raw_brainflow.tsv`，默认同时生成 50 Hz 和 60 Hz 两套结果，并保留原始标记轨道：
 
 ```powershell
@@ -218,7 +218,7 @@ python scripts\smoke_packaged.py
 构建会把源码复制到 ASCII 路径的临时 stage，使用 Qt 官方 `pyside6-deploy`/Nuitka 构建，再把产物复制回 `dist/`。Windows 输出包括：
 
 - `dist\NeuroStation.dist\`：可运行目录；
-- `dist\NeuroStation-MVP1.0.3-Windows-x64.zip`：发布归档。
+- `dist\NeuroStation-1.0-Windows-x64.zip`：发布归档。
 
 GitHub Actions 的职责分工如下：
 
@@ -245,7 +245,7 @@ GitHub Actions 的职责分工如下：
 
 ## 当前限制
 
-- MVP1.0 是技术验证版本，不是临床或医疗诊断软件；
+- 1.0 是科研与教学技术验证版本，不是临床或医疗诊断软件；
 - Cyton 实机连接、连续稳定性、断线恢复和串口占用场景仍需现场验收；
 - SSVEP 光学 onset、marker 延迟、实际刷新率和 photodiode/TTL 结果不能由软件配置推断；
 - OpenBCI GUI 集成依赖锁定上游源码和平台 runtime，不能把源码同步成功等同于硬件采集通过；
