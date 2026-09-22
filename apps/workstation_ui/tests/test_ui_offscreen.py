@@ -162,6 +162,20 @@ class QtOffscreenTests(unittest.TestCase):
         })
         self.assertIn("通过", page.test_statuses[2].text())
 
+    def test_device_connection_status_updates_after_cyton_handshake(self):
+        from dataclasses import replace
+
+        self.window.navigate("devices")
+        page = self.window.pages["devices"]
+        self.assertIn("未连接", page.device_status.text())
+
+        acquisition = self.gateway._acquisition
+        acquisition.device = replace(acquisition.device, connected=True, port="COM7")
+        self.window._update_controls()
+
+        self.assertIn("已连接", page.device_status.text())
+        self.assertIn("COM7", page.device_status.text())
+
     def test_capture_form_requires_a_real_user_and_photosensitivity_ack(self):
         from apps.workstation_ui.gateway import CaptureMode
 

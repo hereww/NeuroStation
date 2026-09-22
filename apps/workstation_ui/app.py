@@ -1075,6 +1075,10 @@ class MainWindow(QMainWindow):
             device_name, device_port, device_channels, device_rate = (
                 device.name, device.port, device.channels, device.sample_rate
             )
+        elif device.connected:
+            device_name, device_port, device_channels, device_rate = (
+                device.name, device.port, device.channels, device.sample_rate
+            )
         else:
             device_name, device_port, device_channels, device_rate = (
                 "OpenBCI Cyton", self.draft_config.port or "AUTO", 8, 250
