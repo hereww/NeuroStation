@@ -26,18 +26,18 @@
   ],
   "reference": {
     "label": "SRB",
-    "position": "unspecified",
+    "position": "ear_clip",
     "hardware_connection": "SRB ear clip"
   },
   "bias": {
     "label": "BIAS",
-    "position": "unspecified",
+    "position": "ear_clip",
     "hardware_connection": "BIAS ear clip"
   },
   "ground": {
     "label": "AGND",
-    "position": "unspecified",
+    "position": "board_agnd",
     "hardware_connection": "AGND on acquisition board"
   },
-  "notes": "预设 OpenBCI 八通道位置：CH1–CH8 对应 Fp1、Fp2、C3、C4、P7、P8、O1、O2。开始脑电测试可复核实时信号与预设通道是否一致。"
+  "notes": "预设 OpenBCI 八通道位置：CH1–CH8 对应 Fp1、Fp2、C3、C4、P7、P8、O1、O2。SRB 和 BIAS 使用耳夹，AGND 接 Cyton 板卡模拟地。开始脑电测试可复核实时信号与预设通道是否一致。"
 }

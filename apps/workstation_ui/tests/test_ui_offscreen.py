@@ -120,6 +120,9 @@ class QtOffscreenTests(unittest.TestCase):
             ("Fp1", "Fp2", "C3", "C4", "P7", "P8", "O1", "O2"),
             tuple(box.currentText() for box in page.position_boxes),
         )
+        self.assertEqual("ear_clip", page.reference_position.currentText())
+        self.assertEqual("ear_clip", page.bias_position.currentText())
+        self.assertEqual("board_agnd", page.ground_position.currentText())
         self.assertTrue(all(button.isEnabled() for button in page.test_buttons))
 
         page._select_calibration_channel(2)

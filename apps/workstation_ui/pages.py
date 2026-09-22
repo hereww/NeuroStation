@@ -681,22 +681,28 @@ def _preview_header_labels(tr, headers: tuple[str, ...]) -> tuple[str, ...]:
 def _preview_column_indexes(headers: tuple[str, ...], group: str) -> tuple[int, ...]:
     """Select preview columns without changing their source-file order."""
 
-    hidden_prefixes = ("other_ch", "analog_ch")
-    if group == "all":
-        return tuple(
-            index
-            for index, header in enumerate(headers)
-            if not header.casefold().startswith(hidden_prefixes)
-        )
+    normalized_group = str(group or "all").casefold()
+    if normalized_group == "all":
+        # The default view is a faithful view of the source file.  Do not
+        # silently drop fields just because they are auxiliary channels.
+        return tuple(range(len(headers)))
+
     required = {"sample_index", "package_num", "timestamp_s", "marker"}
+    group_prefixes = {
+        "eeg": ("eeg_ch",),
+        "accel": ("accel_",),
+        "aux": ("other_ch", "analog_ch"),
+        "other": ("other_ch",),
+        "analog": ("analog_ch",),
+    }
+    prefixes = group_prefixes.get(normalized_group)
+    if prefixes is None:
+        return tuple(range(len(headers)))
     return tuple(
         index
         for index, header in enumerate(headers)
-        if not header.casefold().startswith(hidden_prefixes)
-        and (
-            header.casefold() in required
-            or header.casefold().startswith("eeg_ch")
-        )
+        if header.casefold() in required
+        or header.casefold().startswith(prefixes)
     )
 
 
@@ -781,7 +787,10 @@ def _dataset_raw_preview_section(tr, result: Dataset) -> Section | None:
         state_values = _sort_preview_rows_by_sample_index(new_headers, new_values)
         current_group = preview_columns.currentData()
         previous_group = str(current_group) if current_group else ""
-        groups = [("all", len(_preview_column_indexes(new_headers, "all")))]
+        groups = [
+            (group, len(_preview_column_indexes(new_headers, group)))
+            for group in ("all", "eeg", "accel", "aux", "other", "analog")
+        ]
         preview_columns.blockSignals(True)
         preview_columns.clear()
         for group, count in groups:
@@ -1059,11 +1068,16 @@ class HomePage(Page):
 
 class DevicesPage(Page):
     DEFAULT_CHANNEL_POSITIONS = ("Fp1", "Fp2", "C3", "C4", "P7", "P8", "O1", "O2")
+    DEFAULT_REFERENCE_POSITION = "ear_clip"
+    DEFAULT_BIAS_POSITION = "ear_clip"
+    DEFAULT_GROUND_POSITION = "board_agnd"
     ELECTRODE_POSITIONS = (
         "Fp1", "Fp2", "AF3", "AF4", "Fz", "Cz", "C3", "C4",
         "P3", "P4", "P7", "P8", "T7", "T8", "O1", "O2", "Oz",
     )
-    AUXILIARY_POSITIONS = ("ear_clip", "left_earlobe", "right_earlobe", "mastoid")
+    AUXILIARY_POSITIONS = (
+        "ear_clip", "left_earlobe", "right_earlobe", "mastoid", "board_agnd",
+    )
 
     calibration_test_requested = Signal(int)
     calibration_test_stop_requested = Signal()
@@ -1179,9 +1193,10 @@ class DevicesPage(Page):
             position.setEditable(True)
             position.addItem("", "")
             position.addItems(self.ELECTRODE_POSITIONS)
-            configured_position = str(channel.get("electrode_position") or "").strip()
-            if configured_position.casefold() in {"", "unspecified", "未指定"}:
-                configured_position = self.DEFAULT_CHANNEL_POSITIONS[index]
+            configured_position = self._preset_position(
+                channel.get("electrode_position"),
+                self.DEFAULT_CHANNEL_POSITIONS[index],
+            )
             position.setCurrentText(configured_position)
             if position.lineEdit() is not None:
                 position.lineEdit().setPlaceholderText(tr("device.calibration_position_placeholder"))
@@ -1204,17 +1219,26 @@ class DevicesPage(Page):
         auxiliary_form = QFormLayout()
         self.reference_position = self._editable_choice(
             self.AUXILIARY_POSITIONS,
-            str((channel_value.get("reference") or {}).get("position") or "ear_clip"),
+            self._preset_position(
+                (channel_value.get("reference") or {}).get("position"),
+                self.DEFAULT_REFERENCE_POSITION,
+            ),
             tr("device.calibration_aux_placeholder"),
         )
         self.bias_position = self._editable_choice(
             self.AUXILIARY_POSITIONS,
-            str((channel_value.get("bias") or {}).get("position") or "ear_clip"),
+            self._preset_position(
+                (channel_value.get("bias") or {}).get("position"),
+                self.DEFAULT_BIAS_POSITION,
+            ),
             tr("device.calibration_aux_placeholder"),
         )
         self.ground_position = self._editable_choice(
             self.AUXILIARY_POSITIONS,
-            str((channel_value.get("ground") or {}).get("position") or ""),
+            self._preset_position(
+                (channel_value.get("ground") or {}).get("position"),
+                self.DEFAULT_GROUND_POSITION,
+            ),
             tr("device.calibration_aux_placeholder"),
         )
         auxiliary_form.addRow(tr("device.calibration_reference"), self.reference_position)
@@ -1325,6 +1349,11 @@ class DevicesPage(Page):
                 variation=f"{self.calibration_signal.variation:.2f} uV",
             )
         )
+
+    @staticmethod
+    def _preset_position(value: object, fallback: str) -> str:
+        position = str(value or "").strip()
+        return fallback if position.casefold() in {"", "unspecified", "未指定"} else position
 
     @staticmethod
     def _editable_choice(values: tuple[str, ...], current: str, placeholder: str) -> QComboBox:

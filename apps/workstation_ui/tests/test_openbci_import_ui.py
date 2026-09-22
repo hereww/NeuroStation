@@ -160,7 +160,7 @@ class OpenBCIImportUiTests(unittest.TestCase):
             self.assertEqual("BrainFlow-RAW_0.csv", file_table.item(0, 0).text())
             raw_table = window.pages["result"].findChild(QTableWidget, "datasetRawPreviewTable")
             self.assertIsNotNone(raw_table)
-            self.assertEqual(15, raw_table.columnCount())
+            self.assertEqual(25, raw_table.columnCount())
             self.assertEqual(3, raw_table.rowCount())
             self.assertFalse(raw_table.item(0, 0).flags() & self.qt.ItemFlag.ItemIsEditable)
             self.assertEqual("1", raw_table.item(0, 0).text())
@@ -174,18 +174,18 @@ class OpenBCIImportUiTests(unittest.TestCase):
                 for column in range(raw_table.columnCount())
             ]
             self.assertTrue(any("eeg_ch1" in header for header in preview_headers))
-            self.assertFalse(any("other_ch1" in header for header in preview_headers))
-            self.assertFalse(any("analog_ch1" in header for header in preview_headers))
+            self.assertTrue(any("other_ch1" in header for header in preview_headers))
+            self.assertTrue(any("analog_ch1" in header for header in preview_headers))
             raw_headers = [
                 raw_table.horizontalHeaderItem(column).text()
                 for column in range(raw_table.columnCount())
             ]
             self.assertEqual("序号", raw_headers[0])
             self.assertIn("package_num", raw_headers[1])
-            self.assertFalse(any("other_ch1" in header for header in raw_headers))
-            self.assertFalse(any("other_ch7" in header for header in raw_headers))
-            self.assertFalse(any("analog_ch1" in header for header in raw_headers))
-            self.assertFalse(any("analog_ch3" in header for header in raw_headers))
+            self.assertTrue(any("other_ch1" in header for header in raw_headers))
+            self.assertTrue(any("other_ch7" in header for header in raw_headers))
+            self.assertTrue(any("analog_ch1" in header for header in raw_headers))
+            self.assertTrue(any("analog_ch3" in header for header in raw_headers))
             self.assertEqual(
                 str(dataset.path / "BrainFlow-RAW_0.csv"),
                 file_table.item(0, 0).data(self.qt.ItemDataRole.UserRole),
@@ -195,7 +195,7 @@ class OpenBCIImportUiTests(unittest.TestCase):
                 file_table.contextMenuPolicy(),
             )
             self.assertEqual(
-                ("all",),
+                ("all", "eeg", "accel", "aux", "other", "analog"),
                 tuple(preview_columns.itemData(index) for index in range(preview_columns.count())),
             )
             from dataclasses import replace
@@ -206,7 +206,7 @@ class OpenBCIImportUiTests(unittest.TestCase):
             result_preview = result_page.findChild(QComboBox, "datasetPreviewColumns")
             self.assertIsNotNone(result_preview)
             self.assertEqual(
-                ("all",),
+                ("all", "eeg", "accel", "aux", "other", "analog"),
                 tuple(result_preview.itemData(index) for index in range(result_preview.count())),
             )
             window.navigate("datasets")
@@ -244,7 +244,7 @@ class OpenBCIImportUiTests(unittest.TestCase):
         self.assertEqual("其他辅助通道 1（other_ch1）", labels[6])
         self.assertEqual("模拟辅助通道 1（analog_ch1）", labels[7])
         self.assertEqual(
-            (0, 1, 2, 3, 4, 5),
+            tuple(range(8)),
             _preview_column_indexes(
                 (
                     "sample_index",
@@ -260,7 +260,7 @@ class OpenBCIImportUiTests(unittest.TestCase):
             ),
         )
         self.assertEqual(
-            (0, 1, 2, 3, 4),
+            (0, 2, 3, 4, 7),
             _preview_column_indexes(
                 (
                     "sample_index",
@@ -276,7 +276,7 @@ class OpenBCIImportUiTests(unittest.TestCase):
             ),
         )
         self.assertEqual(
-            (0, 1, 2, 3, 4),
+            (0, 2, 3, 4, 6),
             _preview_column_indexes(
                 (
                     "sample_index",
@@ -289,6 +289,38 @@ class OpenBCIImportUiTests(unittest.TestCase):
                     "analog_ch1",
                 ),
                 "other",
+            ),
+        )
+        self.assertEqual(
+            (0, 2, 3, 4, 5),
+            _preview_column_indexes(
+                (
+                    "sample_index",
+                    "eeg_ch1",
+                    "package_num",
+                    "timestamp_s",
+                    "marker",
+                    "accel_x",
+                    "other_ch1",
+                    "analog_ch1",
+                ),
+                "accel",
+            ),
+        )
+        self.assertEqual(
+            (0, 2, 3, 4, 6, 7),
+            _preview_column_indexes(
+                (
+                    "sample_index",
+                    "eeg_ch1",
+                    "package_num",
+                    "timestamp_s",
+                    "marker",
+                    "accel_x",
+                    "other_ch1",
+                    "analog_ch1",
+                ),
+                "aux",
             ),
         )
         self.assertEqual(
