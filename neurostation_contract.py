@@ -14,8 +14,8 @@ from typing import Any
 
 
 PRODUCT_NAME = "NeuroStation"
-PRODUCT_VERSION = "1.01"
-PRODUCT_SEMVER = "1.0.1"
+PRODUCT_VERSION = "1.02"
+PRODUCT_SEMVER = "1.0.2"
 PRODUCT_DESCRIPTION = (
     "Windows-first EEG acquisition workstation for OpenBCI Cyton SSVEP capture, "
     "session metadata, quality reports, and dataset review."

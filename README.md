@@ -5,18 +5,18 @@
 
 NeuroStation 是一个面向科研与教学技术验证的跨平台脑电采集工作站。项目把 PySide6 桌面界面、BrainFlow 采集 worker、SSVEP 刺激流程、OpenBCI Cyton 接入、会话文件和数据集浏览整合在同一套工作流中。
 
-当前交付版本为 **NeuroStation 1.01（语义版本 1.0.1）**。Windows 10/11 x64 提供无需 Python 环境的 standalone portable 包；Linux 和 macOS 主要用于源码测试与平台构建验收。
+当前交付版本为 **NeuroStation 1.02（语义版本 1.0.2）**。Windows 10/11 x64 提供无需 Python 环境的 standalone portable 包；Linux 和 macOS 主要用于源码测试与平台构建验收。
 
 ## 下载与版本边界
 
-- [下载 NeuroStation 1.01 Windows x64](https://github.com/hereww/NeuroStation/releases/latest)
-- [查看 NeuroStation 1.01 Release 说明](release/NeuroStation-1.01-Windows-x64.md)
+- [下载 NeuroStation 1.02 Windows x64](https://github.com/hereww/NeuroStation/releases/latest)
+- [查看 NeuroStation 1.02 Release 说明](release/NeuroStation-1.02-Windows-x64.md)
 - [查看完整验收清单](docs/验收清单.md)
 - [查看跨平台方案](docs/跨平台脑电采集工作站方案.md)
 
 Windows 包是可直接解压运行的目录，不是 MSI 安装器，也不包含真实 Cyton 设备。当前生产入口只允许 OpenBCI Cyton 真实硬件采集；没有设备时只能查看历史记录、导入 OpenBCI 文件或运行诊断，不能生成模拟 EEG。
 
-### 1.01 更新内容
+### 1.02 更新内容
 
 - 数据集预览默认显示全部原始字段和源文件的全部数据行，并使用虚拟化表格支持长记录浏览；
 - 保留 EEG 8 通道、other_ch、analog、时间戳精度和字段分组筛选。
@@ -44,7 +44,7 @@ Windows 包是可直接解压运行的目录，不是 MSI 安装器，也不包�
 
 ### 使用 Windows 发布包
 
-1. 下载并解压 `NeuroStation-1.01-Windows-x64.zip`。
+1. 下载并解压 `NeuroStation-1.02-Windows-x64.zip`。
 2. 运行 `NeuroStation.dist\workstation.exe`。
 3. 首次使用先连接 Cyton USB dongle，选择采集用户并完成硬件预检。
 4. 需要查看运行环境时执行：
@@ -223,7 +223,7 @@ python scripts\smoke_packaged.py
 构建会把源码复制到 ASCII 路径的临时 stage，使用 Qt 官方 `pyside6-deploy`/Nuitka 构建，再把产物复制回 `dist/`。Windows 输出包括：
 
 - `dist\NeuroStation.dist\`：可运行目录；
-- `dist\NeuroStation-1.01-Windows-x64.zip`：发布归档。
+- `dist\NeuroStation-1.02-Windows-x64.zip`：发布归档。
 
 GitHub Actions 的职责分工如下：
 

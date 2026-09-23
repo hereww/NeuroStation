@@ -18,8 +18,8 @@ def build_sbom() -> dict[str, object]:
     return {
         "bomFormat": "CycloneDX",
         "specVersion": "1.5",
-        "serialNumber": "urn:neurostation:sbom:1.0.1",
-        "metadata": {"component": {"name": "NeuroStation", "version": "1.0.1"}},
+        "serialNumber": "urn:neurostation:sbom:1.0.2",
+        "metadata": {"component": {"name": "NeuroStation", "version": "1.0.2"}},
         "components": [
             {"type": "library", "name": item["name"], "version": item["version"]}
             for item in packages
