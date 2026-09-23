@@ -9,7 +9,7 @@ on:
       tag:
         description: "Release tag to create or update"
         required: true
-        default: "v1.0.0"
+        default: "v1.0.1"
 
 permissions:
   contents: write
@@ -54,8 +54,8 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: NeuroStation 1.0
+          name: NeuroStation 1.01
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           generate_release_notes: true
-          body_path: release/NeuroStation-1.0-Windows-x64.md
-          files: dist/NeuroStation-1.0-Windows-x64.zip
+          body_path: release/NeuroStation-1.01-Windows-x64.md
+          files: dist/NeuroStation-1.01-Windows-x64.zip

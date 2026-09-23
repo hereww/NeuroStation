@@ -61,7 +61,7 @@ class OpenBCIImportUiTests(unittest.TestCase):
             source = root / "Recordings"
             session = source / "OpenBCISession_2026-01-04_00-00-00"
             session.mkdir(parents=True)
-            write_csv(session / "BrainFlow-RAW_0.csv")
+            write_csv(session / "BrainFlow-RAW_0.csv", count=137)
             gateway = MetadataGateway(
                 protocol_path=Path("configs/protocols/ssvep_four_target_v2.json"),
                 dataset_root=root / "Datasets",
@@ -127,7 +127,7 @@ class OpenBCIImportUiTests(unittest.TestCase):
             window.show_result(dataset)
             self.assertEqual("result", window.current_page)
             self.assertEqual("DatasetSummaryPage", type(window.pages["result"]).__name__)
-            from PySide6.QtWidgets import QLabel, QPushButton, QComboBox, QTableWidget
+            from PySide6.QtWidgets import QLabel, QPushButton, QComboBox, QTableView, QTableWidget
 
             session_table = window.pages["result"].findChild(QTableWidget, "datasetSessionTable")
             file_table = window.pages["result"].findChild(QTableWidget, "datasetFilesTable")
@@ -158,27 +158,31 @@ class OpenBCIImportUiTests(unittest.TestCase):
             self.assertIn("工作站副本路径", session_texts)
             self.assertIn("未标注", session_texts)
             self.assertEqual("BrainFlow-RAW_0.csv", file_table.item(0, 0).text())
-            raw_table = window.pages["result"].findChild(QTableWidget, "datasetRawPreviewTable")
+            raw_table = window.pages["result"].findChild(QTableView, "datasetRawPreviewTable")
             self.assertIsNotNone(raw_table)
-            self.assertEqual(25, raw_table.columnCount())
-            self.assertEqual(3, raw_table.rowCount())
-            self.assertFalse(raw_table.item(0, 0).flags() & self.qt.ItemFlag.ItemIsEditable)
-            self.assertEqual("1", raw_table.item(0, 0).text())
+            raw_model = raw_table.model()
+            self.assertEqual(25, raw_model.columnCount())
+            self.assertEqual(137, raw_model.rowCount())
+            self.assertFalse(
+                raw_model.index(0, 0).flags() & self.qt.ItemFlag.ItemIsEditable
+            )
+            self.assertEqual("1", raw_model.index(0, 0).data())
+            self.assertEqual("136", raw_model.index(136, 1).data())
             preview_columns = window.pages["result"].findChild(
                 QComboBox, "datasetPreviewColumns"
             )
             self.assertIsNotNone(preview_columns)
             self.assertEqual("all", preview_columns.currentData())
             preview_headers = [
-                raw_table.horizontalHeaderItem(column).text()
-                for column in range(raw_table.columnCount())
+                raw_model.headerData(column, self.qt.Orientation.Horizontal)
+                for column in range(raw_model.columnCount())
             ]
             self.assertTrue(any("eeg_ch1" in header for header in preview_headers))
             self.assertTrue(any("other_ch1" in header for header in preview_headers))
             self.assertTrue(any("analog_ch1" in header for header in preview_headers))
             raw_headers = [
-                raw_table.horizontalHeaderItem(column).text()
-                for column in range(raw_table.columnCount())
+                raw_model.headerData(column, self.qt.Orientation.Horizontal)
+                for column in range(raw_model.columnCount())
             ]
             self.assertEqual("序号", raw_headers[0])
             self.assertIn("package_num", raw_headers[1])
@@ -356,6 +360,19 @@ class OpenBCIImportUiTests(unittest.TestCase):
 
             self.assertEqual("timestamp_s", headers[22])
             self.assertEqual("1788920592.3351054", rows[0][22])
+
+    def test_raw_preview_reads_every_source_data_row(self):
+        from apps.workstation_ui.pages import _read_data_preview
+
+        with tempfile.TemporaryDirectory() as directory:
+            csv_path = Path(directory) / "BrainFlow-RAW_0.csv"
+            write_csv(csv_path, count=257)
+
+            headers, rows = _read_data_preview(csv_path)
+
+            self.assertEqual(24, len(headers))
+            self.assertEqual(257, len(rows))
+            self.assertEqual("256", rows[-1][0])
 
     def test_formal_preview_restores_integer_timestamp_precision_from_events(self):
         from apps.workstation_ui.pages import _read_data_preview

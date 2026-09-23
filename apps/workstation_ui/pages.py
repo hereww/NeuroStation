@@ -10,11 +10,11 @@ import math
 import re
 from typing import Any
 
-from PySide6.QtCore import Signal, Qt, QUrl
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, Signal, Qt, QUrl
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QLineEdit,
     QSpinBox, QComboBox, QCheckBox, QFileDialog, QProgressBar, QStyle,
-    QAbstractItemView, QHeaderView, QTableWidget, QTableWidgetItem,
+    QAbstractItemView, QHeaderView, QTableView, QTableWidget, QTableWidgetItem,
     QDialog, QDialogButtonBox, QMessageBox, QTextEdit, QPushButton, QMenu,
 )
 from PySide6.QtGui import QDesktopServices
@@ -561,8 +561,8 @@ def _restore_formal_timestamp_precision(
             row[timestamp_index] = value
 
 
-def _read_data_preview(path: Path, limit: int = 100) -> tuple[tuple[str, ...], list[list[str]]]:
-    """Read only a bounded prefix for the Excel-like read-only data preview."""
+def _read_data_preview(path: Path) -> tuple[tuple[str, ...], list[list[str]]]:
+    """Read all source data rows for the read-only data preview."""
 
     rows: list[list[str]] = []
     headers: list[str] | None = None
@@ -587,8 +587,6 @@ def _read_data_preview(path: Path, limit: int = 100) -> tuple[tuple[str, ...], l
                         headers = row
                     continue
                 rows.append(row)
-                if len(rows) >= limit:
-                    break
     except (OSError, UnicodeError, csv.Error):
         return (), []
 
@@ -706,6 +704,76 @@ def _preview_column_indexes(headers: tuple[str, ...], group: str) -> tuple[int, 
     )
 
 
+class _PreviewTableModel(QAbstractTableModel):
+    """Virtualized read-only table model for complete raw dataset previews."""
+
+    def __init__(self, tr, headers: tuple[str, ...], rows: list[list[str]]) -> None:
+        super().__init__()
+        self._tr = tr
+        self._headers = headers
+        self._display_headers = _preview_header_labels(tr, headers)
+        self._rows = _sort_preview_rows_by_sample_index(headers, rows)
+        self._column_indexes = _preview_column_indexes(headers, "all")
+
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        return 0 if parent.isValid() else len(self._rows)
+
+    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        if parent.isValid():
+            return 0
+        return max(1, len(self._column_indexes) + 1)
+
+    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):
+        if not index.isValid() or not (0 <= index.row() < len(self._rows)):
+            return None
+        if role == Qt.ItemDataRole.DisplayRole:
+            if index.column() == 0:
+                return str(index.row() + 1)
+            source_column = self._column_indexes[index.column() - 1]
+            row = self._rows[index.row()]
+            return row[source_column] if source_column < len(row) else ""
+        if role == Qt.ItemDataRole.ToolTipRole:
+            if index.column() == 0:
+                return self._tr("dataset_summary.column.preview_row")
+            return self._headers[self._column_indexes[index.column() - 1]]
+        return None
+
+    def headerData(
+        self,
+        section: int,
+        orientation: Qt.Orientation,
+        role: int = Qt.ItemDataRole.DisplayRole,
+    ):
+        if orientation != Qt.Orientation.Horizontal:
+            return None
+        if section == 0 and not self._headers:
+            return self._tr("dataset_summary.no_columns")
+        if role == Qt.ItemDataRole.DisplayRole:
+            if section == 0:
+                return self._tr("dataset_summary.column.preview_row")
+            if 0 < section <= len(self._column_indexes):
+                return self._display_headers[self._column_indexes[section - 1]]
+        if role == Qt.ItemDataRole.ToolTipRole:
+            if section == 0:
+                return self._tr("dataset_summary.column.preview_row")
+            if 0 < section <= len(self._column_indexes):
+                return self._headers[self._column_indexes[section - 1]]
+        return None
+
+    def set_records(self, headers: tuple[str, ...], rows: list[list[str]]) -> None:
+        self.beginResetModel()
+        self._headers = headers
+        self._display_headers = _preview_header_labels(self._tr, headers)
+        self._rows = _sort_preview_rows_by_sample_index(headers, rows)
+        self._column_indexes = _preview_column_indexes(headers, "all")
+        self.endResetModel()
+
+    def set_group(self, group: str) -> None:
+        self.beginResetModel()
+        self._column_indexes = _preview_column_indexes(self._headers, group)
+        self.endResetModel()
+
+
 def _dataset_raw_preview_section(tr, result: Dataset) -> Section | None:
     raw_names = _dataset_raw_file_names(result)
     if not raw_names:
@@ -727,64 +795,38 @@ def _dataset_raw_preview_section(tr, result: Dataset) -> Section | None:
     preview.layout.addLayout(preview_columns_form)
 
     headers, values = _read_data_preview(result.path / raw_names[0])
-    preview_table = _readonly_table(headers or (tr("dataset_summary.no_columns"),))
+    preview_table = QTableView()
     preview_table.setObjectName("datasetRawPreviewTable")
     preview_table.setAccessibleName(tr("dataset_summary.raw_preview_table"))
+    preview_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+    preview_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+    preview_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+    preview_table.setAlternatingRowColors(True)
+    preview_table.setWordWrap(False)
+    preview_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+    preview_table.verticalHeader().setVisible(False)
+    preview_table.horizontalHeader().setStretchLastSection(True)
+    preview_table.setMinimumHeight(108)
     preview.layout.addWidget(preview_table)
 
-    state_headers = headers
-    state_values = _sort_preview_rows_by_sample_index(headers, values)
+    table_model = _PreviewTableModel(tr, headers, values)
+    preview_table.setModel(table_model)
+    preview_table.setColumnWidth(0, 70)
+    preview_table.horizontalHeader().setSectionResizeMode(
+        QHeaderView.ResizeMode.ResizeToContents
+    )
 
     def render_preview_table() -> None:
-        preview_table.setSortingEnabled(False)
-        preview_table.clearContents()
-        indexes = _preview_column_indexes(
-            state_headers, str(preview_columns.currentData() or "all")
-        )
-        if not state_headers:
-            preview_table.setColumnCount(1)
-            preview_table.setHorizontalHeaderLabels(
-                [tr("dataset_summary.no_columns")]
-            )
-            preview_table.setRowCount(0)
-            return
-
-        display_headers = _preview_header_labels(tr, state_headers)
-        preview_table.setColumnCount(len(indexes) + 1)
-        preview_table.setHorizontalHeaderLabels(
-            [tr("dataset_summary.column.preview_row")]
-            + [display_headers[index] for index in indexes]
-        )
-        for column, index in enumerate(indexes, start=1):
-            header_item = preview_table.horizontalHeaderItem(column)
-            if header_item is not None:
-                header_item.setToolTip(str(state_headers[index]))
-        row_header = preview_table.horizontalHeaderItem(0)
-        if row_header is not None:
-            row_header.setToolTip(tr("dataset_summary.column.preview_row"))
-        preview_table.setRowCount(0)
-        for row_number, values_row in enumerate(state_values, start=1):
-            row = preview_table.rowCount()
-            preview_table.insertRow(row)
-            preview_table.setItem(row, 0, _table_item(row_number))
-            for column, index in enumerate(indexes, start=1):
-                value = values_row[index] if index < len(values_row) else ""
-                preview_table.setItem(row, column, _table_item(value))
-        preview_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.ResizeToContents
-        )
+        table_model.set_group(str(preview_columns.currentData() or "all"))
         preview_table.horizontalScrollBar().setValue(
             preview_table.horizontalScrollBar().minimum()
         )
         preview_table.setMinimumHeight(
-            min(440, max(108, 30 * min(10, max(1, len(state_values))) + 44))
+            min(440, max(108, 30 * min(10, max(1, table_model.rowCount())) + 44))
         )
-        preview_table.setSortingEnabled(False)
 
     def set_preview_table(new_headers: tuple[str, ...], new_values: list[list[str]]) -> None:
-        nonlocal state_headers, state_values
-        state_headers = new_headers
-        state_values = _sort_preview_rows_by_sample_index(new_headers, new_values)
+        table_model.set_records(new_headers, new_values)
         current_group = preview_columns.currentData()
         previous_group = str(current_group) if current_group else ""
         groups = [

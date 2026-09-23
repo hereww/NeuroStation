@@ -1,5 +1,5 @@
 {
-  "app.title": "NeuroStation 1.0 · 脑电采集工作站",
+  "app.title": "NeuroStation 1.01 · 脑电采集工作站",
   "mode.banner": "当前模式：{mode}",
   "mode.demo": "历史演示记录（只读）",
   "mode.preview": "历史视觉预览记录（只读）",
@@ -151,7 +151,7 @@
   "dataset_summary.open_in_explorer": "打开资源管理器",
   "dataset_summary.paths": "路径",
   "dataset_summary.data_preview": "原始数据预览",
-  "dataset_summary.data_preview_note": "只读显示前 100 行；不会加载或修改完整原始文件。默认按原始顺序显示全部字段，包括 sample_index、package_num、EEG 8 通道、加速度、other_ch、analog、timestamp_s 和 marker。可按字段组切换显示范围；历史文件若原始列只保存整数秒，会从同目录 events.tsv 恢复预览精度。",
+  "dataset_summary.data_preview_note": "只读显示源文件的全部数据行，不修改原始文件。默认按原始顺序显示全部字段，包括 sample_index、package_num、EEG 8 通道、加速度、other_ch、analog、timestamp_s 和 marker。可按字段组切换显示范围；历史文件若原始列只保存整数秒，会从同目录 events.tsv 恢复预览精度。",
   "dataset_summary.preview_file": "预览文件",
   "dataset_summary.preview_columns": "显示字段",
   "dataset_summary.preview_column_group.all": "全部显示字段（{count} 列）",

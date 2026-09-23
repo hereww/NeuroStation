@@ -1,5 +1,5 @@
 {
-  "app.title": "NeuroStation 1.0 · EEG workstation",
+  "app.title": "NeuroStation 1.01 · EEG workstation",
   "mode.banner": "Current mode: {mode}",
   "mode.demo": "Legacy demo record (read-only)",
   "mode.preview": "Legacy visual preview record (read-only)",
@@ -151,7 +151,7 @@
   "dataset_summary.open_in_explorer": "Open in file manager",
   "dataset_summary.paths": "Paths",
   "dataset_summary.data_preview": "Raw data preview",
-  "dataset_summary.data_preview_note": "Read-only first 100 rows. The complete raw file is not loaded or modified. By default, every source field is shown in its original order, including sample_index, package_num, all 8 EEG channels, accelerometer, other_ch, analog, timestamp_s, and marker. Switch field groups to narrow the display; historical integer-second timestamps use the precise event timeline for preview only.",
+  "dataset_summary.data_preview_note": "Read-only view of every data row in the source file; the raw file is not modified. By default, every source field is shown in its original order, including sample_index, package_num, all 8 EEG channels, accelerometer, other_ch, analog, timestamp_s, and marker. Switch field groups to narrow the display; historical integer-second timestamps use the precise event timeline for preview only.",
   "dataset_summary.preview_file": "Preview file",
   "dataset_summary.preview_columns": "Displayed fields",
   "dataset_summary.preview_column_group.all": "All displayed fields ({count} columns)",
