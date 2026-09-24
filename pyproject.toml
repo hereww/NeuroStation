@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "neurostation-eeg-workstation"
-version = "1.0.2"
-description = "NeuroStation 1.02 Windows-first EEG acquisition workstation"
+version = "1.0.3"
+description = "NeuroStation 1.03 Windows-first EEG acquisition workstation"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["PySide6>=6.7", "brainflow==5.22.2", "numpy>=2.0", "scipy>=1.14"]
@@ -14,6 +14,7 @@ dependencies = ["PySide6>=6.7", "brainflow==5.22.2", "numpy>=2.0", "scipy>=1.14"
 files = [
   "workstation.py",
   "neurostation_contract.py",
+  "neurostation_display.py",
   "neurostation_diagnostics.py",
   "analyze_ssvep_session.py",
   "preprocess_eeg_session.py",

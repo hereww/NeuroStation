@@ -39,5 +39,18 @@
   "control.radio_configuration": "RADIO CONFIGURATION",
   "action.searching": "SEARCHING...",
   "action.refresh": "REFRESH LIST",
-  "action.start_search": "START SEARCH"
+  "action.start_search": "START SEARCH",
+  "source.cyton_live": "CYTON (live)",
+  "source.ganglion_live": "GANGLION (live)",
+  "source.playback_file": "PLAYBACK (from file)",
+  "source.synthetic": "SYNTHETIC (algorithmic)",
+  "source.external_stream": "STREAMING (from external)",
+  "error.no_cyton_dongle": "No Cyton dongles were found.",
+  "error.cyton_connection": "Unable to connect to Cyton. Please check hardware and power source.",
+  "session.start": "START SESSION",
+  "session.stop": "STOP SESSION",
+  "error.transfer_protocol": "No Transfer Protocol selected. Please select your Transfer Protocol and retry system initiation.",
+  "error.auto_connect": "No Serial/COM port selected. Attempting to AUTO-CONNECT to Cyton.",
+  "error.playback_file": "No playback file selected. Please select a playback file and retry system initiation.",
+  "error.data_source": "No DATA SOURCE selected. Please select a DATA SOURCE and retry system initiation."
 }

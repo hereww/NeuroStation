@@ -57,7 +57,7 @@ jobs:
       - name: UI scale matrix smoke
         run: python scripts/smoke_ui_matrix.py
       - name: Syntax check
-        run: python -m compileall -q apps eeg_tools tests scripts workstation.py check_cyton_live.py run_ssvep_session.py neurostation_contract.py
+        run: python -m compileall -q apps eeg_tools tests scripts workstation.py check_cyton_live.py run_ssvep_session.py neurostation_contract.py neurostation_display.py
       - name: Build standalone application (Windows)
         if: runner.os == 'Windows'
         shell: pwsh

@@ -73,6 +73,28 @@ class OpenBCIWorkspaceManagerTests(unittest.TestCase):
             (data / "zh-CN.json").write_text("{}", encoding="utf-8")
             self.assertFalse(OpenBCIWorkspaceManager._overlay_ready(source))
 
+    def test_overlay_catalogs_and_startup_are_consistent(self) -> None:
+        """The checked-in overlay must never run a network check during setup."""
+        import importlib.util
+
+        root = Path(__file__).resolve().parents[1]
+        path = root / "scripts" / "apply_openbci_gui_overlay.py"
+        spec = importlib.util.spec_from_file_location("openbci_overlay", path)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        replacements = module.REPLACEMENTS["OpenBCI_GUI/TopNav.pde"]
+        self.assertTrue(any("guiIsUpToDate = null;" in new for _old, new in replacements))
+        self.assertTrue(any("remoteVersionString == null" in new for _old, new in replacements))
+        base = root / "integrations" / "openbci_gui" / "overlay" / "OpenBCI_GUI"
+        i18n = (base / "WorkstationI18n.pde").read_text(encoding="utf-8")
+        self.assertIn('String workstationLocale = "zh-CN";', i18n)
+        english = json.loads((base / "data/workstation-i18n/en-US.json").read_text(encoding="utf-8"))
+        chinese = json.loads((base / "data/workstation-i18n/zh-CN.json").read_text(encoding="utf-8"))
+        self.assertEqual(set(english), set(chinese))
+        for key in ("source.cyton_live", "source.playback_file", "error.cyton_connection"):
+            self.assertIn(key, chinese)
+
     def test_windows_command_matches_portable_openbci_launcher(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             runtime = Path(directory)

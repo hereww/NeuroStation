@@ -41,6 +41,7 @@ from neurostation_contract import (
     dataset_name_for_eye,
     is_confirmed_position,
 )
+from neurostation_display import resolve_eye_regions
 
 
 def _device_connection_text(tr, device: DeviceInfo | None) -> str:
@@ -1850,37 +1851,19 @@ class SSVEPPage(Page):
         self.estimate.setText(self.tr("ssvep.estimate", total=format_duration(config.total_seconds),
             recording=format_duration(config.recording_seconds), trials=config.trials))
 
-    @staticmethod
-    def _ordered_screens():
-        application = QApplication.instance()
-        if application is None:
-            return ()
-        return tuple(
-            sorted(
-                enumerate(application.screens()),
-                key=lambda item: (
-                    int(item[1].geometry().x()),
-                    int(item[1].geometry().y()),
-                    str(item[1].name()),
-                ),
-            )
-        )
-
     def _update_screen_mapping(self):
-        screens = self._ordered_screens()
-        if len(screens) < 2:
+        application = QApplication.instance()
+        try:
+            mapping = resolve_eye_regions(application)
+        except (RuntimeError, AttributeError):
             self.screen_mapping.setText(self.tr("ssvep.screen_mapping_missing"))
             return
-        if int(screens[0][1].geometry().x()) == int(screens[-1][1].geometry().x()):
-            self.screen_mapping.setText(self.tr("ssvep.screen_mapping_horizontal_missing"))
-            return
-        left_index, left = screens[0]
-        right_index, right = screens[-1]
+        screen = mapping["left"]["screen"]
+        screen_index = mapping["left"]["screen_index"]
         self.screen_mapping.setText(
             self.tr(
                 "ssvep.screen_mapping",
-                left=f"{left_index} · {left.name()}",
-                right=f"{right_index} · {right.name()}",
+                screen=f"{screen_index} · {screen.name()}",
             )
         )
 
@@ -1967,11 +1950,10 @@ class SSVEPPage(Page):
         try:
             config = self.config()
             config.validate()
-            screens = self._ordered_screens()
-            if len(screens) < 2:
+            try:
+                resolve_eye_regions(QApplication.instance())
+            except (RuntimeError, AttributeError):
                 raise ValueError("validation.screens")
-            if int(screens[0][1].geometry().x()) == int(screens[-1][1].geometry().x()):
-                raise ValueError("validation.screens_horizontal")
         except ValueError as error:
             self.error.setText(self.tr(str(error)))
             return

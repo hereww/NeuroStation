@@ -39,5 +39,18 @@
   "control.radio_configuration": "无线电配置",
   "action.searching": "搜索中……",
   "action.refresh": "刷新列表",
-  "action.start_search": "开始搜索"
+  "action.start_search": "开始搜索",
+  "source.cyton_live": "CYTON（实时）",
+  "source.ganglion_live": "GANGLION（实时）",
+  "source.playback_file": "回放（从文件）",
+  "source.synthetic": "模拟（算法生成）",
+  "source.external_stream": "外部数据流",
+  "error.no_cyton_dongle": "未找到 Cyton USB 接收器。",
+  "error.cyton_connection": "无法连接 Cyton，请检查设备和供电。",
+  "session.start": "启动会话",
+  "session.stop": "停止会话",
+  "error.transfer_protocol": "未选择传输协议。请选择协议后重试。",
+  "error.auto_connect": "未选择串口，正在尝试自动连接 Cyton。",
+  "error.playback_file": "未选择回放文件。请选择文件后重试。",
+  "error.data_source": "未选择数据源。请选择数据源后重试。"
 }

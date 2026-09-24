@@ -37,6 +37,7 @@ from neurostation_contract import (
 
 from .ssvep import SSVEPProtocol, SSVEPProtocolError
 from .device_discovery import candidate_serial_ports
+from neurostation_display import eye_half_geometry, resolve_eye_regions
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -117,34 +118,6 @@ def _session_directory(root: Path) -> tuple[str, Path]:
     raise RuntimeError("Unable to allocate a unique session directory")
 
 
-def _resolve_eye_screens(application: Any) -> dict[str, dict[str, Any]]:
-    screens = list(application.screens())
-    if len(screens) < 2:
-        raise RuntimeError(
-            "validation.screens: SSVEP left/right eye acquisition requires at least two displays"
-        )
-    x_positions = [int(screen.geometry().x()) for screen in screens]
-    if min(x_positions) == max(x_positions):
-        raise RuntimeError(
-            "validation.screens_horizontal: SSVEP left/right eye acquisition "
-            "requires displays with distinct horizontal positions"
-        )
-    ordered = sorted(
-        enumerate(screens),
-        key=lambda item: (
-            int(item[1].geometry().x()),
-            int(item[1].geometry().y()),
-            str(item[1].name()),
-        ),
-    )
-    left_index, left_screen = ordered[0]
-    right_index, right_screen = ordered[-1]
-    return {
-        "left": {"screen_index": left_index, "screen": left_screen},
-        "right": {"screen_index": right_index, "screen": right_screen},
-    }
-
-
 def _screen_metadata(screen: Any, screen_index: int) -> dict[str, Any]:
     geometry = screen.geometry()
     refresh_rate = float(screen.refreshRate()) if screen.refreshRate() else 0.0
@@ -176,16 +149,15 @@ def _screen_mapping_text(display: dict[str, Any]) -> str:
     return json.dumps(mapping, ensure_ascii=False, separators=(",", ":"), default=str)
 
 
-def _create_stimulus_windows(eye_side: str):
+def _create_stimulus_window(eye_side: str):
     from PySide6.QtCore import Qt, QRect
     from PySide6.QtGui import QColor, QFont, QKeyEvent, QPainter, QPaintEvent
     from PySide6.QtWidgets import QApplication, QWidget
 
     application = QApplication.instance() or QApplication(sys.argv[:1])
 
-    mapping = _resolve_eye_screens(application)
+    mapping = resolve_eye_regions(application)
     active = mapping[eye_side]
-    inactive = mapping["right" if eye_side == "left" else "left"]
     abort_state = {"requested": False}
 
     class StimulusWindow(QWidget):
@@ -224,24 +196,29 @@ def _create_stimulus_windows(eye_side: str):
 
         def paintEvent(self, event: QPaintEvent) -> None:
             painter = QPainter(self)
+            if self.width() < 2 or self.height() < 1:
+                painter.fillRect(self.rect(), QColor("black"))
+                return
+            half = eye_half_geometry(0, 0, self.width(), self.height(), eye_side)
+            region = QRect(half["x"], half["y"], half["width"], half["height"])
+            painter.fillRect(self.rect(), QColor("black"))
+            painter.setClipRect(region)
             if self.message:
                 painter.fillRect(
-                    self.rect(),
+                    region,
                     QColor("white") if self.message_flash else QColor("black"),
                 )
-            else:
-                painter.fillRect(self.rect(), QColor("black"))
             if self.message:
                 painter.setPen(QColor("black") if self.message_flash else QColor("white"))
-                painter.setFont(QFont("Sans Serif", max(28, self.height() // 12)))
-                painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self.message)
+                painter.setFont(QFont("Sans Serif", max(28, min(region.width(), region.height()) // 12)))
+                painter.drawText(region, Qt.AlignmentFlag.AlignCenter, self.message)
                 return
-            side = min(self.width(), self.height()) // 5
+            side = max(1, min(region.width(), region.height()) // 5)
             positions = (
-                (self.width() // 4, self.height() // 3),
-                (self.width() * 3 // 4, self.height() // 3),
-                (self.width() // 4, self.height() * 2 // 3),
-                (self.width() * 3 // 4, self.height() * 2 // 3),
+                (region.x() + region.width() // 4, region.height() // 3),
+                (region.x() + region.width() * 3 // 4, region.height() // 3),
+                (region.x() + region.width() // 4, region.height() * 2 // 3),
+                (region.x() + region.width() * 3 // 4, region.height() * 2 // 3),
             )
             for index, (center_x, center_y) in enumerate(positions):
                 rectangle = QRect(center_x - side // 2, center_y - side // 2, side, side)
@@ -255,8 +232,8 @@ def _create_stimulus_windows(eye_side: str):
                     QColor(90, 90, 90)
                 )
                 painter.drawRect(rectangle)
-            patch_side = max(24, min(self.width(), self.height()) // 16)
-            patch = QRect(self.width() - patch_side - 12, self.height() - patch_side - 12, patch_side, patch_side)
+            patch_side = max(1, min(region.width() - 24, region.height() - 24, max(24, min(region.width(), region.height()) // 16)))
+            patch = QRect(region.right() - patch_side - 11, region.bottom() - patch_side - 11, patch_side, patch_side)
             painter.fillRect(patch, QColor("white") if self.lit else QColor("black"))
 
         def show_message(self, message: str, *, flash: bool = False) -> None:
@@ -279,40 +256,15 @@ def _create_stimulus_windows(eye_side: str):
             self._gaze_marks.clear()
             return marks
 
-    class BlackoutWindow(QWidget):
-        def __init__(self) -> None:
-            super().__init__()
-            self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-            self.setCursor(Qt.CursorShape.BlankCursor)
-            self.setStyleSheet("background: black;")
-
-        @property
-        def abort_requested(self) -> bool:
-            return bool(abort_state["requested"])
-
-        def keyPressEvent(self, event: QKeyEvent) -> None:
-            if event.key() in (Qt.Key.Key_Escape, Qt.Key.Key_Q):
-                abort_state["requested"] = True
-            else:
-                super().keyPressEvent(event)
-
-        def paintEvent(self, event: QPaintEvent) -> None:
-            painter = QPainter(self)
-            painter.fillRect(self.rect(), QColor("black"))
-
     window = StimulusWindow()
     window.setScreen(active["screen"])
     window.setGeometry(active["screen"].geometry())
-    blackout = BlackoutWindow()
-    blackout.setScreen(inactive["screen"])
-    blackout.setGeometry(inactive["screen"].geometry())
-    blackout.showFullScreen()
     window.showFullScreen()
     window.raise_()
     window.activateWindow()
     window.setFocus()
     application.processEvents()
-    return application, window, blackout, mapping
+    return application, window, mapping
 
 
 def _prepare_cyton_board(
@@ -466,6 +418,7 @@ def _present_stimulus(
     screen_name: str,
     screen_geometry: str,
     screen_mapping: str,
+    stimulus_region: str,
     frame_rows: list[dict[str, Any]],
     progress: Callable[[float], None],
     on_gaze_mark: Callable[[int, float], None] | None = None,
@@ -507,6 +460,7 @@ def _present_stimulus(
                 "screen_name": screen_name,
                 "screen_geometry": screen_geometry,
                 "screen_mapping": screen_mapping,
+                "stimulus_region": stimulus_region,
                 "frame_index": frame_index,
                 "scheduled_s": frame_index / refresh_rate_hz,
                 "actual_s": actual - started,
@@ -538,6 +492,7 @@ def _write_frame_log(path: Path, rows: list[dict[str, Any]]) -> None:
         "screen_name",
         "screen_geometry",
         "screen_mapping",
+        "stimulus_region",
         "frame_index",
         "scheduled_s",
         "actual_s",
@@ -869,12 +824,10 @@ def main(argv: list[str] | None = None) -> int:
     selected_port = arguments.port if arguments.board == "cyton" else None
     selected_screen_index: int | None = None
     display_metadata: dict[str, Any] = {}
-    screen_mapping: dict[str, dict[str, Any]] = {}
     prepared = False
     streaming = False
     application = None
     window = None
-    blackout_window = None
     recording_started: float | None = None
     acquisition_started: float | None = None
     live_waveform_path = (
@@ -947,6 +900,7 @@ def main(argv: list[str] | None = None) -> int:
                 "screen_name": str((display_metadata.get("active") or {}).get("name") or ""),
                 "screen_geometry": _screen_geometry_text(display_metadata.get("active") or {}),
                 "screen_mapping": _screen_mapping_text(display_metadata),
+                "stimulus_region": _screen_geometry_text(display_metadata.get("active_region") or {}),
                 "source": source,
                 "label_source": label_source,
                 "trial_index": trial_index,
@@ -990,6 +944,7 @@ def main(argv: list[str] | None = None) -> int:
                 "left": display_metadata.get("left"),
                 "right": display_metadata.get("right"),
             },
+            stimulus_region=display_metadata.get("active_region"),
             **extra,
         )
 
@@ -1007,36 +962,32 @@ def main(argv: list[str] | None = None) -> int:
                 "inactive": None,
                 "left": None,
                 "right": None,
+                "active_region": None,
                 "refresh_rate_hz": 0.0,
                 "protocol_refresh_rate_hz": int(protocol.refresh_rate_hz),
                 "refresh_rate_status": "not_applicable",
             }
         if not arguments.headless:
-            application, window, blackout_window, screen_mapping = _create_stimulus_windows(
+            application, window, screen_mapping = _create_stimulus_window(
                 arguments.eye_side
             )
             selected_screen_index = int(screen_mapping[arguments.eye_side]["screen_index"])
             screen = screen_mapping[arguments.eye_side]["screen"]
             inactive_side = "right" if arguments.eye_side == "left" else "left"
             selected_display = _screen_metadata(screen, selected_screen_index)
-            inactive_display = _screen_metadata(
-                screen_mapping[inactive_side]["screen"],
-                int(screen_mapping[inactive_side]["screen_index"]),
-            )
+            regions = {
+                side: {**selected_display, "region_geometry": screen_mapping[side]["region_geometry"]}
+                for side in ("left", "right")
+            }
             refresh_rate = selected_display["refresh_rate_hz"]
             display_metadata = {
-                "mode": "physical_left_right",
+                "mode": "primary_screen_halves",
                 "eye_side": arguments.eye_side,
                 "active": selected_display,
-                "inactive": inactive_display,
-                "left": _screen_metadata(
-                    screen_mapping["left"]["screen"],
-                    int(screen_mapping["left"]["screen_index"]),
-                ),
-                "right": _screen_metadata(
-                    screen_mapping["right"]["screen"],
-                    int(screen_mapping["right"]["screen_index"]),
-                ),
+                "inactive": regions[inactive_side],
+                "active_region": {"geometry": regions[arguments.eye_side]["region_geometry"]},
+                "left": regions["left"],
+                "right": regions["right"],
                 "refresh_rate_hz": refresh_rate,
                 "protocol_refresh_rate_hz": int(protocol.refresh_rate_hz),
                 "refresh_rate_status": (
@@ -1152,6 +1103,7 @@ def main(argv: list[str] | None = None) -> int:
                     screen_name=str((display_metadata.get("active") or {}).get("name") or ""),
                     screen_geometry=_screen_geometry_text(display_metadata.get("active") or {}),
                     screen_mapping=_screen_mapping_text(display_metadata),
+                    stimulus_region=_screen_geometry_text(display_metadata.get("active_region") or {}),
                     frame_rows=frame_rows,
                     progress=stimulus_progress,
                     on_gaze_mark=gaze_mark,
@@ -1211,8 +1163,6 @@ def main(argv: list[str] | None = None) -> int:
             live_waveform_writer.close()
         if window is not None:
             window.close()
-        if blackout_window is not None:
-            blackout_window.close()
         if board is not None:
             if streaming:
                 try:
@@ -1318,6 +1268,7 @@ def main(argv: list[str] | None = None) -> int:
             "left": display_metadata.get("left"),
             "right": display_metadata.get("right"),
         },
+        "stimulus_region": display_metadata.get("active_region"),
         "sampling_rate_hz": 0 if board_id is None else int(BoardShim.get_sampling_rate(board_id)),
         "channel_count": 0 if board_id is None else len(BoardShim.get_eeg_channels(board_id)),
         "started_at": started_at,

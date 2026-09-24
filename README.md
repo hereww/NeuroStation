@@ -5,16 +5,21 @@
 
 NeuroStation 是一个面向科研与教学技术验证的跨平台脑电采集工作站。项目把 PySide6 桌面界面、BrainFlow 采集 worker、SSVEP 刺激流程、OpenBCI Cyton 接入、会话文件和数据集浏览整合在同一套工作流中。
 
-当前交付版本为 **NeuroStation 1.02（语义版本 1.0.2）**。Windows 10/11 x64 提供无需 Python 环境的 standalone portable 包；Linux 和 macOS 主要用于源码测试与平台构建验收。
+当前源码版本为 **NeuroStation 1.03（语义版本 1.0.3）**。Windows 10/11 x64 可构建无需 Python 环境的 standalone portable 包；Linux 和 macOS 主要用于源码测试与平台构建验收。
 
 ## 下载与版本边界
 
-- [下载 NeuroStation 1.02 Windows x64](https://github.com/hereww/NeuroStation/releases/latest)
-- [查看 NeuroStation 1.02 Release 说明](release/NeuroStation-1.02-Windows-x64.md)
+- [查看线上发布版本](https://github.com/hereww/NeuroStation/releases)
+- [查看 NeuroStation 1.03 构建说明](release/NeuroStation-1.03-Windows-x64.md)
 - [查看完整验收清单](docs/验收清单.md)
 - [查看跨平台方案](docs/跨平台脑电采集工作站方案.md)
 
 Windows 包是可直接解压运行的目录，不是 MSI 安装器，也不包含真实 Cyton 设备。当前生产入口只允许 OpenBCI Cyton 真实硬件采集；没有设备时只能查看历史记录、导入 OpenBCI 文件或运行诊断，不能生成模拟 EEG。
+
+### 1.03 更新内容
+
+- SSVEP 左右眼分别采集改为在主显示器的左半区或右半区显示四目标刺激，另一半全程保持黑色；仅需一块显示器；
+- 眼别选择必填，数据集名称自动追加眼别，并记录刺激半区和屏幕几何信息。
 
 ### 1.02 更新内容
 
@@ -44,7 +49,7 @@ Windows 包是可直接解压运行的目录，不是 MSI 安装器，也不包�
 
 ### 使用 Windows 发布包
 
-1. 下载并解压 `NeuroStation-1.02-Windows-x64.zip`。
+1. 构建或下载对应版本的 Windows x64 ZIP，解压 `NeuroStation-1.03-Windows-x64.zip`。
 2. 运行 `NeuroStation.dist\workstation.exe`。
 3. 首次使用先连接 Cyton USB dongle，选择采集用户并完成硬件预检。
 4. 需要查看运行环境时执行：
@@ -87,9 +92,9 @@ python -m apps.workstation_ui.main
 - Cyton 目标采样率：250 Hz、8 通道。
 
 每次 SSVEP 任务只采集一只眼，开始前必须选择“左眼”或“右眼”。程序在采集
-worker 启动时按显示器物理横坐标重新排序：最左屏绑定左眼，最右屏绑定右眼；
-选中屏幕显示 10 / 12 / 15 / 20 Hz 四目标刺激，另一块屏幕全屏保持黑色。可视
-采集少于两块显示器时会被阻止，多于两块时中间显示器不参与刺激。数据集名称会
+worker 启动时重新获取主显示器，并将全屏分为左右两半：左眼使用左半区，右眼
+使用右半区。选中半区显示 10 / 12 / 15 / 20 Hz 四目标刺激，另一半始终为黑色；
+仅需一块显示器，其他显示器不参与刺激。数据集名称会
 自动生成 `原名称_左眼` 或 `原名称_右眼`，已有眼别后缀会先去重。
 
 协议文件状态为 `draft_for_workstation_mvp`。程序会校验刺激频率是否能整除配置的刷新率，但不会替代实际显示器刷新率和端到端光学时序校准。
@@ -147,7 +152,7 @@ python run_ssvep_session.py `
 
 新 SSVEP 会话的 `session.json`、`ssvep_config.json`、状态文件、`events.tsv` 和
 `frame_timing.tsv` 会记录 `eye_side`、基础数据集名称、生成后的会话名称以及实际
-刺激屏幕的编号、名称和几何信息。旧会话缺少这些字段时仍可读取，并在 UI 中显示
+刺激屏幕的编号、名称、完整几何及 `stimulus_region` 半区几何信息。旧会话缺少这些字段时仍可读取，并在 UI 中显示
 为“未标注”。
 
 新采集会话中的 `events.tsv` 会区分 `presented_target_id`（软件呈现目标）、
@@ -210,7 +215,7 @@ CI 不生成 Synthetic 或 Demo 数据。没有 Cyton 时只执行协议/通道�
 $env:QT_QPA_PLATFORM = 'offscreen'
 python -m unittest discover -s tests -v
 python -m unittest discover -s apps/workstation_ui/tests -v
-python -m compileall -q apps eeg_tools tests scripts workstation.py check_cyton_live.py run_ssvep_session.py neurostation_contract.py
+python -m compileall -q apps eeg_tools tests scripts workstation.py check_cyton_live.py run_ssvep_session.py neurostation_contract.py neurostation_display.py
 ```
 
 Windows standalone 构建：
@@ -223,7 +228,7 @@ python scripts\smoke_packaged.py
 构建会把源码复制到 ASCII 路径的临时 stage，使用 Qt 官方 `pyside6-deploy`/Nuitka 构建，再把产物复制回 `dist/`。Windows 输出包括：
 
 - `dist\NeuroStation.dist\`：可运行目录；
-- `dist\NeuroStation-1.02-Windows-x64.zip`：发布归档。
+- `dist\NeuroStation-1.03-Windows-x64.zip`：发布归档。
 
 GitHub Actions 的职责分工如下：
 

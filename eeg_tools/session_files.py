@@ -20,6 +20,7 @@ EVENT_FIELDS = [
     "screen_name",
     "screen_geometry",
     "screen_mapping",
+    "stimulus_region",
     "source",
     "label_source",
     "trial_index",

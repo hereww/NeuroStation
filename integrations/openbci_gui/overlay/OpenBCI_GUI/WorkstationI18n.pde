@@ -1,7 +1,7 @@
 // NeuroStation overlay: minimal, upstream-friendly internationalization layer.
 // Locale may be passed with -Dopenbci.locale=zh-CN or NEUROSTATION_LANGUAGE.
 
-String workstationLocale = "en-US";
+String workstationLocale = "zh-CN";
 JSONObject workstationEnglish;
 JSONObject workstationChinese;
 
@@ -10,8 +10,8 @@ void setupWorkstationI18n() {
     if (requested == null || requested.length() == 0) {
         requested = System.getenv("NEUROSTATION_LANGUAGE");
     }
-    if (requested != null && requested.toLowerCase().startsWith("zh")) {
-        workstationLocale = "zh-CN";
+    if (requested != null && requested.toLowerCase().startsWith("en")) {
+        workstationLocale = "en-US";
     }
     workstationEnglish = loadJSONObject("workstation-i18n/en-US.json");
     workstationChinese = loadJSONObject("workstation-i18n/zh-CN.json");

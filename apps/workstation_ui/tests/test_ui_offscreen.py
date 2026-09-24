@@ -184,7 +184,8 @@ class QtOffscreenTests(unittest.TestCase):
 
         page = self.window.pages["ssvep"]
         self.assertEqual("", page.eye_side.currentData())
-        self.assertIn("屏幕映射不可用", page.screen_mapping.text())
+        self.assertIn("左半区", page.screen_mapping.text())
+        self.assertIn("右半区", page.screen_mapping.text())
         self.assertIn("选择眼别", page.dataset_preview.text())
         page._start()
         self.assertTrue(page.error.text())
@@ -197,6 +198,14 @@ class QtOffscreenTests(unittest.TestCase):
         config = page.config()
         self.assertEqual(CaptureMode.CYTON, config.mode)
         config.validate()
+
+        page.start_requested.disconnect(self.window.start_ssvep)
+        requested = []
+        page.start_requested.connect(lambda candidate, speed: requested.append(candidate.eye_side))
+        page._start()
+        page.eye_side.setCurrentIndex(page.eye_side.findData("right"))
+        page._start()
+        self.assertEqual(["left", "right"], requested)
 
     def test_openbci_waveform_model_uses_rolling_buffers_and_display_copy(self):
         from apps.workstation_ui.components import WaveformDisplayModel

@@ -12,22 +12,31 @@ from neurostation_contract import (
 )
 from eeg_tools.session_files import EVENT_FIELDS
 from eeg_tools.workstation.acquisition_worker import (
-    _resolve_eye_screens,
+    _create_stimulus_window,
     _write_frame_log,
     build_parser,
 )
+from neurostation_display import eye_half_geometry, resolve_eye_regions
 
 
 class _Geometry:
-    def __init__(self, x: int, y: int = 0) -> None:
+    def __init__(self, x: int, y: int = 0, width: int = 1920, height: int = 1080) -> None:
         self._x = x
         self._y = y
+        self._width = width
+        self._height = height
 
     def x(self) -> int:
         return self._x
 
     def y(self) -> int:
         return self._y
+
+    def width(self) -> int:
+        return self._width
+
+    def height(self) -> int:
+        return self._height
 
 
 class _Screen:
@@ -43,11 +52,15 @@ class _Screen:
 
 
 class _Application:
-    def __init__(self, screens: list[_Screen]) -> None:
+    def __init__(self, screens: list[_Screen], primary: _Screen | None = None) -> None:
         self._screens = screens
+        self._primary = primary or (screens[0] if screens else None)
 
     def screens(self) -> list[_Screen]:
         return self._screens
+
+    def primaryScreen(self) -> _Screen | None:
+        return self._primary
 
 
 class SsvepEyeSideTests(unittest.TestCase):
@@ -79,28 +92,42 @@ class SsvepEyeSideTests(unittest.TestCase):
         config.validate()
         self.assertEqual("task_左眼", config.dataset_name)
 
-    def test_screens_are_mapped_by_physical_horizontal_position(self) -> None:
+    def test_both_eye_regions_use_the_primary_screen(self) -> None:
         application = _Application([
             _Screen("middle", 0),
             _Screen("right", 1920),
             _Screen("left", -1920),
-        ])
-        mapping = _resolve_eye_screens(application)
-        self.assertEqual("left", mapping["left"]["screen"].name())
-        self.assertEqual("right", mapping["right"]["screen"].name())
-        self.assertEqual(2, mapping["left"]["screen_index"])
+        ], primary=None)
+        mapping = resolve_eye_regions(application)
+        self.assertEqual("middle", mapping["left"]["screen"].name())
+        self.assertEqual("middle", mapping["right"]["screen"].name())
+        self.assertEqual(0, mapping["left"]["screen_index"])
+        self.assertEqual(0, mapping["right"]["screen_index"])
+        self.assertEqual({"x": 0, "y": 0, "width": 960, "height": 1080}, mapping["left"]["region_geometry"])
+        self.assertEqual({"x": 960, "y": 0, "width": 960, "height": 1080}, mapping["right"]["region_geometry"])
+
+    def test_single_screen_maps_both_regions(self) -> None:
+        mapping = resolve_eye_regions(_Application([_Screen("only", -50)]))
+        self.assertEqual(-50, mapping["left"]["region_geometry"]["x"])
+        self.assertEqual(910, mapping["right"]["region_geometry"]["x"])
+
+    def test_non_first_primary_screen_is_selected_for_both_eyes(self) -> None:
+        screens = [_Screen("secondary", -1920), _Screen("primary", 0)]
+        mapping = resolve_eye_regions(_Application(screens, primary=screens[1]))
+        self.assertEqual(1, mapping["left"]["screen_index"])
         self.assertEqual(1, mapping["right"]["screen_index"])
 
-    def test_single_screen_blocks_visual_mapping(self) -> None:
+    def test_no_screen_blocks_visual_mapping(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "validation.screens"):
-            _resolve_eye_screens(_Application([_Screen("only", 0)]))
+            resolve_eye_regions(_Application([]))
 
-    def test_vertical_only_layout_blocks_left_right_mapping(self) -> None:
-        with self.assertRaisesRegex(RuntimeError, "validation.screens_horizontal"):
-            _resolve_eye_screens(_Application([
-                _Screen("top", 0, 0),
-                _Screen("bottom", 0, 1080),
-            ]))
+    def test_odd_screen_width_keeps_all_pixels_and_rejects_unusable_screen(self) -> None:
+        self.assertEqual({"x": 11, "y": 7, "width": 2, "height": 4}, eye_half_geometry(11, 7, 5, 4, "left"))
+        self.assertEqual({"x": 13, "y": 7, "width": 3, "height": 4}, eye_half_geometry(11, 7, 5, 4, "right"))
+        with self.assertRaisesRegex(RuntimeError, "validation.screens"):
+            eye_half_geometry(0, 0, 1, 4, "left")
+        with self.assertRaisesRegex(ValueError, "validation.eye_side"):
+            eye_half_geometry(0, 0, 5, 4, "middle")
 
     def test_worker_requires_eye_side_and_frame_log_has_capture_metadata(self) -> None:
         parser = build_parser()
@@ -121,6 +148,7 @@ class SsvepEyeSideTests(unittest.TestCase):
                 "screen_name": "DISPLAY2",
                 "screen_geometry": '{"x":1920,"y":0,"width":1920,"height":1080}',
                 "screen_mapping": '{"left":null,"right":null}',
+                "stimulus_region": '{"x":1920,"y":0,"width":960,"height":1080}',
                 "frame_index": 0,
                 "scheduled_s": 0.0,
                 "actual_s": 0.0,
@@ -135,11 +163,42 @@ class SsvepEyeSideTests(unittest.TestCase):
             self.assertIn("screen_name", header)
             self.assertIn("screen_geometry", header)
             self.assertIn("screen_mapping", header)
+            self.assertIn("stimulus_region", header)
         self.assertIn("eye_side", EVENT_FIELDS)
         self.assertIn("dataset_name_base", EVENT_FIELDS)
         self.assertIn("dataset_name", EVENT_FIELDS)
         self.assertIn("screen_geometry", EVENT_FIELDS)
         self.assertIn("screen_mapping", EVENT_FIELDS)
+        self.assertIn("stimulus_region", EVENT_FIELDS)
+
+    def test_visual_stimulus_stays_inside_selected_half(self) -> None:
+        from PySide6.QtTest import QTest
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QApplication
+
+        application = QApplication.instance() or QApplication([])
+        for side in ("left", "right"):
+            _, window, mapping = _create_stimulus_window(side)
+            try:
+                self.assertEqual(mapping["left"]["screen_index"], mapping["right"]["screen_index"])
+                window.show_target(0, True)
+                image = window.grab().toImage()
+                width, height = image.width(), image.height()
+                active_x = width // 8 if side == "left" else width * 5 // 8
+                inactive_x = width * 3 // 4 if side == "left" else width // 4
+                self.assertEqual((0, 0, 0), image.pixelColor(inactive_x, height // 3).getRgb()[:3])
+                self.assertEqual((255, 255, 255), image.pixelColor(active_x, height // 3).getRgb()[:3])
+                window.show_message("5", flash=True)
+                window.message_flash = True
+                window.repaint()
+                image = window.grab().toImage()
+                self.assertEqual((0, 0, 0), image.pixelColor(inactive_x, height // 3).getRgb()[:3])
+                self.assertEqual((255, 255, 255), image.pixelColor(active_x, height // 3).getRgb()[:3])
+                QTest.keyClick(window, Qt.Key.Key_Q)
+                self.assertTrue(window.abort_requested)
+            finally:
+                window.close()
+                application.processEvents()
 
 
 class CliEyeSideTests(unittest.TestCase):

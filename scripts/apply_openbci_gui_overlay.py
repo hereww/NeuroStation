@@ -38,6 +38,8 @@ REPLACEMENTS: dict[str, tuple[tuple[str, str], ...]] = {
             '    stopButton_pressToStop_txt = tr("stream.stop");\r\n'
             '    stopButton_pressToStart_txt = tr("stream.start");',
         ),
+        ('controlPanel.initBox.setInitSessionButtonText("START SESSION")',
+         'controlPanel.initBox.setInitSessionButtonText(tr("session.start"))'),
         ('createFont("fonts/Raleway-SemiBold.otf",', 'createFont(workstationUIFont("fonts/Raleway-SemiBold.otf"),'),
         ('createFont("fonts/Raleway-Regular.otf",', 'createFont(workstationUIFont("fonts/Raleway-Regular.otf"),'),
         ('createFont("fonts/Montserrat-Regular.otf",', 'createFont(workstationUIFont("fonts/Montserrat-Regular.otf"),'),
@@ -45,6 +47,21 @@ REPLACEMENTS: dict[str, tuple[tuple[str, str], ...]] = {
         ('createFont("fonts/OpenSans-Regular.ttf",', 'createFont(workstationUIFont("fonts/OpenSans-Regular.ttf"),'),
     ),
     "OpenBCI_GUI/TopNav.pde": (
+        (
+            "        guiIsUpToDate = guiVersionIsUpToDate();\n\n        updateGuiVersionButton.onRelease",
+            "        // Keep the GUI startup independent of the network/proxy.\n"
+            "        guiIsUpToDate = null;\n"
+            "        updateGuiVersionButton.setDescription(\"Click to check for OpenBCI GUI updates.\");\n\n"
+            "        updateGuiVersionButton.onRelease",
+        ),
+        (
+            "            float remoteVersion = getVersionAsFloat(remoteVersionString);",
+            "            if (remoteVersionString == null || remoteVersionString.length() == 0) {\n"
+            "                updateGuiVersionButton.setDescription(\"Unable to check for updates. Please try again later.\");\n"
+            "                return null;\n"
+            "            }\n"
+            "            float remoteVersion = getVersionAsFloat(remoteVersionString);",
+        ),
         ('createControlPanelCollapser("System Control Panel",', 'createControlPanelCollapser(tr("nav.system_control_panel"),'),
         ('createTutorialsButton("Help",', 'createTutorialsButton(tr("nav.help"),'),
         ('createIssuesButton("Issues",', 'createIssuesButton(tr("nav.issues"),'),
@@ -64,6 +81,19 @@ REPLACEMENTS: dict[str, tuple[tuple[str, str], ...]] = {
         ('setText("Turn Expert Mode On")', 'setText(tr("settings.expert_on"))'),
     ),
     "OpenBCI_GUI/ControlPanel.pde": (
+        ('sourceList.addItem("CYTON (live)",', 'sourceList.addItem(tr("source.cyton_live"),'),
+        ('sourceList.addItem("GANGLION (live)",', 'sourceList.addItem(tr("source.ganglion_live"),'),
+        ('sourceList.addItem("PLAYBACK (from file)",', 'sourceList.addItem(tr("source.playback_file"),'),
+        ('sourceList.addItem("SYNTHETIC (algorithmic)",', 'sourceList.addItem(tr("source.synthetic"),'),
+        ('sourceList.addItem("STREAMING (from external)",', 'sourceList.addItem(tr("source.external_stream"),'),
+        ('createStartSessionButton("startSessionButton", "START SESSION",', 'createStartSessionButton("startSessionButton", tr("session.start"),'),
+        ('getInitSessionButtonText().equals("START SESSION")', 'getInitSessionButtonText().equals(tr("session.start"))'),
+        ('setInitSessionButtonText("STOP SESSION")', 'setInitSessionButtonText(tr("session.stop"))'),
+        ('setInitSessionButtonText("START SESSION")', 'setInitSessionButtonText(tr("session.start"))'),
+        ('outputWarn("No Transfer Protocol selected. Please select your Transfer Protocol and retry system initiation.")', 'outputWarn(tr("error.transfer_protocol"))'),
+        ('outputWarn("No Serial/COM port selected. Attempting to AUTO-CONNECT to Cyton.")', 'outputWarn(tr("error.auto_connect"))'),
+        ('outputWarn("No playback file selected. Please select a playback file and retry system initiation.")', 'outputWarn(tr("error.playback_file"))'),
+        ('outputWarn("No DATA SOURCE selected. Please select a DATA SOURCE and retry system initiation.")', 'outputWarn(tr("error.data_source"))'),
         ('text("DATA SOURCE",', 'text(tr("control.data_source"),'),
         ('text("SERIAL CONNECT",', 'text(tr("control.serial_connect"),'),
         ('text("SERIAL/COM PORT",', 'text(tr("control.serial_port"),'),
@@ -88,6 +118,8 @@ REPLACEMENTS: dict[str, tuple[tuple[str, str], ...]] = {
         ('text("PLAYBACK FILE",', 'text(tr("control.playback_file"),'),
         ('text("WRITE TO SD CARD?",', 'text(tr("control.write_sd"),'),
         ('text("RADIO CONFIGURATION",', 'text(tr("control.radio_configuration"),'),
+        ('outputWarn("No Cyton dongles were found.")', 'outputWarn(tr("error.no_cyton_dongle"))'),
+        ('outputError("Unable to connect to Cyton. Please check hardware and power source.")', 'outputError(tr("error.cyton_connection"))'),
     ),
 }
 
@@ -122,7 +154,8 @@ def changed_paths(source: Path) -> set[str]:
 
 
 def apply_replacements(source: Path) -> None:
-    unexpected = changed_paths(source) - ALLOWED_CHANGES
+    unexpected = {path for path in changed_paths(source) - ALLOWED_CHANGES
+                  if "__pycache__/" not in path and not path.endswith(".pyc")}
     if unexpected:
         raise RuntimeError("Unrelated OpenBCI GUI changes are present: " + ", ".join(sorted(unexpected)))
     for relative, replacements in REPLACEMENTS.items():

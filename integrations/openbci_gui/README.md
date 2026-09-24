@@ -66,7 +66,7 @@ git -C .vendor\OpenBCI_GUI switch -c workstation/i18n-zh-cn
 
 中文化规范和分批改造范围见 [`I18N_ZH_CN.md`](I18N_ZH_CN.md)。首个中文版必须覆盖启动、数据源、设备连接、通道设置、开始/停止、记录、回放、网络、marker、警告和错误；调试日志可以后续翻译，但用户可见错误不能遗漏。
 
-当前 overlay 已建立英文回退、`zh-CN` 词库和 Windows/macOS/Linux 中文系统字体选择，并覆盖顶部导航、开始/停止数据流、数据源、串口/BLE/Wi-Fi、会话、通道数、采样率、回放、BrainFlow streamer、SD 卡和无线电配置等首批入口。它是中文版重构的第一批源码，不代表约 3,000 个上游字符串已全部翻译；完整中文版仍需按 `I18N_ZH_CN.md` 的分批清单继续验收。
+当前 overlay 默认使用简体中文（设置 `NEUROSTATION_LANGUAGE=en-US` 可切换英文），已建立英文回退、`zh-CN` 词库和 Windows/macOS/Linux 中文系统字体选择，并覆盖顶部导航、开始/停止数据流与会话、数据源选项、部分连接提示、串口/BLE/Wi-Fi、通道数、采样率、回放、BrainFlow streamer、SD 卡和无线电配置等首批入口。Windows 启动时不再同步检查 GitHub 更新：系统代理异常或网络不可达不会阻断 GUI 初始化；用户仍可点击“更新”手动检查。它是中文版重构的第一批源码，不代表约 3,000 个上游字符串已全部翻译；完整中文版仍需按 `I18N_ZH_CN.md` 的分批清单继续验收。
 
 ## 源码审计结论
 
@@ -78,3 +78,7 @@ git -C .vendor\OpenBCI_GUI switch -c workstation/i18n-zh-cn
 - 粗略检出约 3,000 个英文字符串字面量，其中包含 UI、日志、协议键和开发文本，必须先分类，不能机械全部翻译；
 - 当前主界面主要使用 Montserrat、Open Sans 和 Raleway 字体文件，中文版本需要增加 CJK 字体并验证 ControlP5 的文字测量和截断逻辑；
 - 上游已有 `release/build.py` 和 `release/package.py`，中文版构建应在其基础上增加三平台 CI，而不是另外维护完全不同的打包链。
+
+### Windows 启动验证（2026-09-24）
+
+在系统代理 `127.0.0.1:10809` 环境下，旧版 `OpenBCI_GUI.exe` 可能卡在启动界面：更新检查的网络请求阻断 `delayedSetup()`，导致 `Setup is complete!` 不会出现。修复后已从 overlay 重新导出 Windows runtime，并用导出的 `OpenBCI_GUI.exe` 直接启动；控制台日志约 3 秒内写出 `OpenBCI_GUI::Setup: Setup is complete!`。本次只验证软件启动，没有完成 Cyton 实机连接或完整界面中文术语验收。主程序 `dist/` 包如未重新执行桌面构建，仍可能包含旧 runtime。
