@@ -47,7 +47,7 @@ class WorkstationGateway:
                 name_en="SSVEP visual flicker",
                 icon="grid-2x2",
                 available=True,
-                description_zh="四目标视觉稳态诱发电位采集",
+                description_zh="半屏频率闪烁视觉稳态诱发电位采集",
             ),
             AcquisitionApp(
                 app_id="resting_state",

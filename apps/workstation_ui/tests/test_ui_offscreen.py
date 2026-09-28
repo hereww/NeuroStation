@@ -181,11 +181,17 @@ class QtOffscreenTests(unittest.TestCase):
 
     def test_capture_form_requires_a_real_user_and_photosensitivity_ack(self):
         from apps.workstation_ui.gateway import CaptureMode
+        from PySide6.QtWidgets import QApplication
+        from neurostation_display import resolve_eye_regions
 
         page = self.window.pages["ssvep"]
         self.assertEqual("", page.eye_side.currentData())
-        self.assertIn("左半区", page.screen_mapping.text())
-        self.assertIn("右半区", page.screen_mapping.text())
+        display = resolve_eye_regions(QApplication.instance())["left"]
+        screen_label = f"{display['screen_index']} · {display['screen'].name()}"
+        self.assertEqual(
+            self.window.tr("ssvep.screen_mapping", screen=screen_label),
+            page.screen_mapping.text(),
+        )
         self.assertIn("选择眼别", page.dataset_preview.text())
         page._start()
         self.assertTrue(page.error.text())
@@ -195,6 +201,7 @@ class QtOffscreenTests(unittest.TestCase):
         self.assertEqual(self.window.tr("validation.eye_side"), page.error.text())
         page.eye_side.setCurrentIndex(page.eye_side.findData("left"))
         self.assertIn("_左眼", page.dataset_preview.text())
+        self.assertEqual("left", page.stimulus_preview.eye_side)
         config = page.config()
         self.assertEqual(CaptureMode.CYTON, config.mode)
         config.validate()
@@ -204,8 +211,29 @@ class QtOffscreenTests(unittest.TestCase):
         page.start_requested.connect(lambda candidate, speed: requested.append(candidate.eye_side))
         page._start()
         page.eye_side.setCurrentIndex(page.eye_side.findData("right"))
+        self.assertEqual("right", page.stimulus_preview.eye_side)
         page._start()
         self.assertEqual(["left", "right"], requested)
+
+    def test_static_stimulus_preview_tracks_eye_side_and_center_divider(self):
+        page = self.window.pages["ssvep"]
+        display = page.stimulus_preview.display
+        display.resize(400, 140)
+        display.show()
+        self.application.processEvents()
+
+        page.stimulus_preview.set_eye_side("left")
+        image = display.grab().toImage()
+        midpoint = image.width() // 2
+        self.assertEqual((245, 245, 245), image.pixelColor(image.width() // 4, 20).getRgb()[:3])
+        self.assertEqual((0, 0, 0), image.pixelColor(image.width() * 3 // 4, 20).getRgb()[:3])
+        self.assertEqual((255, 255, 255), image.pixelColor(midpoint, 20).getRgb()[:3])
+
+        page.stimulus_preview.set_eye_side("right")
+        image = display.grab().toImage()
+        self.assertEqual((0, 0, 0), image.pixelColor(image.width() // 4, 20).getRgb()[:3])
+        self.assertEqual((245, 245, 245), image.pixelColor(image.width() * 3 // 4, 20).getRgb()[:3])
+        self.assertEqual((255, 255, 255), image.pixelColor(image.width() // 2, 20).getRgb()[:3])
 
     def test_openbci_waveform_model_uses_rolling_buffers_and_display_copy(self):
         from apps.workstation_ui.components import WaveformDisplayModel

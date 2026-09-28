@@ -37,7 +37,11 @@ from neurostation_contract import (
 
 from .ssvep import SSVEPProtocol, SSVEPProtocolError
 from .device_discovery import candidate_serial_ports
-from neurostation_display import eye_half_geometry, resolve_eye_regions
+from neurostation_display import (
+    center_divider_geometry,
+    eye_half_geometry,
+    resolve_eye_regions,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -202,7 +206,6 @@ def _create_stimulus_window(eye_side: str):
             half = eye_half_geometry(0, 0, self.width(), self.height(), eye_side)
             region = QRect(half["x"], half["y"], half["width"], half["height"])
             painter.fillRect(self.rect(), QColor("black"))
-            painter.setClipRect(region)
             if self.message:
                 painter.fillRect(
                     region,
@@ -212,29 +215,13 @@ def _create_stimulus_window(eye_side: str):
                 painter.setPen(QColor("black") if self.message_flash else QColor("white"))
                 painter.setFont(QFont("Sans Serif", max(28, min(region.width(), region.height()) // 12)))
                 painter.drawText(region, Qt.AlignmentFlag.AlignCenter, self.message)
-                return
-            side = max(1, min(region.width(), region.height()) // 5)
-            positions = (
-                (region.x() + region.width() // 4, region.height() // 3),
-                (region.x() + region.width() * 3 // 4, region.height() // 3),
-                (region.x() + region.width() // 4, region.height() * 2 // 3),
-                (region.x() + region.width() * 3 // 4, region.height() * 2 // 3),
+            else:
+                painter.fillRect(region, QColor("white") if self.lit else QColor("black"))
+            divider = center_divider_geometry(0, 0, self.width(), self.height())
+            painter.fillRect(
+                QRect(divider["x"], divider["y"], divider["width"], divider["height"]),
+                QColor("white"),
             )
-            for index, (center_x, center_y) in enumerate(positions):
-                rectangle = QRect(center_x - side // 2, center_y - side // 2, side, side)
-                color = (
-                    QColor("white")
-                    if index == self.target_index and self.lit
-                    else QColor(28, 28, 28)
-                )
-                painter.fillRect(rectangle, color)
-                painter.setPen(
-                    QColor(90, 90, 90)
-                )
-                painter.drawRect(rectangle)
-            patch_side = max(1, min(region.width() - 24, region.height() - 24, max(24, min(region.width(), region.height()) // 16)))
-            patch = QRect(region.right() - patch_side - 11, region.bottom() - patch_side - 11, patch_side, patch_side)
-            painter.fillRect(patch, QColor("white") if self.lit else QColor("black"))
 
         def show_message(self, message: str, *, flash: bool = False) -> None:
             self.message = message

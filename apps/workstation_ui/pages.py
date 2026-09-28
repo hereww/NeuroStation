@@ -722,21 +722,21 @@ class _PreviewTableModel(QAbstractTableModel):
     def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
         if parent.isValid():
             return 0
-        return max(1, len(self._column_indexes) + 1)
+        return max(1, len(self._column_indexes))
 
     def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):
         if not index.isValid() or not (0 <= index.row() < len(self._rows)):
             return None
         if role == Qt.ItemDataRole.DisplayRole:
-            if index.column() == 0:
-                return str(index.row() + 1)
-            source_column = self._column_indexes[index.column() - 1]
+            if not 0 <= index.column() < len(self._column_indexes):
+                return None
+            source_column = self._column_indexes[index.column()]
             row = self._rows[index.row()]
             return row[source_column] if source_column < len(row) else ""
         if role == Qt.ItemDataRole.ToolTipRole:
-            if index.column() == 0:
-                return self._tr("dataset_summary.column.preview_row")
-            return self._headers[self._column_indexes[index.column() - 1]]
+            if not 0 <= index.column() < len(self._column_indexes):
+                return None
+            return self._headers[self._column_indexes[index.column()]]
         return None
 
     def headerData(
@@ -750,15 +750,11 @@ class _PreviewTableModel(QAbstractTableModel):
         if section == 0 and not self._headers:
             return self._tr("dataset_summary.no_columns")
         if role == Qt.ItemDataRole.DisplayRole:
-            if section == 0:
-                return self._tr("dataset_summary.column.preview_row")
-            if 0 < section <= len(self._column_indexes):
-                return self._display_headers[self._column_indexes[section - 1]]
+            if 0 <= section < len(self._column_indexes):
+                return self._display_headers[self._column_indexes[section]]
         if role == Qt.ItemDataRole.ToolTipRole:
-            if section == 0:
-                return self._tr("dataset_summary.column.preview_row")
-            if 0 < section <= len(self._column_indexes):
-                return self._headers[self._column_indexes[section - 1]]
+            if 0 <= section < len(self._column_indexes):
+                return self._headers[self._column_indexes[section]]
         return None
 
     def set_records(self, headers: tuple[str, ...], rows: list[list[str]]) -> None:
@@ -812,7 +808,6 @@ def _dataset_raw_preview_section(tr, result: Dataset) -> Section | None:
 
     table_model = _PreviewTableModel(tr, headers, values)
     preview_table.setModel(table_model)
-    preview_table.setColumnWidth(0, 70)
     preview_table.horizontalHeader().setSectionResizeMode(
         QHeaderView.ResizeMode.ResizeToContents
     )
@@ -1766,7 +1761,9 @@ class SSVEPPage(Page):
         section.layout.addWidget(self.estimate)
         section.layout.addWidget(label(tr("ssvep.formula"), "muted"))
         self.layout.addWidget(section)
-        self.layout.addWidget(StaticTargets(tr))
+        selected_eye = str(config_eye_side) if str(config_eye_side) in {"left", "right"} else ""
+        self.stimulus_preview = StaticTargets(tr, eye_side=selected_eye)
+        self.layout.addWidget(self.stimulus_preview)
         self.device_summary = KeyValues([(tr("device.channels"), "OpenBCI Cyton · AUTO · 8 CH / 250 Hz"),
             (tr("ssvep.frequencies"), "10 / 12 / 15 / 20 Hz"), ("Marker", tr("ssvep.marker_map"))])
         self.layout.addWidget(self.device_summary)
@@ -1781,6 +1778,11 @@ class SSVEPPage(Page):
         self.mode.currentIndexChanged.connect(self._mode_changed)
         self.port.textChanged.connect(lambda _text: self._update_device_summary())
         self.eye_side.currentIndexChanged.connect(lambda _index: self._update_name_preview())
+        self.eye_side.currentIndexChanged.connect(
+            lambda _index: self.stimulus_preview.set_eye_side(
+                str(self.eye_side.currentData() or "")
+            )
+        )
         self.name.textChanged.connect(lambda _text: self._update_name_preview())
         self.user.currentIndexChanged.connect(self._user_changed)
         self.channel_manual.toggled.connect(self._channel_manual_changed)
@@ -2002,7 +2004,8 @@ class TaskPage(Page):
         )
         waveform_section.layout.addWidget(self.waveform)
         self.layout.addWidget(waveform_section)
-        self.layout.addWidget(StaticTargets(tr))
+        self.stimulus_preview = StaticTargets(tr)
+        self.layout.addWidget(self.stimulus_preview)
         self.layout.addStretch()
 
     def set_quality_warning(self, text: str = ""):
@@ -2010,6 +2013,9 @@ class TaskPage(Page):
         self.quality_notice.setVisible(bool(text))
 
     def update_snapshot(self, snapshot: TaskSnapshot, config: CaptureConfig):
+        self.stimulus_preview.set_eye_side(
+            str(getattr(config.eye_side, "value", config.eye_side) or "")
+        )
         countdown = snapshot.phase == Phase.COUNTDOWN
         self.waveform.set_active(snapshot.active and config.mode is CaptureMode.CYTON)
         self.title_label.setText("SSVEP · "+self.tr("task.preparing" if countdown else "task.running"))

@@ -161,13 +161,13 @@ class OpenBCIImportUiTests(unittest.TestCase):
             raw_table = window.pages["result"].findChild(QTableView, "datasetRawPreviewTable")
             self.assertIsNotNone(raw_table)
             raw_model = raw_table.model()
-            self.assertEqual(25, raw_model.columnCount())
+            self.assertEqual(24, raw_model.columnCount())
             self.assertEqual(137, raw_model.rowCount())
             self.assertFalse(
                 raw_model.index(0, 0).flags() & self.qt.ItemFlag.ItemIsEditable
             )
-            self.assertEqual("1", raw_model.index(0, 0).data())
-            self.assertEqual("136", raw_model.index(136, 1).data())
+            self.assertEqual("0", raw_model.index(0, 0).data())
+            self.assertEqual("136", raw_model.index(136, 0).data())
             preview_columns = window.pages["result"].findChild(
                 QComboBox, "datasetPreviewColumns"
             )
@@ -184,8 +184,9 @@ class OpenBCIImportUiTests(unittest.TestCase):
                 raw_model.headerData(column, self.qt.Orientation.Horizontal)
                 for column in range(raw_model.columnCount())
             ]
-            self.assertEqual("序号", raw_headers[0])
-            self.assertIn("package_num", raw_headers[1])
+            self.assertIn("package_num", raw_headers[0])
+            self.assertIn("eeg_ch1", raw_headers[1])
+            self.assertNotIn("序号", raw_headers)
             self.assertTrue(any("other_ch1" in header for header in raw_headers))
             self.assertTrue(any("other_ch7" in header for header in raw_headers))
             self.assertTrue(any("analog_ch1" in header for header in raw_headers))
@@ -344,6 +345,23 @@ class OpenBCIImportUiTests(unittest.TestCase):
                 ],
             ),
         )
+
+    def test_preview_model_keeps_source_sample_index_without_row_number(self):
+        from apps.workstation_ui.i18n import Translator
+        from apps.workstation_ui.pages import _PreviewTableModel
+
+        model = _PreviewTableModel(
+            Translator("zh-CN"),
+            ("sample_index", "package_num"),
+            [["2", "20"], ["1", "10"]],
+        )
+
+        self.assertEqual(2, model.columnCount())
+        self.assertEqual("样本序号（sample_index）", model.headerData(0, self.qt.Orientation.Horizontal))
+        self.assertEqual("1", model.index(0, 0).data())
+        self.assertEqual("10", model.index(0, 1).data())
+        self.assertEqual("2", model.index(1, 0).data())
+        self.assertEqual("sample_index", model.headerData(0, self.qt.Orientation.Horizontal, self.qt.ItemDataRole.ToolTipRole))
 
     def test_imported_brainflow_preview_preserves_openbci_timestamp_precision(self):
         from apps.workstation_ui.pages import _read_data_preview

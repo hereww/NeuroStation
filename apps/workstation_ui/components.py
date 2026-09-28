@@ -90,18 +90,59 @@ class AppTile(QToolButton):
 
 
 class StaticTargets(Section):
-    def __init__(self, tr):
+    def __init__(self, tr, eye_side: str = ""):
         super().__init__(tr("ssvep.static"))
         self.setAccessibleName(tr("ssvep.static"))
-        grid = QGridLayout()
-        grid.setSpacing(20)
-        for i, frequency in enumerate(FREQUENCIES):
-            target = label(f"{frequency} Hz\n{tr('ssvep.target', number=i+1)}", "staticTarget")
-            target.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            target.setMinimumSize(96, 90)
-            grid.addWidget(target, i // 2, i % 2)
-        self.layout.addLayout(grid)
+        self.eye_side = eye_side if eye_side in {"left", "right"} else ""
+        self.display = _StaticHalfScreenDisplay(tr, self.eye_side)
+        self.layout.addWidget(self.display)
+        frequencies = " / ".join(f"{frequency} Hz" for frequency in FREQUENCIES)
+        self.layout.addWidget(label(frequencies, "estimate"))
         self.layout.addWidget(label(tr("ssvep.production"), "muted"))
+
+    def set_eye_side(self, eye_side: str) -> None:
+        self.eye_side = eye_side if eye_side in {"left", "right"} else ""
+        self.display.set_eye_side(self.eye_side)
+
+
+class _StaticHalfScreenDisplay(QWidget):
+    def __init__(self, tr, eye_side: str):
+        super().__init__()
+        self._tr = tr
+        self._eye_side = eye_side
+        self.setMinimumSize(280, 112)
+        self.setMaximumHeight(180)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setAccessibleName(tr("ssvep.static"))
+
+    def set_eye_side(self, eye_side: str) -> None:
+        self._eye_side = eye_side
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        display = self.rect().adjusted(4, 4, -4, -4)
+        if display.width() < 2 or display.height() < 1:
+            return
+        middle = display.x() + display.width() // 2
+        divider_width = max(3, min(8, round(display.width() * 0.006)))
+        divider_x = middle - divider_width // 2
+        left = QRect(display.x(), display.y(), divider_x - display.x(), display.height())
+        right_x = divider_x + divider_width
+        right = QRect(right_x, display.y(), display.right() + 1 - right_x, display.height())
+        painter.fillRect(display, QColor(12, 12, 12))
+        painter.fillRect(left, QColor(245, 245, 245) if self._eye_side == "left" else QColor("black"))
+        painter.fillRect(right, QColor(245, 245, 245) if self._eye_side == "right" else QColor("black"))
+        painter.fillRect(
+            QRect(divider_x, display.y(), divider_width, display.height()),
+            QColor("white"),
+        )
+        painter.setPen(QColor(25, 25, 25) if self._eye_side == "left" else QColor(190, 190, 190))
+        painter.drawText(left, Qt.AlignmentFlag.AlignCenter, self._tr("eye.left"))
+        painter.setPen(QColor(25, 25, 25) if self._eye_side == "right" else QColor(190, 190, 190))
+        painter.drawText(right, Qt.AlignmentFlag.AlignCenter, self._tr("eye.right"))
+        painter.setPen(QColor(118, 125, 132))
+        painter.drawRect(display.adjusted(0, 0, -1, -1))
 
 
 CHANNEL_NAMES = ("Fp1", "Fp2", "C3", "C4", "P7", "P8", "O1", "O2")

@@ -16,7 +16,11 @@ from eeg_tools.workstation.acquisition_worker import (
     _write_frame_log,
     build_parser,
 )
-from neurostation_display import eye_half_geometry, resolve_eye_regions
+from neurostation_display import (
+    center_divider_geometry,
+    eye_half_geometry,
+    resolve_eye_regions,
+)
 
 
 class _Geometry:
@@ -103,13 +107,14 @@ class SsvepEyeSideTests(unittest.TestCase):
         self.assertEqual("middle", mapping["right"]["screen"].name())
         self.assertEqual(0, mapping["left"]["screen_index"])
         self.assertEqual(0, mapping["right"]["screen_index"])
-        self.assertEqual({"x": 0, "y": 0, "width": 960, "height": 1080}, mapping["left"]["region_geometry"])
-        self.assertEqual({"x": 960, "y": 0, "width": 960, "height": 1080}, mapping["right"]["region_geometry"])
+        self.assertEqual({"x": 0, "y": 0, "width": 957, "height": 1080}, mapping["left"]["region_geometry"])
+        self.assertEqual({"x": 963, "y": 0, "width": 957, "height": 1080}, mapping["right"]["region_geometry"])
+        self.assertEqual({"x": 957, "y": 0, "width": 6, "height": 1080}, mapping["left"]["divider_geometry"])
 
     def test_single_screen_maps_both_regions(self) -> None:
         mapping = resolve_eye_regions(_Application([_Screen("only", -50)]))
         self.assertEqual(-50, mapping["left"]["region_geometry"]["x"])
-        self.assertEqual(910, mapping["right"]["region_geometry"]["x"])
+        self.assertEqual(913, mapping["right"]["region_geometry"]["x"])
 
     def test_non_first_primary_screen_is_selected_for_both_eyes(self) -> None:
         screens = [_Screen("secondary", -1920), _Screen("primary", 0)]
@@ -122,8 +127,9 @@ class SsvepEyeSideTests(unittest.TestCase):
             resolve_eye_regions(_Application([]))
 
     def test_odd_screen_width_keeps_all_pixels_and_rejects_unusable_screen(self) -> None:
-        self.assertEqual({"x": 11, "y": 7, "width": 2, "height": 4}, eye_half_geometry(11, 7, 5, 4, "left"))
-        self.assertEqual({"x": 13, "y": 7, "width": 3, "height": 4}, eye_half_geometry(11, 7, 5, 4, "right"))
+        self.assertEqual({"x": 11, "y": 7, "width": 1, "height": 4}, eye_half_geometry(11, 7, 5, 4, "left"))
+        self.assertEqual({"x": 15, "y": 7, "width": 1, "height": 4}, eye_half_geometry(11, 7, 5, 4, "right"))
+        self.assertEqual({"x": 12, "y": 7, "width": 3, "height": 4}, center_divider_geometry(11, 7, 5, 4))
         with self.assertRaisesRegex(RuntimeError, "validation.screens"):
             eye_half_geometry(0, 0, 1, 4, "left")
         with self.assertRaisesRegex(ValueError, "validation.eye_side"):
@@ -171,7 +177,7 @@ class SsvepEyeSideTests(unittest.TestCase):
         self.assertIn("screen_mapping", EVENT_FIELDS)
         self.assertIn("stimulus_region", EVENT_FIELDS)
 
-    def test_visual_stimulus_stays_inside_selected_half(self) -> None:
+    def test_visual_stimulus_flickers_selected_half_with_constant_center_divider(self) -> None:
         from PySide6.QtTest import QTest
         from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QApplication
@@ -184,16 +190,35 @@ class SsvepEyeSideTests(unittest.TestCase):
                 window.show_target(0, True)
                 image = window.grab().toImage()
                 width, height = image.width(), image.height()
-                active_x = width // 8 if side == "left" else width * 5 // 8
+                active_points = (
+                    (width // 8, height // 2),
+                    (width // 4, height // 2),
+                    (width * 3 // 8, height // 2),
+                ) if side == "left" else (
+                    (width * 5 // 8, height // 2),
+                    (width * 3 // 4, height // 2),
+                    (width * 7 // 8, height // 2),
+                )
                 inactive_x = width * 3 // 4 if side == "left" else width // 4
-                self.assertEqual((0, 0, 0), image.pixelColor(inactive_x, height // 3).getRgb()[:3])
-                self.assertEqual((255, 255, 255), image.pixelColor(active_x, height // 3).getRgb()[:3])
+                self.assertTrue(all(
+                    image.pixelColor(x, y).getRgb()[:3] == (255, 255, 255)
+                    for x, y in active_points
+                ))
+                self.assertEqual((0, 0, 0), image.pixelColor(inactive_x, height // 2).getRgb()[:3])
+                self.assertEqual((255, 255, 255), image.pixelColor(width // 2, height // 2).getRgb()[:3])
+                window.show_target(0, False)
+                image = window.grab().toImage()
+                self.assertTrue(all(
+                    image.pixelColor(x, y).getRgb()[:3] == (0, 0, 0)
+                    for x, y in active_points
+                ))
+                self.assertEqual((255, 255, 255), image.pixelColor(width // 2, height // 2).getRgb()[:3])
                 window.show_message("5", flash=True)
                 window.message_flash = True
                 window.repaint()
                 image = window.grab().toImage()
-                self.assertEqual((0, 0, 0), image.pixelColor(inactive_x, height // 3).getRgb()[:3])
-                self.assertEqual((255, 255, 255), image.pixelColor(active_x, height // 3).getRgb()[:3])
+                self.assertEqual((0, 0, 0), image.pixelColor(inactive_x, height // 2).getRgb()[:3])
+                self.assertEqual((255, 255, 255), image.pixelColor(width // 2, height // 2).getRgb()[:3])
                 QTest.keyClick(window, Qt.Key.Key_Q)
                 self.assertTrue(window.abort_requested)
             finally:
