@@ -186,6 +186,8 @@ class QtOffscreenTests(unittest.TestCase):
 
         page = self.window.pages["ssvep"]
         self.assertEqual("", page.eye_side.currentData())
+        self.assertEqual(self.window.tr("eye.left"), page.eye_side.itemText(page.eye_side.findData("left")))
+        self.assertEqual(self.window.tr("eye.right"), page.eye_side.itemText(page.eye_side.findData("right")))
         display = resolve_eye_regions(QApplication.instance())["left"]
         screen_label = f"{display['screen_index']} · {display['screen'].name()}"
         self.assertEqual(

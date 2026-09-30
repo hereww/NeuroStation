@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,7 +13,7 @@ from neurostation_contract import (
 )
 from eeg_tools.session_files import EVENT_FIELDS
 from eeg_tools.workstation.acquisition_worker import (
-    _create_stimulus_window,
+    _frame_timing_summary,
     _write_frame_log,
     build_parser,
 )
@@ -20,6 +21,7 @@ from neurostation_display import (
     center_divider_geometry,
     eye_half_geometry,
     resolve_eye_regions,
+    ssvep_frame_is_lit,
 )
 
 
@@ -170,60 +172,63 @@ class SsvepEyeSideTests(unittest.TestCase):
             self.assertIn("screen_geometry", header)
             self.assertIn("screen_mapping", header)
             self.assertIn("stimulus_region", header)
+            self.assertIn("graphics_renderer", header)
+            self.assertIn("swap_interval", header)
         self.assertIn("eye_side", EVENT_FIELDS)
         self.assertIn("dataset_name_base", EVENT_FIELDS)
         self.assertIn("dataset_name", EVENT_FIELDS)
         self.assertIn("screen_geometry", EVENT_FIELDS)
         self.assertIn("screen_mapping", EVENT_FIELDS)
         self.assertIn("stimulus_region", EVENT_FIELDS)
+        self.assertIn("graphics_renderer", EVENT_FIELDS)
+        self.assertIn("swap_interval", EVENT_FIELDS)
 
-    def test_visual_stimulus_flickers_selected_half_with_constant_center_divider(self) -> None:
-        from PySide6.QtTest import QTest
-        from PySide6.QtCore import Qt
-        from PySide6.QtWidgets import QApplication
-
-        application = QApplication.instance() or QApplication([])
-        for side in ("left", "right"):
-            _, window, mapping = _create_stimulus_window(side)
-            try:
-                self.assertEqual(mapping["left"]["screen_index"], mapping["right"]["screen_index"])
-                window.show_target(0, True)
-                image = window.grab().toImage()
-                width, height = image.width(), image.height()
-                active_points = (
-                    (width // 8, height // 2),
-                    (width // 4, height // 2),
-                    (width * 3 // 8, height // 2),
-                ) if side == "left" else (
-                    (width * 5 // 8, height // 2),
-                    (width * 3 // 4, height // 2),
-                    (width * 7 // 8, height // 2),
+    def test_balanced_flicker_sequences_preserve_half_duty_cycle(self) -> None:
+        expected = {
+            10: "111000",
+            12: "1100011100",
+            15: "1100",
+            20: "110100",
+        }
+        for frequency, pattern in expected.items():
+            with self.subTest(frequency=frequency):
+                period_frames = 2 * 60 // math.gcd(60, 2 * frequency)
+                actual = "".join(
+                    "1" if ssvep_frame_is_lit(index, frequency, 60) else "0"
+                    for index in range(period_frames)
                 )
-                inactive_x = width * 3 // 4 if side == "left" else width // 4
-                self.assertTrue(all(
-                    image.pixelColor(x, y).getRgb()[:3] == (255, 255, 255)
-                    for x, y in active_points
-                ))
-                self.assertEqual((0, 0, 0), image.pixelColor(inactive_x, height // 2).getRgb()[:3])
-                self.assertEqual((255, 255, 255), image.pixelColor(width // 2, height // 2).getRgb()[:3])
-                window.show_target(0, False)
-                image = window.grab().toImage()
-                self.assertTrue(all(
-                    image.pixelColor(x, y).getRgb()[:3] == (0, 0, 0)
-                    for x, y in active_points
-                ))
-                self.assertEqual((255, 255, 255), image.pixelColor(width // 2, height // 2).getRgb()[:3])
-                window.show_message("5", flash=True)
-                window.message_flash = True
-                window.repaint()
-                image = window.grab().toImage()
-                self.assertEqual((0, 0, 0), image.pixelColor(inactive_x, height // 2).getRgb()[:3])
-                self.assertEqual((255, 255, 255), image.pixelColor(width // 2, height // 2).getRgb()[:3])
-                QTest.keyClick(window, Qt.Key.Key_Q)
-                self.assertTrue(window.abort_requested)
-            finally:
-                window.close()
-                application.processEvents()
+                self.assertEqual(pattern, actual)
+                self.assertEqual(period_frames // 2, actual.count("1"))
+
+    def test_flicker_rejects_invalid_frames_and_rates(self) -> None:
+        for values in ((-1, 10, 60), (0, 0, 60), (0, 10, 0)):
+            with self.subTest(values=values), self.assertRaises(ValueError):
+                ssvep_frame_is_lit(*values)
+
+    def test_frame_timing_summary_reports_vsync_jitter_and_drops(self) -> None:
+        summary = _frame_timing_summary([
+            {"frame_interval_ms": "", "dropped_since_previous": 0},
+            {"frame_interval_ms": 16.6, "dropped_since_previous": 0},
+            {"frame_interval_ms": 16.8, "dropped_since_previous": 0},
+            {"frame_interval_ms": 33.3, "dropped_since_previous": 1},
+        ])
+        self.assertEqual(4, summary["frame_count"])
+        self.assertEqual(1, summary["dropped_frame_count"])
+        self.assertAlmostEqual(16.6, summary["min_frame_interval_ms"])
+        self.assertAlmostEqual(16.8, summary["median_frame_interval_ms"])
+        self.assertAlmostEqual(33.3, summary["p95_frame_interval_ms"])
+        self.assertAlmostEqual(33.3, summary["max_frame_interval_ms"])
+
+    def test_frame_timing_summary_flags_slow_refresh_cadence(self) -> None:
+        summary = _frame_timing_summary(
+            [
+                {"frame_interval_ms": 21.6, "dropped_since_previous": 0}
+                for _ in range(120)
+            ],
+            expected_refresh_rate_hz=60,
+        )
+        self.assertEqual("review", summary["cadence_status"])
+        self.assertAlmostEqual(1000 / 21.6, summary["effective_refresh_rate_hz"])
 
 
 class CliEyeSideTests(unittest.TestCase):

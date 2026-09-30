@@ -1,4 +1,4 @@
-"""Map each eye to a half of the primary display for UI and acquisition."""
+"""Display geometry and frame-accurate SSVEP helpers."""
 
 from __future__ import annotations
 
@@ -6,6 +6,16 @@ from typing import Any
 
 
 CENTER_DIVIDER_WIDTH = 6
+
+
+def ssvep_frame_is_lit(frame_index: int, frequency_hz: int, refresh_rate_hz: int) -> bool:
+    """Balance half-cycle edges across frames for an exact average duty cycle."""
+    if frame_index < 0 or frequency_hz <= 0 or refresh_rate_hz <= 0:
+        raise ValueError("frame index, frequency and refresh rate must be positive")
+    half_cycles, remainder = divmod((2 * frame_index + 1) * frequency_hz, refresh_rate_hz)
+    if remainder == 0 and frame_index % 2:
+        half_cycles -= 1
+    return half_cycles % 2 == 0
 
 
 def eye_half_geometry(x: int, y: int, width: int, height: int, eye_side: str) -> dict[str, int]:

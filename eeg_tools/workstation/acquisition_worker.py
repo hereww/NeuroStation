@@ -41,6 +41,7 @@ from neurostation_display import (
     center_divider_geometry,
     eye_half_geometry,
     resolve_eye_regions,
+    ssvep_frame_is_lit,
 )
 
 
@@ -154,31 +155,73 @@ def _screen_mapping_text(display: dict[str, Any]) -> str:
 
 
 def _create_stimulus_window(eye_side: str):
-    from PySide6.QtCore import Qt, QRect
-    from PySide6.QtGui import QColor, QFont, QKeyEvent, QPainter, QPaintEvent
-    from PySide6.QtWidgets import QApplication, QWidget
+    from PySide6.QtCore import QRect, Qt
+    from PySide6.QtGui import QColor, QFont, QKeyEvent, QPainter, QSurfaceFormat
+    from PySide6.QtOpenGL import QOpenGLWindow
+    from PySide6.QtWidgets import QApplication
 
     application = QApplication.instance() or QApplication(sys.argv[:1])
 
     mapping = resolve_eye_regions(application)
     active = mapping[eye_side]
     abort_state = {"requested": False}
+    surface_format = QSurfaceFormat()
+    surface_format.setSwapInterval(1)
 
-    class StimulusWindow(QWidget):
+    class StimulusWindow(QOpenGLWindow):
         def __init__(self) -> None:
-            super().__init__()
+            super().__init__(QOpenGLWindow.UpdateBehavior.NoPartialUpdate)
+            self.setFormat(surface_format)
             self._gaze_marks: list[tuple[int, float]] = []
+            self._gl = None
+            self._frame_swapped_count = 0
+            self._last_frame_swapped_s: float | None = None
+            self._state_generation = 0
+            self._painted_generation = 0
+            self._swapped_generation = 0
+            self.rendering_metadata: dict[str, Any] = {}
             self.target_index: int | None = None
             self.lit = False
             self.message = ""
             self.message_flash = False
-            self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            self.frameSwapped.connect(self._on_frame_swapped)
             self.setCursor(Qt.CursorShape.BlankCursor)
-            self.setStyleSheet("background: black;")
 
         @property
         def abort_requested(self) -> bool:
             return bool(abort_state["requested"])
+
+        @property
+        def frame_swapped_count(self) -> int:
+            return self._frame_swapped_count
+
+        @property
+        def last_frame_swapped_s(self) -> float | None:
+            return self._last_frame_swapped_s
+
+        @property
+        def swapped_generation(self) -> int:
+            return self._swapped_generation
+
+        def initializeGL(self) -> None:
+            self._gl = self.context().functions()
+            get_string = self._gl.glGetString
+            self.rendering_metadata = {
+                "backend": "OpenGL",
+                "vendor": str(get_string(0x1F00) or ""),
+                "renderer": str(get_string(0x1F01) or ""),
+                "version": str(get_string(0x1F02) or ""),
+                "swap_interval": int(self.context().format().swapInterval()),
+                "vsync_requested": True,
+                "frame_timestamp_source": "Qt frameSwapped signal callback",
+            }
+            self._gl.glDisable(0x0BD0)  # GL_DITHER
+            self._gl.glDisable(0x0BE2)  # GL_BLEND
+
+        def _on_frame_swapped(self) -> None:
+            self._last_frame_swapped_s = time.perf_counter()
+            self._swapped_generation = self._painted_generation
+            self._frame_swapped_count += 1
 
         def keyPressEvent(self, event: QKeyEvent) -> None:
             if event.key() in (Qt.Key.Key_Escape, Qt.Key.Key_Q):
@@ -198,45 +241,64 @@ def _create_stimulus_window(eye_side: str):
                 else:
                     super().keyPressEvent(event)
 
-        def paintEvent(self, event: QPaintEvent) -> None:
-            painter = QPainter(self)
-            if self.width() < 2 or self.height() < 1:
-                painter.fillRect(self.rect(), QColor("black"))
+        def paintGL(self) -> None:
+            if self._gl is None:
                 return
-            half = eye_half_geometry(0, 0, self.width(), self.height(), eye_side)
-            region = QRect(half["x"], half["y"], half["width"], half["height"])
-            painter.fillRect(self.rect(), QColor("black"))
+            self._painted_generation = self._state_generation
+            scale = self.devicePixelRatio()
+            width = max(1, round(self.width() * scale))
+            height = max(1, round(self.height() * scale))
+            self._gl.glViewport(0, 0, width, height)
+            self._gl.glDisable(0x0C11)  # GL_SCISSOR_TEST
+            self._gl.glClearColor(0.0, 0.0, 0.0, 1.0)
+            self._gl.glClear(0x00004000)  # GL_COLOR_BUFFER_BIT
+
+            half = eye_half_geometry(0, 0, width, height, eye_side)
+            if self.lit or (self.message and self.message_flash):
+                self._gl.glEnable(0x0C11)  # GL_SCISSOR_TEST
+                self._gl.glScissor(half["x"], 0, half["width"], height)
+                self._gl.glClearColor(1.0, 1.0, 1.0, 1.0)
+                self._gl.glClear(0x00004000)
+
+            divider = center_divider_geometry(0, 0, width, height)
+            self._gl.glEnable(0x0C11)  # GL_SCISSOR_TEST
+            self._gl.glScissor(divider["x"], 0, divider["width"], height)
+            self._gl.glClearColor(1.0, 1.0, 1.0, 1.0)
+            self._gl.glClear(0x00004000)
+            self._gl.glDisable(0x0C11)  # GL_SCISSOR_TEST
+
             if self.message:
-                painter.fillRect(
-                    region,
-                    QColor("white") if self.message_flash else QColor("black"),
-                )
-            if self.message:
+                active_rect = eye_half_geometry(0, 0, self.width(), self.height(), eye_side)
+                painter = QPainter(self)
                 painter.setPen(QColor("black") if self.message_flash else QColor("white"))
-                painter.setFont(QFont("Sans Serif", max(28, min(region.width(), region.height()) // 12)))
-                painter.drawText(region, Qt.AlignmentFlag.AlignCenter, self.message)
-            else:
-                painter.fillRect(region, QColor("white") if self.lit else QColor("black"))
-            divider = center_divider_geometry(0, 0, self.width(), self.height())
-            painter.fillRect(
-                QRect(divider["x"], divider["y"], divider["width"], divider["height"]),
-                QColor("white"),
-            )
+                painter.setFont(QFont("Sans Serif", max(28, min(active_rect["width"], active_rect["height"]) // 12)))
+                painter.drawText(
+                    QRect(
+                        active_rect["x"],
+                        active_rect["y"],
+                        active_rect["width"],
+                        active_rect["height"],
+                    ),
+                    Qt.AlignmentFlag.AlignCenter,
+                    self.message,
+                )
+                painter.end()
 
         def show_message(self, message: str, *, flash: bool = False) -> None:
+            self._state_generation += 1
             self.message = message
             self.target_index = None
             self.lit = False
             self.message_flash = bool(flash and int(time.perf_counter() * 4) % 2)
-            self.repaint()
-            application.processEvents()
+            self.update()
 
-        def show_target(self, target_index: int, lit: bool) -> None:
+        def show_target(self, target_index: int, lit: bool) -> int:
+            self._state_generation += 1
             self.message = ""
             self.target_index = target_index
             self.lit = lit
-            self.repaint()
-            application.processEvents()
+            self.update()
+            return self._state_generation
 
         def consume_gaze_marks(self) -> list[tuple[int, float]]:
             marks = list(self._gaze_marks)
@@ -248,10 +310,117 @@ def _create_stimulus_window(eye_side: str):
     window.setGeometry(active["screen"].geometry())
     window.showFullScreen()
     window.raise_()
-    window.activateWindow()
-    window.setFocus()
+    window.requestActivate()
     application.processEvents()
+    rendering = window.rendering_metadata
+    if not window.context() or not window.context().isValid() or not rendering.get("renderer"):
+        window.close()
+        raise RuntimeError("visual stimulus requires a working OpenGL context")
+    renderer = str(rendering.get("renderer", "")).lower()
+    software_renderers = (
+        "llvmpipe", "softpipe", "swiftshader", "software rasterizer",
+        "microsoft basic render driver", "gdi generic",
+    )
+    if any(name in renderer for name in software_renderers):
+        window.close()
+        raise RuntimeError(f"visual stimulus requires GPU rendering; got {rendering['renderer']}")
+    if rendering.get("swap_interval") != 1:
+        window.close()
+        raise RuntimeError("visual stimulus requires vertical synchronization (swap interval 1)")
     return application, window, mapping
+
+
+def _wait_for_frame_swap(
+    application: Any,
+    window: Any,
+    previous_swap_count: int,
+    *,
+    cancel_file: Path | None = None,
+    timeout_s: float = 1.0,
+    minimum_generation: int | None = None,
+) -> float:
+    from PySide6.QtCore import QEventLoop, QTimer
+
+    def target_swapped() -> bool:
+        return (
+            window.frame_swapped_count > previous_swap_count
+            and (
+                minimum_generation is None
+                or window.swapped_generation >= minimum_generation
+            )
+        )
+
+    if target_swapped():
+        return float(window.last_frame_swapped_s)
+
+    event_loop = QEventLoop()
+    timeout = QTimer()
+    timeout.setSingleShot(True)
+    timeout.timeout.connect(event_loop.quit)
+    abort_monitor = QTimer()
+    abort_monitor.setInterval(10)
+    abort_monitor.timeout.connect(
+        lambda: event_loop.quit()
+        if (cancel_file is not None and cancel_file.exists())
+        or bool(window.abort_requested)
+        else None
+    )
+
+    def on_frame_swapped() -> None:
+        if target_swapped():
+            event_loop.quit()
+
+    window.frameSwapped.connect(on_frame_swapped)
+    timeout.start(max(1, round(timeout_s * 1000)))
+    abort_monitor.start()
+    try:
+        event_loop.exec()
+    finally:
+        timeout.stop()
+        abort_monitor.stop()
+        window.frameSwapped.disconnect(on_frame_swapped)
+
+    _check_abort(cancel_file, window)
+    if not target_swapped():
+        raise RuntimeError("timed out waiting for a VSync frame swap")
+    return float(window.last_frame_swapped_s)
+
+
+def _wait_until_frame_deadline(
+    deadline: float,
+    *,
+    cancel_file: Path | None,
+    window: Any,
+    render_lead_s: float = 0.001,
+) -> None:
+    from PySide6.QtCore import QEventLoop, QTimer, Qt
+
+    remaining_ms = (deadline - render_lead_s - time.perf_counter()) * 1000
+    if remaining_ms <= 0:
+        _check_abort(cancel_file, window)
+        return
+
+    event_loop = QEventLoop()
+    timer = QTimer()
+    timer.setSingleShot(True)
+    timer.setTimerType(Qt.TimerType.PreciseTimer)
+    timer.timeout.connect(event_loop.quit)
+    abort_monitor = QTimer()
+    abort_monitor.setInterval(10)
+    abort_monitor.timeout.connect(
+        lambda: event_loop.quit()
+        if (cancel_file is not None and cancel_file.exists())
+        or bool(window.abort_requested)
+        else None
+    )
+    timer.start(max(1, round(remaining_ms)))
+    abort_monitor.start()
+    try:
+        event_loop.exec()
+    finally:
+        timer.stop()
+        abort_monitor.stop()
+    _check_abort(cancel_file, window)
 
 
 def _prepare_cyton_board(
@@ -409,11 +578,14 @@ def _present_stimulus(
     frame_rows: list[dict[str, Any]],
     progress: Callable[[float], None],
     on_gaze_mark: Callable[[int, float], None] | None = None,
+    on_stimulus_onset: Callable[[float], None] | None = None,
+    on_stimulus_offset: Callable[[float], None] | None = None,
 ) -> None:
-    frames_per_cycle = refresh_rate_hz // frequency_hz
     frame_total = max(1, round(duration_s * refresh_rate_hz))
-    started = time.perf_counter()
+    stimulus_started: float | None = None
     previous_actual: float | None = None
+    frame_index = 0
+    rendering = getattr(window, "rendering_metadata", {})
 
     def drain_gaze_marks() -> None:
         if on_gaze_mark is None or not hasattr(window, "consume_gaze_marks"):
@@ -421,22 +593,26 @@ def _present_stimulus(
         for marked_target_index, marked_at in window.consume_gaze_marks():
             on_gaze_mark(marked_target_index, marked_at)
 
-    for frame_index in range(frame_total):
-        deadline = started + frame_index / refresh_rate_hz
-        while True:
-            now = time.perf_counter()
-            if now >= deadline:
-                break
-            application.processEvents()
-            drain_gaze_marks()
-            _check_abort(cancel_file, window)
-            time.sleep(min(0.002, deadline - now))
-        actual = time.perf_counter()
+    while frame_index < frame_total:
         drain_gaze_marks()
-        lit = (frame_index % frames_per_cycle) < (frames_per_cycle / 2)
-        window.show_target(target_index, lit)
+        previous_swap_count = window.frame_swapped_count
+        lit = ssvep_frame_is_lit(frame_index, frequency_hz, refresh_rate_hz)
+        target_generation = window.show_target(target_index, lit)
+        actual = _wait_for_frame_swap(
+            application,
+            window,
+            previous_swap_count,
+            cancel_file=cancel_file,
+            minimum_generation=target_generation,
+        )
+        if stimulus_started is None:
+            stimulus_started = actual
+            if on_stimulus_onset is not None:
+                on_stimulus_onset(actual)
+        actual_s = actual - stimulus_started
         interval = None if previous_actual is None else actual - previous_actual
-        dropped = 0 if interval is None else max(0, round(interval * refresh_rate_hz) - 1)
+        frame_step = 1 if interval is None else max(1, round(interval * refresh_rate_hz))
+        dropped = max(0, frame_step - 1)
         frame_rows.append(
             {
                 "trial_index": trial_index,
@@ -448,25 +624,70 @@ def _present_stimulus(
                 "screen_geometry": screen_geometry,
                 "screen_mapping": screen_mapping,
                 "stimulus_region": stimulus_region,
+                "graphics_vendor": rendering.get("vendor", ""),
+                "graphics_renderer": rendering.get("renderer", ""),
+                "graphics_version": rendering.get("version", ""),
+                "swap_interval": rendering.get("swap_interval", ""),
                 "frame_index": frame_index,
                 "scheduled_s": frame_index / refresh_rate_hz,
-                "actual_s": actual - started,
-                "lateness_ms": (actual - deadline) * 1000,
+                "actual_s": actual_s,
+                "frame_interval_ms": "" if interval is None else interval * 1000,
+                "lateness_ms": (actual_s - frame_index / refresh_rate_hz) * 1000,
                 "dropped_since_previous": dropped,
                 "lit": int(lit),
             }
         )
         previous_actual = actual
+        frame_index += frame_step
         if frame_index % max(1, refresh_rate_hz // 10) == 0:
-            progress(min(duration_s, actual - started))
-    final_deadline = started + duration_s
+            progress(min(duration_s, actual_s))
+    final_deadline = (stimulus_started or time.perf_counter()) + duration_s
+    blank_request_deadline = final_deadline - (1.0 / refresh_rate_hz)
     _wait_phase(
-        max(0.0, final_deadline - time.perf_counter()),
+        max(0.0, blank_request_deadline - time.perf_counter()),
         cancel_file=cancel_file,
         application=application,
         window=window,
     )
-    window.show_target(target_index, False)
+    previous_swap_count = window.frame_swapped_count
+    blank_generation = window.show_target(target_index, False)
+    offset_actual = _wait_for_frame_swap(
+        application,
+        window,
+        previous_swap_count,
+        cancel_file=cancel_file,
+        minimum_generation=blank_generation,
+    )
+    offset_s = offset_actual - (stimulus_started or offset_actual)
+    interval = None if previous_actual is None else offset_actual - previous_actual
+    frame_step = 1 if interval is None else max(1, round(interval * refresh_rate_hz))
+    frame_rows.append(
+        {
+            "trial_index": trial_index,
+            "eye_side": eye_side,
+            "dataset_name_base": dataset_name_base,
+            "dataset_name": dataset_name,
+            "screen_index": screen_index,
+            "screen_name": screen_name,
+            "screen_geometry": screen_geometry,
+            "screen_mapping": screen_mapping,
+            "stimulus_region": stimulus_region,
+            "graphics_vendor": rendering.get("vendor", ""),
+            "graphics_renderer": rendering.get("renderer", ""),
+            "graphics_version": rendering.get("version", ""),
+            "swap_interval": rendering.get("swap_interval", ""),
+            "frame_index": frame_total,
+            "scheduled_s": duration_s,
+            "actual_s": offset_s,
+            "frame_interval_ms": "" if interval is None else interval * 1000,
+            "lateness_ms": (offset_s - duration_s) * 1000,
+            "dropped_since_previous": max(0, frame_step - 1),
+            "lit": 0,
+        }
+    )
+    drain_gaze_marks()
+    if on_stimulus_offset is not None:
+        on_stimulus_offset(offset_actual)
 
 
 def _write_frame_log(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -480,9 +701,14 @@ def _write_frame_log(path: Path, rows: list[dict[str, Any]]) -> None:
         "screen_geometry",
         "screen_mapping",
         "stimulus_region",
+        "graphics_vendor",
+        "graphics_renderer",
+        "graphics_version",
+        "swap_interval",
         "frame_index",
         "scheduled_s",
         "actual_s",
+        "frame_interval_ms",
         "lateness_ms",
         "dropped_since_previous",
         "lit",
@@ -491,6 +717,56 @@ def _write_frame_log(path: Path, rows: list[dict[str, Any]]) -> None:
         stream.write("\t".join(columns) + "\n")
         for row in rows:
             stream.write("\t".join(str(row.get(column, "")) for column in columns) + "\n")
+
+
+def _frame_timing_summary(
+    frame_rows: list[dict[str, Any]], *, expected_refresh_rate_hz: float | None = None
+) -> dict[str, Any]:
+    intervals = [
+        float(row["frame_interval_ms"])
+        for row in frame_rows
+        if row.get("frame_interval_ms") not in (None, "")
+    ]
+    sorted_intervals = sorted(intervals)
+    median = None
+    p95 = None
+    if sorted_intervals:
+        middle = len(sorted_intervals) // 2
+        median = (
+            sorted_intervals[middle]
+            if len(sorted_intervals) % 2
+            else (sorted_intervals[middle - 1] + sorted_intervals[middle]) / 2
+        )
+        p95 = sorted_intervals[max(0, math.ceil(len(sorted_intervals) * 0.95) - 1)]
+    summary = {
+        "frame_count": len(frame_rows),
+        "dropped_frame_count": sum(int(row.get("dropped_since_previous", 0)) for row in frame_rows),
+        "min_frame_interval_ms": min(sorted_intervals) if sorted_intervals else None,
+        "median_frame_interval_ms": median,
+        "p95_frame_interval_ms": p95,
+        "max_frame_interval_ms": max(sorted_intervals) if sorted_intervals else None,
+    }
+    if expected_refresh_rate_hz is not None:
+        if expected_refresh_rate_hz <= 0:
+            raise ValueError("expected refresh rate must be positive")
+        expected_interval_ms = 1000.0 / expected_refresh_rate_hz
+        effective_refresh_rate_hz = 1000.0 / median if median and median > 0 else None
+        cadence_ok = (
+            median is not None
+            and abs(median - expected_interval_ms) <= expected_interval_ms * 0.1
+            and p95 is not None
+            and p95 <= expected_interval_ms * 1.5
+            and summary["dropped_frame_count"] == 0
+        )
+        summary.update(
+            {
+                "expected_refresh_rate_hz": expected_refresh_rate_hz,
+                "expected_frame_interval_ms": expected_interval_ms,
+                "effective_refresh_rate_hz": effective_refresh_rate_hz,
+                "cadence_status": "pass" if cadence_ok else "review",
+            }
+        )
+    return summary
 
 
 def _build_quality_report(
@@ -888,6 +1164,10 @@ def main(argv: list[str] | None = None) -> int:
                 "screen_geometry": _screen_geometry_text(display_metadata.get("active") or {}),
                 "screen_mapping": _screen_mapping_text(display_metadata),
                 "stimulus_region": _screen_geometry_text(display_metadata.get("active_region") or {}),
+                "graphics_vendor": (display_metadata.get("rendering") or {}).get("vendor", ""),
+                "graphics_renderer": (display_metadata.get("rendering") or {}).get("renderer", ""),
+                "graphics_version": (display_metadata.get("rendering") or {}).get("version", ""),
+                "swap_interval": (display_metadata.get("rendering") or {}).get("swap_interval", ""),
                 "source": source,
                 "label_source": label_source,
                 "trial_index": trial_index,
@@ -977,11 +1257,17 @@ def main(argv: list[str] | None = None) -> int:
                 "right": regions["right"],
                 "refresh_rate_hz": refresh_rate,
                 "protocol_refresh_rate_hz": int(protocol.refresh_rate_hz),
+                "rendering": dict(window.rendering_metadata),
                 "refresh_rate_status": (
                     "unknown" if refresh_rate <= 0 else
                     "matched" if abs(refresh_rate - protocol.refresh_rate_hz) <= 1.0 else "mismatch"
                 ),
             }
+            if refresh_rate <= 0 or abs(refresh_rate - protocol.refresh_rate_hz) > 1.0:
+                raise RuntimeError(
+                    "visual stimulus refresh rate does not match the protocol "
+                    f"({refresh_rate:g} Hz detected, {protocol.refresh_rate_hz} Hz required)"
+                )
 
         # Start the EEG stream before the visible countdown. The countdown is
         # therefore present in the raw recording, while session_start remains
@@ -1029,13 +1315,6 @@ def main(argv: list[str] | None = None) -> int:
         target_ids = [target_id for target_id, _frequency in protocol.targets]
         for trial in trials:
             target_index = target_ids.index(trial.target_id)
-            add_event(
-                "stimulus_onset",
-                trial.onset_marker,
-                trial.index,
-                trial.target_id,
-                trial.frequency_hz,
-            )
 
             def stimulus_progress(within: float) -> None:
                 pump_live_waveform()
@@ -1051,12 +1330,26 @@ def main(argv: list[str] | None = None) -> int:
                 )
 
             if arguments.headless:
+                add_event(
+                    "stimulus_onset",
+                    trial.onset_marker,
+                    trial.index,
+                    trial.target_id,
+                    trial.frequency_hz,
+                )
                 _wait_phase(
                     protocol.stimulus_s,
                     cancel_file=cancel_file,
                     application=None,
                     window=None,
                     update=stimulus_progress,
+                )
+                add_event(
+                    "stimulus_offset",
+                    trial.offset_marker,
+                    trial.index,
+                    trial.target_id,
+                    trial.frequency_hz,
                 )
             else:
                 def gaze_mark(target_index: int, marked_at: float) -> None:
@@ -1094,14 +1387,23 @@ def main(argv: list[str] | None = None) -> int:
                     frame_rows=frame_rows,
                     progress=stimulus_progress,
                     on_gaze_mark=gaze_mark,
+                    on_stimulus_onset=lambda actual: add_event(
+                        "stimulus_onset",
+                        trial.onset_marker,
+                        trial.index,
+                        trial.target_id,
+                        trial.frequency_hz,
+                        event_monotonic=actual,
+                    ),
+                    on_stimulus_offset=lambda actual: add_event(
+                        "stimulus_offset",
+                        trial.offset_marker,
+                        trial.index,
+                        trial.target_id,
+                        trial.frequency_hz,
+                        event_monotonic=actual,
+                    ),
                 )
-            add_event(
-                "stimulus_offset",
-                trial.offset_marker,
-                trial.index,
-                trial.target_id,
-                trial.frequency_hz,
-            )
             completed_trials += 1
             if trial.index < protocol.trial_count - 1 and protocol.post_trial_rest_s:
                 if window is not None:
@@ -1182,6 +1484,9 @@ def main(argv: list[str] | None = None) -> int:
     protocol_value = asdict(protocol)
     protocol_value["source"] = str(protocol.source) if protocol.source else None
     write_json(protocol_path, protocol_value)
+    display_metadata["frame_timing"] = _frame_timing_summary(
+        frame_rows, expected_refresh_rate_hz=protocol.refresh_rate_hz
+    )
     source_config_path = session_dir / "ssvep_config.json"
     write_json(
         source_config_path,
@@ -1204,16 +1509,16 @@ def main(argv: list[str] | None = None) -> int:
         },
     )
     quality_path = session_dir / "quality.json"
-    write_json(
-        quality_path,
-        _build_quality_report(
-            raw_data=raw_data,
-            board_id=board_id,
-            frame_rows=frame_rows,
-            recording_status=status,
-            error=error_message,
-        ),
+    quality_report = _build_quality_report(
+        raw_data=raw_data,
+        board_id=board_id,
+        frame_rows=frame_rows,
+        recording_status=status,
+        error=error_message,
     )
+    quality_report["frame_timing"] = display_metadata["frame_timing"]
+    quality_report["graphics"] = display_metadata.get("rendering", {})
+    write_json(quality_path, quality_report)
     output_files = [
         raw_path,
         columns_path,
