@@ -15,6 +15,7 @@ from typing import Any
 
 from neurostation_contract import (
     OpenBCIImportReport,
+    normalize_dataset_display_name,
 )
 
 
@@ -172,6 +173,28 @@ class DatasetRepository:
         return sorted(
             records, key=lambda item: item.deleted_at or item.session_id, reverse=True
         )
+
+    def rename_record(self, session_id: str, name: str) -> DatasetRecord:
+        """Persist a display name without rewriting acquisition metadata or raw files."""
+
+        name = normalize_dataset_display_name(name)
+        source = self._find_active_session_path(session_id)
+        if source is None:
+            raise ValueError("validation.dataset_not_found")
+        source = self._checked_path(source, self.root)
+        record = self._read_record(source / "session.json", force_path=source)
+        if record is None:
+            raise ValueError("validation.dataset_invalid")
+        if record.deleted_at:
+            raise ValueError("validation.dataset_not_found")
+        if name == record.session_name:
+            return record
+        display_path = self._checked_path(source / "workstation_display.json", source)
+        try:
+            self._write_session_value(display_path, {"schema_version": 1, "name": name})
+        finally:
+            display_path.with_name(display_path.name + ".pending").unlink(missing_ok=True)
+        return replace(record, session_name=name)
 
     def delete_record(self, session_id: str) -> DatasetRecord:
         source = self._find_active_session_path(session_id)
@@ -364,7 +387,9 @@ class DatasetRepository:
                 session_id=str(value.get("session_id") or session_path.parent.name),
                 status=str(value.get("status") or "completed"),
                 participant_id=str(value.get("participant_id") or ""),
-                session_name=str(value.get("session_name") or session_path.parent.name),
+                session_name=cls._display_name(
+                    session_path.parent, str(value.get("session_name") or session_path.parent.name)
+                ),
                 output_dir=output_dir,
                 duration_s=duration,
                 completed_trials=int(value.get("completed_trials", 0)),
@@ -403,6 +428,14 @@ class DatasetRepository:
             )
         except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
             return None
+
+    @classmethod
+    def _display_name(cls, directory: Path, original_name: str) -> str:
+        try:
+            value = cls._read_session_value(directory / "workstation_display.json")
+            return normalize_dataset_display_name(value.get("name"))
+        except (OSError, UnicodeError, TypeError, ValueError):
+            return original_name
 
     @classmethod
     def _recorded_at(

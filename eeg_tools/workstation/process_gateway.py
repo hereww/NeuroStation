@@ -76,6 +76,11 @@ class AcquisitionProcessGateway:
             dataset for dataset in self._datasets if dataset.id != dataset_id
         ]
 
+    def update_dataset(self, dataset: Dataset) -> None:
+        self._datasets = [dataset if item.id == dataset.id else item for item in self._datasets]
+        if self._snapshot.result is not None and self._snapshot.result.id == dataset.id:
+            self._snapshot = replace(self._snapshot, result=dataset)
+
     @staticmethod
     def _is_bundled_executable() -> bool:
         main_module = sys.modules.get("__main__")

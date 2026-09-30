@@ -454,6 +454,7 @@ class MainWindow(QMainWindow):
                 source_value=self._dataset_source,
                 status_value=self._dataset_status,
                 callbacks={
+                    "rename": self.rename_dataset,
                     "delete": self.gateway.delete_dataset,
                     "refresh": self.refresh_datasets,
                 },
@@ -499,6 +500,12 @@ class MainWindow(QMainWindow):
         self._dataset_search = search
         self._dataset_source = source
         self._dataset_status = status
+
+    def rename_dataset(self, dataset_id: str, name: str) -> Dataset:
+        dataset = self.gateway.rename_dataset(dataset_id, name)
+        if self.result is not None and self.result.id == dataset_id:
+            self.result = dataset
+        return dataset
 
     def refresh_datasets(self):
         self.gateway.refresh_datasets()

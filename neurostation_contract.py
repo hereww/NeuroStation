@@ -149,6 +149,17 @@ def dataset_name_for_eye(name: str, eye_side: EyeSide | str) -> str:
     return f"{base}_{side.label_zh}"
 
 
+def normalize_dataset_display_name(name: str) -> str:
+    """Validate an editable display name, independent of file paths and eye labels."""
+
+    if not isinstance(name, str):
+        raise ValueError("validation.dataset_name")
+    value = name.strip()
+    if not value or any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise ValueError("validation.dataset_name")
+    return value
+
+
 def default_save_directory() -> Path:
     override = os.environ.get("NEUROSTATION_DATASETS")
     if override:
@@ -396,6 +407,7 @@ class CaptureGateway(Protocol):
     def launch_openbci_workspace(self, locale: str) -> int: ...
     def import_openbci_recordings(self, source_root: Path) -> OpenBCIImportReport: ...
     def refresh_datasets(self) -> None: ...
+    def rename_dataset(self, dataset_id: str, name: str) -> Dataset: ...
     def delete_dataset(self, dataset_id: str) -> Dataset: ...
     def restore_dataset(self, dataset_id: str) -> Dataset: ...
     def purge_dataset(self, dataset_id: str) -> None: ...

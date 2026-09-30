@@ -5,17 +5,20 @@ import csv
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 import json
+import os
 from pathlib import Path
 import math
 import re
+import shutil
+import sys
 from typing import Any
 
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, Signal, Qt, QUrl
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, QProcess, Signal, Qt, QUrl
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QLineEdit,
     QSpinBox, QComboBox, QCheckBox, QFileDialog, QProgressBar, QStyle,
     QAbstractItemView, QHeaderView, QTableView, QTableWidget, QTableWidgetItem,
-    QDialog, QDialogButtonBox, QMessageBox, QTextEdit, QPushButton, QMenu,
+    QDialog, QDialogButtonBox, QInputDialog, QMessageBox, QTextEdit, QPushButton, QMenu,
 )
 from PySide6.QtGui import QDesktopServices
 
@@ -40,6 +43,7 @@ from neurostation_contract import (
     UserProfile,
     dataset_name_for_eye,
     is_confirmed_position,
+    normalize_dataset_display_name,
 )
 from neurostation_display import resolve_eye_regions
 
@@ -113,7 +117,10 @@ def _dataset_file_rows(result: Dataset) -> list[tuple[str, str, str, str]]:
                 sorted(
                     path.relative_to(result.path).as_posix()
                     for path in result.path.rglob("*")
-                    if path.is_file() and path.name not in {"session.json", "session.json.pending"}
+                    if path.is_file() and path.name not in {
+                        "session.json", "session.json.pending",
+                        "workstation_display.json", "workstation_display.json.pending",
+                    }
                 )
             )
         except OSError:
@@ -190,6 +197,62 @@ def _open_file_manager_folder(path: Path) -> bool:
     if not folder.is_dir():
         return False
     return bool(QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder))))
+
+
+def _find_libreoffice_executable() -> str | None:
+    """Find an installed LibreOffice without changing file associations."""
+
+    names = ("soffice.exe",) if sys.platform == "win32" else ("libreoffice", "soffice")
+    for name in names:
+        executable = shutil.which(name)
+        if executable:
+            return executable
+
+    if sys.platform == "win32":
+        import winreg
+
+        key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\soffice.exe"
+        for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+            for view in (winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY):
+                try:
+                    with winreg.OpenKey(root, key_path, 0, winreg.KEY_READ | view) as key:
+                        value, _ = winreg.QueryValueEx(key, "")
+                    candidate = Path(os.path.expandvars(str(value).strip().strip('"')))
+                    if candidate.is_file():
+                        return str(candidate)
+                except OSError:
+                    continue
+        for variable in ("ProgramW6432", "ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"):
+            root_path = os.environ.get(variable)
+            if root_path:
+                candidate = Path(root_path) / "LibreOffice" / "program" / "soffice.exe"
+                if candidate.is_file():
+                    return str(candidate)
+    elif sys.platform == "darwin":
+        for root_path in (Path("/Applications"), Path.home() / "Applications"):
+            candidate = root_path / "LibreOffice.app" / "Contents" / "MacOS" / "soffice"
+            if candidate.is_file():
+                return str(candidate)
+    return None
+
+
+def _open_in_libreoffice_calc(path: Path, parent: QWidget, tr) -> bool:
+    """Launch Calc with the selected local file, without a shell or conversion."""
+
+    if not path.is_file():
+        QMessageBox.warning(parent, tr("error.title"), tr("dataset_summary.file_missing", path=str(path)))
+        return False
+    executable = _find_libreoffice_executable()
+    if executable is None:
+        QMessageBox.warning(parent, tr("error.title"), tr("dataset_summary.libreoffice_missing"))
+        return False
+    try:
+        started, _ = QProcess.startDetached(executable, ["--calc", str(path.resolve())])
+    except OSError:
+        started = False
+    if not started:
+        QMessageBox.warning(parent, tr("error.title"), tr("dataset_summary.libreoffice_failed", path=str(path)))
+    return started
 
 
 def _dataset_raw_file_names(result: Dataset) -> tuple[str, ...]:
@@ -2249,11 +2312,14 @@ class DatasetSummaryPage(Page):
             file_table.selectRow(row)
             menu = QMenu(file_table)
             open_action = menu.addAction(tr("dataset_summary.open_in_explorer"))
+            calc_action = menu.addAction(tr("dataset_summary.open_in_libreoffice_calc"))
             selected_action = menu.exec(
                 file_table.viewport().mapToGlobal(position)
             )
             if selected_action is open_action:
                 _open_file_manager_folder(file_path)
+            elif selected_action is calc_action:
+                _open_in_libreoffice_calc(file_path, self, tr)
 
         file_table.customContextMenuRequested.connect(show_file_context_menu)
         file_table.setMinimumHeight(min(360, max(84, file_table.sizeHintForRow(0) * max(1, len(file_rows)) + 44)))
@@ -2460,6 +2526,10 @@ class _DatasetCollectionPage(Page):
         controls = QHBoxLayout()
         if not trashed:
             controls.addWidget(action(self.tr("action.view_dataset"), lambda _checked=False, d=dataset: self._show_result_callback(d)))
+            rename_button = action(self.tr("datasets.rename"), lambda _checked=False, d=dataset: self._rename_dataset(d))
+            rename_button.setObjectName("datasetRenameButton")
+            rename_button.setEnabled("rename" in self._callbacks)
+            controls.addWidget(rename_button)
             controls.addWidget(action(self.tr("datasets.delete"), lambda _checked=False, d=dataset: self._delete_dataset(d)))
         else:
             controls.addWidget(action(self.tr("datasets.restore"), lambda _checked=False, d=dataset: self._restore_dataset(d)))
@@ -2476,6 +2546,33 @@ class _DatasetCollectionPage(Page):
         refresh = self._callbacks.get("refresh")
         if refresh is not None:
             refresh()
+
+    def _rename_dataset(self, dataset: Dataset):
+        name, accepted = QInputDialog.getText(
+            self, self.tr("datasets.rename_title"), self.tr("datasets.rename_prompt"),
+            QLineEdit.EchoMode.Normal, dataset.name,
+        )
+        if not accepted:
+            return
+        try:
+            name = normalize_dataset_display_name(name)
+            if name == dataset.name:
+                return
+            callback = self._callbacks.get("rename")
+            if callback is None:
+                return
+            renamed = callback(dataset.id, name)
+            self._datasets = tuple(renamed if item.id == dataset.id else item for item in self._datasets)
+            self.status.clear()
+            self.status.setVisible(False)
+            self._render_records()
+            refresh = self._callbacks.get("refresh")
+            if refresh is not None:
+                refresh()
+        except (ValueError, RuntimeError, OSError) as error:
+            message = self.tr("datasets.rename_failed", reason=str(error)) if isinstance(error, OSError) else self.tr(str(error))
+            self.status.setText(message)
+            self.status.setVisible(True)
 
     def _delete_dataset(self, dataset: Dataset):
         answer = QMessageBox.question(

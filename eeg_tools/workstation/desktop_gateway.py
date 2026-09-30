@@ -16,6 +16,7 @@ from neurostation_contract import (
     OpenBCIWorkspaceStatus,
     Phase,
     TaskSnapshot,
+    normalize_dataset_display_name,
 )
 
 from .dataset import DatasetRecord, DatasetRepository
@@ -214,6 +215,24 @@ class MetadataGateway:
             self._remember(self._dataset_from_record(record))
         for dataset in transient:
             self._remember(dataset)
+
+    def rename_dataset(self, dataset_id: str, name: str) -> Dataset:
+        self._ensure_available()
+        name = normalize_dataset_display_name(name)
+        repository = self.repository
+        for index, dataset in enumerate(self._datasets):
+            if dataset.id != dataset_id:
+                continue
+            if not dataset.persisted:
+                renamed = replace(dataset, name=name)
+                self._datasets[index] = renamed
+                return renamed
+            if not dataset.path.resolve().is_relative_to(self.repository.root.resolve()):
+                repository = DatasetRepository(dataset.path.parent)
+            break
+        record = repository.rename_record(dataset_id, name)
+        self.refresh_datasets()
+        return self._dataset_from_record(record)
 
     def delete_dataset(self, dataset_id: str) -> Dataset:
         self._ensure_available()
@@ -604,6 +623,20 @@ class DesktopGateway:
 
     def refresh_datasets(self) -> None:
         self._metadata.refresh_datasets()
+
+    def rename_dataset(self, dataset_id: str, name: str) -> Dataset:
+        self._ensure_available()
+        name = normalize_dataset_display_name(name)
+        dataset = next((item for item in self.datasets if item.id == dataset_id), None)
+        if dataset is None:
+            raise ValueError("validation.dataset_not_found")
+        self._metadata._remember(dataset)
+        result = self._metadata.rename_dataset(dataset_id, name)
+        if dataset.persisted and not dataset.path.resolve().is_relative_to(self._metadata.repository.root.resolve()):
+            self._acquisition.update_dataset(result)
+        else:
+            self._acquisition.discard_dataset(dataset_id)
+        return result
 
     def delete_dataset(self, dataset_id: str) -> Dataset:
         self._ensure_available()
