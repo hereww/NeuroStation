@@ -9,9 +9,9 @@ param(
 $ErrorActionPreference = "Stop"
 $isWindowsPlatform = $env:OS -eq "Windows_NT"
 $isMacPlatform = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::MacOSX
-$releaseVersion = "1.03"
-$releaseSemver = "1.0.3"
-$releaseDate = "2026-09-24"
+$releaseVersion = "1.04"
+$releaseSemver = "1.0.4"
+$releaseDate = "2026-10-02"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $pythonPath = (Get-Command $Python -ErrorAction Stop).Source
 $pythonVersion = & $pythonPath -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
@@ -166,7 +166,7 @@ try {
             Remove-Item -LiteralPath $destination -Recurse -Force
         }
         Copy-Item -LiteralPath $artifact -Destination $destination -Recurse -Force
-        $releaseNotes = Join-Path $projectRoot "release\NeuroStation-1.03-Windows-x64.md"
+        $releaseNotes = Join-Path $projectRoot "release\NeuroStation-1.04-Windows-x64.md"
         if (-not (Test-Path -LiteralPath $releaseNotes)) {
             throw "Release notes are missing: $releaseNotes"
         }
@@ -183,7 +183,7 @@ try {
             "Platform: Windows x64"
             "Release type: standalone portable release"
         ) | Set-Content -LiteralPath (Join-Path $destination "VERSION.txt") -Encoding UTF8
-        $zipPath = Join-Path $distRoot "NeuroStation-1.03-Windows-x64.zip"
+        $zipPath = Join-Path $distRoot "NeuroStation-1.04-Windows-x64.zip"
         if (Test-Path -LiteralPath $zipPath) {
             Remove-Item -LiteralPath $zipPath -Force
         }

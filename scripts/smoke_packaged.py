@@ -11,6 +11,10 @@ import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from neurostation_contract import PRODUCT_SEMVER, PRODUCT_VERSION, RELEASE_DATE  # noqa: E402
 
 
 def packaged_entry() -> Path:
@@ -89,6 +93,14 @@ def main() -> int:
             )
             return diagnostics.returncode
         diagnostics_value = json.loads(diagnostics.stdout)
+        application = diagnostics_value.get("application", {})
+        if not (
+            application.get("version") == PRODUCT_VERSION
+            and application.get("semantic_version") == PRODUCT_SEMVER
+            and application.get("release_date") == RELEASE_DATE
+        ):
+            print(f"Packaged application version is stale: {application}", file=sys.stderr)
+            return 13
         resources = diagnostics_value.get("resources", {})
         configuration = diagnostics_value.get("configuration", {})
         openbci = diagnostics_value.get("openbci_gui", {})
@@ -117,6 +129,9 @@ def main() -> int:
         if sbom.get("bomFormat") != "CycloneDX" or not sbom.get("components"):
             print("Packaged SBOM is incomplete", file=sys.stderr)
             return 12
+        if sbom.get("metadata", {}).get("component", {}).get("version") != PRODUCT_SEMVER:
+            print("Packaged SBOM version does not match the application", file=sys.stderr)
+            return 14
         # A packaged smoke test must not manufacture EEG data. Real worker
         # validation requires a connected Cyton and is performed on hardware.
         return 0
