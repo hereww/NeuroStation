@@ -25,6 +25,8 @@ files = [
   "apps/workstation_ui/i18n.py",
   "apps/workstation_ui/main.py",
   "apps/workstation_ui/pages.py",
+  "apps/workstation_ui/monitor.py",
+  "apps/workstation_ui/monitor_model.py",
   "eeg_tools/__init__.py",
   "eeg_tools/session_files.py",
   "eeg_tools/offline_analysis.py",

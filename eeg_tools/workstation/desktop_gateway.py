@@ -544,7 +544,7 @@ class DesktopGateway:
             or protocol.channel_count != 8
         ):
             raise ValueError("validation.calibration_validation")
-        protocol_value["status"] = "formal_candidate"
+        protocol_value["status"] = "formal"
         protocol_value["formal_approval"] = {
             "approved_at": completed_at,
             "operator_confirmed": True,

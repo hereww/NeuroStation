@@ -14,6 +14,10 @@ $releaseSemver = "1.0.4"
 $releaseDate = "2026-10-02"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $pythonPath = (Get-Command $Python -ErrorAction Stop).Source
+& $pythonPath (Join-Path $projectRoot "scripts\validate_release_configs.py")
+if ($LASTEXITCODE -ne 0) {
+    throw "Release configuration validation failed; only formal, complete defaults can be packaged."
+}
 $pythonVersion = & $pythonPath -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
 $localData = [Environment]::GetFolderPath("LocalApplicationData")
 $cacheRoot = [IO.Path]::GetFullPath((Join-Path $localData "NeuroStation\Build"))

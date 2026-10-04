@@ -1,5 +1,5 @@
 {
-  "config_version": "CHANNEL-V1-DRAFT",
+  "config_version": "CHANNEL-V1-TEMPLATE",
   "board": "OpenBCI Cyton",
   "serial_port": "COM5",
   "sampling_rate_hz": 250,

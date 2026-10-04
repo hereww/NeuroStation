@@ -1473,7 +1473,7 @@ class DevicesPage(Page):
         if normalized.startswith("draft"):
             return "draft"
         if normalized in {"formal", "formal_candidate"}:
-            return "formal_candidate"
+            return normalized
         return normalized or "unknown"
 
     def _set_loaded_calibration(self, config: dict[str, Any]) -> None:
@@ -2028,11 +2028,19 @@ class SSVEPPage(Page):
 
 class TaskPage(Page):
     cancel_requested = Signal()
+    monitor_requested = Signal()
 
     def __init__(self, tr):
         super().__init__(tr, "SSVEP")
         self.cancel_button = action(tr("action.cancel"), self.cancel_requested.emit)
-        self.layout.addWidget(self.cancel_button)
+        task_actions = QHBoxLayout()
+        task_actions.addWidget(self.cancel_button)
+        self.monitor_button = action(tr("monitor.open"), self.monitor_requested.emit)
+        task_actions.addWidget(self.monitor_button)
+        task_actions.addStretch()
+        self.layout.addLayout(task_actions)
+        self.monitor_notice = label(tr("monitor.no_screen"), "muted")
+        self.layout.addWidget(self.monitor_notice)
         self.quality_notice = label("", "notice")
         self.quality_notice.setVisible(False)
         self.layout.addWidget(self.quality_notice)

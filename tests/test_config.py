@@ -15,8 +15,14 @@ CHANNEL_CONFIG = ROOT / "configs" / "channel_config_v1_template.json"
 class ConfigTests(unittest.TestCase):
     def test_repository_configs_are_structurally_valid(self) -> None:
         _, _, warnings = load_and_validate_configs(STIMULUS_CONFIG, CHANNEL_CONFIG)
-        self.assertTrue(any("draft" in warning.lower() for warning in warnings))
+        self.assertFalse(any("draft" in warning.lower() for warning in warnings))
         self.assertTrue(any("electrode positions" in warning.lower() for warning in warnings))
+
+    def test_custom_draft_stimulus_still_reports_a_warning(self) -> None:
+        stimulus, _, _ = load_and_validate_configs(STIMULUS_CONFIG, CHANNEL_CONFIG)
+        stimulus["status"] = "draft_for_technical_validation"
+        warnings = validate_stimulus_config(stimulus, STIMULUS_CONFIG)
+        self.assertTrue(any("draft" in warning.lower() for warning in warnings))
 
     def test_frequency_must_divide_refresh_rate(self) -> None:
         stimulus, _, _ = load_and_validate_configs(STIMULUS_CONFIG, CHANNEL_CONFIG)

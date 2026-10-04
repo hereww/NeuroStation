@@ -1,6 +1,6 @@
 {
-  "config_version": "SSVEP-V1-DRAFT",
-  "status": "draft_for_technical_validation",
+  "config_version": "SSVEP-V1-FORMAL",
+  "status": "formal",
   "display": {
     "refresh_rate_hz": 60,
     "pygame_desktop_resolution": "2560x1440",

@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
 from .components import action, label
 from .gateway import CaptureGateway, CaptureConfig, CaptureMode, Phase, Dataset
 from .i18n import Translator
+from .monitor import AcquisitionMonitorWindow
+from neurostation_display import resolve_monitor_screen
 from .pages import (
     HomePage, DevicesPage, AppsPage, SSVEPPage, TaskPage,
     ResultPage, DatasetsPage, DatasetTrashPage, InfoPage,
@@ -251,6 +253,8 @@ class MainWindow(QMainWindow):
         self._dataset_search = ""
         self._dataset_source = ""
         self._dataset_status = ""
+        self.monitor_window: AcquisitionMonitorWindow | None = None
+        self._monitor_suppressed = False
         self.pages: dict[str, QWidget] = {}
         self.screens: dict[str, QScrollArea] = {}
         self.sidebar: QWidget | None = None
@@ -262,6 +266,7 @@ class MainWindow(QMainWindow):
         if icon_path.is_file():
             self.setWindowIcon(QIcon(str(icon_path)))
         self._build_shell()
+        QApplication.instance().screenRemoved.connect(self._monitor_screen_removed)
         if getattr(self.gateway, "auto_import_default", False):
             QTimer.singleShot(0, self._auto_import_default)
         if persist_settings:
@@ -372,8 +377,10 @@ class MainWindow(QMainWindow):
         self._replace_page("ssvep", detail)
         task = TaskPage(self.tr)
         task.cancel_requested.connect(self.cancel_task)
+        task.monitor_requested.connect(self.show_acquisition_monitor)
         self._replace_page("task", task)
-        task.waveform.set_sample_provider(self._read_live_waveform)
+        # The task poller owns the consuming live-preview reader. Both windows
+        # receive the same batch, even when the task page is hidden.
         self._replace_page(
             "openbci",
             InfoPage(
@@ -519,6 +526,9 @@ class MainWindow(QMainWindow):
         if self.persist_settings:
             self.settings.setValue("ui/language", locale)
         self.tr = Translator(locale)
+        monitor_suppressed = self._monitor_suppressed
+        self._dispose_acquisition_monitor()
+        self._monitor_suppressed = monitor_suppressed
         self._build_shell()
 
     def _error(self, error: Exception):
@@ -583,6 +593,8 @@ class MainWindow(QMainWindow):
             self._error(error)
             return
         self.draft_config = config
+        self._dispose_acquisition_monitor()
+        self._monitor_suppressed = False
         self._preflight_ready = False
         if self.persist_settings:
             self.settings.setValue("capture/save_directory", str(config.save_directory))
@@ -1063,6 +1075,8 @@ class MainWindow(QMainWindow):
         elif not snapshot.active:
             self.timer.stop()
         self._update_controls()
+        if snapshot.active:
+            self._pump_live_samples()
 
     def _update_controls(self):
         snapshot = self.gateway.snapshot
@@ -1098,6 +1112,75 @@ class MainWindow(QMainWindow):
             not snapshot.active and self.preflight_thread is None
         )
         self.pages["task"].update_snapshot(snapshot, self.gateway.config)
+        self._sync_acquisition_monitor(snapshot)
+
+    def show_acquisition_monitor(self):
+        self._monitor_suppressed = False
+        self._sync_acquisition_monitor(self.gateway.snapshot)
+
+    def _monitor_dismissed(self):
+        # Closing this view never cancels acquisition; the task button reopens it.
+        self._monitor_suppressed = True
+
+    def _monitor_screen_removed(self, screen):
+        window = self.monitor_window
+        if window is not None and window.target_screen == screen:
+            # Hide immediately, before Qt relocates an orphaned window to the
+            # primary screen. The next poll can select another extended screen.
+            window.hide()
+            window.target_screen = None
+            window.target_screen_name = ""
+
+    def _dispose_acquisition_monitor(self):
+        if self.monitor_window is not None:
+            self.monitor_window.close()
+            self.monitor_window.deleteLater()
+            self.monitor_window = None
+
+    def _sync_acquisition_monitor(self, snapshot):
+        application = QApplication.instance()
+        screen = resolve_monitor_screen(application, snapshot.screen_index)
+        page = self.pages["task"]
+        page.monitor_button.setEnabled(snapshot.active and screen is not None)
+        page.monitor_notice.setText(self.tr(
+            "monitor.auto_note" if screen is not None else "monitor.no_screen"
+        ))
+        if not snapshot.active or screen is None:
+            if self.monitor_window is not None:
+                self.monitor_window.hide()
+                if screen is None:
+                    self.monitor_window.target_screen = None
+                    self.monitor_window.target_screen_name = ""
+                self.monitor_window.update_snapshot(snapshot, self.gateway.config, self.gateway.device)
+            return
+        if self.monitor_window is None and not self._monitor_suppressed:
+            self.monitor_window = AcquisitionMonitorWindow(self.tr, self)
+            self.monitor_window.dismissed.connect(self._monitor_dismissed)
+            self.monitor_window.cancel_requested.connect(self.cancel_task)
+        window = self.monitor_window
+        if window is None:
+            return
+        if not self._monitor_suppressed and (
+            not window.isVisible() or window.target_screen != screen
+        ):
+            window.show_on_screen(screen)
+        window.update_snapshot(snapshot, self.gateway.config, self.gateway.device)
+
+    def _pump_live_samples(self):
+        if CaptureMode(self.gateway.config.mode) is not CaptureMode.CYTON:
+            return
+        samples = self._read_live_waveform()
+        if samples is None:
+            return
+        waveform = self.pages["task"].waveform
+        waveform.push_samples(samples)
+        if self.monitor_window is not None:
+            self.monitor_window.update_samples(
+                waveform.model.CHANNEL_NAMES, waveform.model.SAMPLE_RATE_HZ, samples,
+            )
+            self.monitor_window.update_snapshot(
+                self.gateway.snapshot, self.gateway.config, self.gateway.device,
+            )
 
     def _read_live_waveform(self, maximum_rows: int = 1000):
         reader = getattr(self.gateway, "read_live_waveform", None)
@@ -1109,12 +1192,18 @@ class MainWindow(QMainWindow):
         samples = payload.get("samples")
         names = payload.get("channel_names")
         rate = payload.get("sample_rate_hz")
-        if not isinstance(samples, list) or not samples:
+        if not isinstance(samples, list) or not samples or not isinstance(names, (list, tuple)):
             return None
         try:
             channel_names = tuple(str(item) for item in names)
             sample_rate = int(rate)
-        except (TypeError, ValueError):
+            if len(samples) != len(channel_names) or not isinstance(samples[0], (list, tuple)):
+                return None
+            count = len(samples[0])
+            if not count or any(not isinstance(channel, (list, tuple)) or len(channel) != count for channel in samples):
+                return None
+            samples = [[float(value) for value in channel] for channel in samples]
+        except (TypeError, ValueError, OverflowError):
             return None
         task_page = self.pages.get("task")
         if task_page is not None and hasattr(task_page, "waveform"):
@@ -1127,6 +1216,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         self._record("ui", "workstation window closing")
         self.timer.stop()
+        self._dispose_acquisition_monitor()
         if self.import_thread is not None:
             self.import_thread.quit()
             self.import_thread.wait(2000)

@@ -69,3 +69,40 @@ def resolve_eye_regions(application: Any) -> dict[str, dict[str, Any]]:
         }
         for side in ("left", "right")
     }
+
+
+def resolve_monitor_screen(application: Any, stimulus_screen_index: int | None = None):
+    """Pick an extended screen that cannot cover the stimulus display.
+
+    Qt's screen order is not necessarily primary-first. Mirrored/overlapping
+    displays are deliberately not treated as usable operator monitors.
+    """
+    screens = list(application.screens())
+    if len(screens) < 2:
+        return None
+    primary = application.primaryScreen()
+    if stimulus_screen_index is not None and 0 <= stimulus_screen_index < len(screens):
+        stimulus = screens[stimulus_screen_index]
+    else:
+        stimulus = next((screen for screen in screens if screen == primary), screens[0])
+    # The worker's recorded index can become stale after a hotplug/reorder.
+    # Never put an operator window on the current primary display either.
+    protected = [stimulus]
+    if primary is not None and primary != stimulus:
+        protected.append(primary)
+    for screen in screens:
+        if screen in protected:
+            continue
+        candidate = screen.geometry()
+        if candidate.width() <= 0 or candidate.height() <= 0:
+            continue
+        overlaps = any(
+            candidate.x() < rect.x() + rect.width()
+            and rect.x() < candidate.x() + candidate.width()
+            and candidate.y() < rect.y() + rect.height()
+            and rect.y() < candidate.y() + candidate.height()
+            for rect in (item.geometry() for item in protected)
+        )
+        if not overlaps:
+            return screen
+    return None

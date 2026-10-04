@@ -141,7 +141,7 @@ class DesktopGatewayTests(unittest.TestCase):
                 protocol = json.loads(protocol_path.read_text(encoding="utf-8"))
                 self.assertEqual("CHANNEL-V1-FORMAL", channel["config_version"])
                 self.assertEqual([], validate_channel_config(channel, channel_path))
-                self.assertEqual("formal_candidate", protocol["status"])
+                self.assertEqual("formal", protocol["status"])
                 self.assertEqual(protocol_path, gateway.protocol_path)
                 self.assertEqual(channel_path, gateway.channel_config_path)
                 self.assertEqual(channel, gateway.load_channel_calibration())

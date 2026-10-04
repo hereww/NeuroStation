@@ -27,6 +27,7 @@ if [ ! -x "$deploy_command" ]; then
 fi
 
 cd "$project_root"
+"$python_command" "$project_root/scripts/validate_release_configs.py"
 if [ "$(uname -s)" = "Darwin" ]; then
   brainflow_lib=$("$python_command" -c 'import pathlib,brainflow; print(pathlib.Path(brainflow.__file__).resolve().parent / "lib")')
   macos_hidden_brainflow_libs=$(mktemp -d "${TMPDIR:-/tmp}/neurostation-brainflow.XXXXXX")
