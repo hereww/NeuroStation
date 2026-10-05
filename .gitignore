@@ -25,3 +25,9 @@ session_*/
 
 # Local, filled-in channel maps should not be committed by default.
 configs/channel_config_v1.json
+datasets/processed/
+datasets/external/**/*.mat
+datasets/external/**/*.npy
+datasets/external/**/*.rec
+datasets/external/**/*.edf
+datasets/external/**/*.zip

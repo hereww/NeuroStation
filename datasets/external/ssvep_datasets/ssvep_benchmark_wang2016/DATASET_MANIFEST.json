@@ -1,0 +1,392 @@
+{
+  "schema_version": "1.0",
+  "dataset_slug": "ssvep_benchmark_wang2016",
+  "dataset_name": "A Benchmark Dataset for SSVEP-Based Brain–Computer Interfaces (Wang2016)",
+  "download_date": "2026-10-04",
+  "download_date_note": "Actual download/verification date is 2026-10-04. The task requested 2026-10-05; because that date is after the applicable current date, it is retained only as requested_download_date and is not claimed as the actual download date.",
+  "status": "downloaded_verified",
+  "scope": "complete",
+  "license": "CC BY 4.0",
+  "doi": "10.1109/TNSRE.2016.2627556",
+  "source_urls": [
+    "https://zenodo.org/records/14865172",
+    "https://doi.org/10.1109/TNSRE.2016.2627556"
+  ],
+  "acquisition": {
+    "original_sampling_rate_hz": 1000,
+    "stored_sampling_rate_hz": 250,
+    "eeg_channels": 64,
+    "epoch_samples": 1500,
+    "epoch_seconds": 6.0
+  },
+  "experiment": {
+    "paradigm": "SSVEP",
+    "subjects": 35,
+    "targets": 40,
+    "blocks": 6,
+    "trials_per_block": 40,
+    "stimulus_frequencies_hz": {
+      "start": 8.0,
+      "stop": 15.8,
+      "step": 0.2
+    },
+    "event_markers": "target index/frequency-phase mapping; no separate stim channel in supplied MAT tensors"
+  },
+  "data_format": "MAT v5 subject files plus TXT/LOC metadata",
+  "verification": {
+    "file_count": 38,
+    "total_size_bytes": 3708484359,
+    "all_source_sizes_match": true,
+    "all_sha256_present": true,
+    "removed_partial_files": [],
+    "notes": [
+      "Zenodo source checksums are MD5; SHA256 was computed locally.",
+      "Freq_Phase.mat was not present in the source mirror."
+    ]
+  },
+  "files": [
+    {
+      "path": "64-channels.loc",
+      "size_bytes": 1982,
+      "sha256": "da8c1d84451930234392b9283fccffb7994d69ed97bb452c6927613bb33c3ab0",
+      "expected_size_bytes": 1982,
+      "size_matches_source": true,
+      "source_checksum": "md5:21cae78341d49df7b2239b2229c842fd",
+      "matlab_header": null
+    },
+    {
+      "path": "Readme.txt",
+      "size_bytes": 2976,
+      "sha256": "3bf106f1901a2ce2c7c309fee948eb13a692597a00e23cbc8d8b9ae170988e69",
+      "expected_size_bytes": 2976,
+      "size_matches_source": true,
+      "source_checksum": "md5:541f7945746131110464f2cc2518e635",
+      "matlab_header": null
+    },
+    {
+      "path": "S1.mat",
+      "size_bytes": 105899195,
+      "sha256": "95a3cf27b7e2b58962df1127b86a85d4c2c69266ab2490bb0b9cc10d14726d96",
+      "expected_size_bytes": 105899195,
+      "size_matches_source": true,
+      "source_checksum": "md5:281fc8e77da9f1957823624c85b40feb",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:13:25 2016"
+    },
+    {
+      "path": "S10.mat",
+      "size_bytes": 105964675,
+      "sha256": "1f167d1c38e2f791f354e20cf1103ea7bc12aa115dba2088b39fb45dd3f80998",
+      "expected_size_bytes": 105964675,
+      "size_matches_source": true,
+      "source_checksum": "md5:c61d6d7d99b783618ed8dd2fd54f52d3",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:16:10 2016"
+    },
+    {
+      "path": "S11.mat",
+      "size_bytes": 107409482,
+      "sha256": "052ad1f7c7f6da29c514aee4c47e364022143092f4bc7261d55a5261f232cbc0",
+      "expected_size_bytes": 107409482,
+      "size_matches_source": true,
+      "source_checksum": "md5:9d968c6e04b6f82c6e3fbe99235ceefc",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:16:28 2016"
+    },
+    {
+      "path": "S12.mat",
+      "size_bytes": 105323996,
+      "sha256": "12c085840508cb411c29740e9edb2f300177f64dd5bf7cb95474b368a1e3c44b",
+      "expected_size_bytes": 105323996,
+      "size_matches_source": true,
+      "source_checksum": "md5:036678899589c341658ba75bfd845bff",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:16:47 2016"
+    },
+    {
+      "path": "S13.mat",
+      "size_bytes": 106174614,
+      "sha256": "51c3c3cc4f7de4b9c8a2ed36db4ee64749259638db311234c115fefad0cabc2c",
+      "expected_size_bytes": 106174614,
+      "size_matches_source": true,
+      "source_checksum": "md5:b35627676664ae92a0ff7803941fc70b",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:17:05 2016"
+    },
+    {
+      "path": "S14.mat",
+      "size_bytes": 106022074,
+      "sha256": "654571b82d99de6ad51ae7ddf31db2a2a4448aaf29ca47e1ea9f23462817aff5",
+      "expected_size_bytes": 106022074,
+      "size_matches_source": true,
+      "source_checksum": "md5:e8733da6dae847d94224bb4ac0fd6484",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:17:24 2016"
+    },
+    {
+      "path": "S15.mat",
+      "size_bytes": 104882602,
+      "sha256": "3b36a294ef902e737bff4b295613f9fff660839fd3e5173d2f3330c4fcbc1603",
+      "expected_size_bytes": 104882602,
+      "size_matches_source": true,
+      "source_checksum": "md5:12bcc1dd51a65806e53a08925bbfa715",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:17:42 2016"
+    },
+    {
+      "path": "S16.mat",
+      "size_bytes": 105801574,
+      "sha256": "240c97d9e27ef5b37846fd3781f00f51749dad9ce63d4a7fee510fd1db9a7de5",
+      "expected_size_bytes": 105801574,
+      "size_matches_source": true,
+      "source_checksum": "md5:72d5cfe8c2e1f322aa873fdfa662d4f9",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:18:00 2016"
+    },
+    {
+      "path": "S17.mat",
+      "size_bytes": 106239390,
+      "sha256": "afa87eb4336efe456edc70112ac804b7ed76864d7a8d504a0ff106227cff0c58",
+      "expected_size_bytes": 106239390,
+      "size_matches_source": true,
+      "source_checksum": "md5:a872db3268978dc465e6396ea7805abc",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:18:18 2016"
+    },
+    {
+      "path": "S18.mat",
+      "size_bytes": 106062305,
+      "sha256": "6fbfd6233bf6a4a1264fc8ebd0d384434348553d14131028ed33a7d0bf191a11",
+      "expected_size_bytes": 106062305,
+      "size_matches_source": true,
+      "source_checksum": "md5:421ce3e424fb0d152679fbc3c2019e51",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:18:36 2016"
+    },
+    {
+      "path": "S19.mat",
+      "size_bytes": 105613176,
+      "sha256": "31d48664e84c6736aa3f0a151a23468e416c9ca2577aaf5ff08169a2f126c727",
+      "expected_size_bytes": 105613176,
+      "size_matches_source": true,
+      "source_checksum": "md5:63c7f37b58c5830455107f1374ccccd5",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:18:54 2016"
+    },
+    {
+      "path": "S2.mat",
+      "size_bytes": 105800065,
+      "sha256": "e3e4e58b0aa2b249ca04dce33168c0f89935f67bd2c8a2d9b9ff965fc0d37a76",
+      "expected_size_bytes": 105800065,
+      "size_matches_source": true,
+      "source_checksum": "md5:004c1e52b0b2c5607f5b6b347dc8fc2d",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:13:44 2016"
+    },
+    {
+      "path": "S20.mat",
+      "size_bytes": 105953739,
+      "sha256": "5ceb2a0f1dcf8bd0e88d94b361f016bc2985e8f977f409e2a345248543e0c5bd",
+      "expected_size_bytes": 105953739,
+      "size_matches_source": true,
+      "source_checksum": "md5:7c50f866da76b184cf8c3a8dd8749b91",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:19:13 2016"
+    },
+    {
+      "path": "S21.mat",
+      "size_bytes": 105678857,
+      "sha256": "13eaa8e8e8cbb37dbdcac0d27d747ab9bc8da81fe650346c37a8c99a6cb112ea",
+      "expected_size_bytes": 105678857,
+      "size_matches_source": true,
+      "source_checksum": "md5:06d7657e4371650b19ff231a566f9c05",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:19:31 2016"
+    },
+    {
+      "path": "S22.mat",
+      "size_bytes": 105620206,
+      "sha256": "c3bc9925f24496e7a6fe071dc10bde282b7f46104fc1238ec917ead7c93edd9e",
+      "expected_size_bytes": 105620206,
+      "size_matches_source": true,
+      "source_checksum": "md5:e9e530f82842636963982c028c8cdea3",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:19:50 2016"
+    },
+    {
+      "path": "S23.mat",
+      "size_bytes": 105906123,
+      "sha256": "fc1a23e8cebd94b8f01d342224380b055fe3ad2593c6e45c61cc6224fa940374",
+      "expected_size_bytes": 105906123,
+      "size_matches_source": true,
+      "source_checksum": "md5:cd5d107d9b17004e0d987781f502641a",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:20:08 2016"
+    },
+    {
+      "path": "S24.mat",
+      "size_bytes": 106276864,
+      "sha256": "6f3e113d916d4eb1325a6775e750fe6a7711bf7968a2c9b6ebb34161e6b06ebd",
+      "expected_size_bytes": 106276864,
+      "size_matches_source": true,
+      "source_checksum": "md5:8d1a27bb45baecba380dddded435dfc6",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:20:27 2016"
+    },
+    {
+      "path": "S25.mat",
+      "size_bytes": 106743753,
+      "sha256": "db5be1e9be034f0638386f8ed1b426036c500dbec0ba9b9dda9eab19e69fab50",
+      "expected_size_bytes": 106743753,
+      "size_matches_source": true,
+      "source_checksum": "md5:3b3f8b02ca96fe96033e016583209dd0",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:20:45 2016"
+    },
+    {
+      "path": "S26.mat",
+      "size_bytes": 106634989,
+      "sha256": "d98fdb167e2ca888d75e94f1bad6e4d055935d4eae42af26e42d63afb30cdbc3",
+      "expected_size_bytes": 106634989,
+      "size_matches_source": true,
+      "source_checksum": "md5:958a806714a11cc74c7a4827f7256fe7",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:21:03 2016"
+    },
+    {
+      "path": "S27.mat",
+      "size_bytes": 105744153,
+      "sha256": "32dfea184485c038e554d14677717f0cd70678f2cdc17f1d14cdfc2dbd20faa3",
+      "expected_size_bytes": 105744153,
+      "size_matches_source": true,
+      "source_checksum": "md5:54948d6d2166706f883a86dd523306fb",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:21:22 2016"
+    },
+    {
+      "path": "S28.mat",
+      "size_bytes": 106205209,
+      "sha256": "8e0dd88b17ddbed3618c394a52188f54c634a6eac11e99dc90d1d1b621a32c5d",
+      "expected_size_bytes": 106205209,
+      "size_matches_source": true,
+      "source_checksum": "md5:909c2e5945b6f367a91a098f15874742",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:21:41 2016"
+    },
+    {
+      "path": "S29.mat",
+      "size_bytes": 105925028,
+      "sha256": "e2107b120059dc17678f51572cfd4760ef165afe40c6d5eb2552d69ccf86cf24",
+      "expected_size_bytes": 105925028,
+      "size_matches_source": true,
+      "source_checksum": "md5:8a7c994120f1b1ee9cf14f84957ac2bc",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:21:59 2016"
+    },
+    {
+      "path": "S3.mat",
+      "size_bytes": 106005714,
+      "sha256": "9631e5377e1275d8376d38e71b7085871417bede814a6059bf8219a17620aa12",
+      "expected_size_bytes": 106005714,
+      "size_matches_source": true,
+      "source_checksum": "md5:fb752ad0ad957c3544b4584bc293cfee",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:14:02 2016"
+    },
+    {
+      "path": "S30.mat",
+      "size_bytes": 105986208,
+      "sha256": "626af8f88fd1b540afd08d6dbd90fddd89f83b53c192f5cb54ba84bc50fb2ffb",
+      "expected_size_bytes": 105986208,
+      "size_matches_source": true,
+      "source_checksum": "md5:02b71137aef753cf0a74cbc7637ba7fe",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:22:19 2016"
+    },
+    {
+      "path": "S31.mat",
+      "size_bytes": 106073310,
+      "sha256": "3d48065c000956634194b7ae8bea54e8c51d9773ec6d417427c7c8a61608a2fb",
+      "expected_size_bytes": 106073310,
+      "size_matches_source": true,
+      "source_checksum": "md5:ea14e036a6d6267cbb019c25a0f1c16e",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:22:37 2016"
+    },
+    {
+      "path": "S32.mat",
+      "size_bytes": 105440375,
+      "sha256": "be1bf4b0d96c2fa52c06cdca0a7376a0587794dfba27799bf435f9bdb6b5175d",
+      "expected_size_bytes": 105440375,
+      "size_matches_source": true,
+      "source_checksum": "md5:416b434283bd4ae5bc8581e17503551e",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:22:56 2016"
+    },
+    {
+      "path": "S33.mat",
+      "size_bytes": 106223727,
+      "sha256": "6477880912c23b48951d35d6d9947c6fd024b8d776240e8c1fe4a6ccc3c1b647",
+      "expected_size_bytes": 106223727,
+      "size_matches_source": true,
+      "source_checksum": "md5:24aa136669e9e032a15547c699d82c35",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:23:15 2016"
+    },
+    {
+      "path": "S34.mat",
+      "size_bytes": 105956034,
+      "sha256": "a0d67bdcaecee0a98015d37dd4675c6d99d19161aa78fc74fdb31c6d8fde9e75",
+      "expected_size_bytes": 105956034,
+      "size_matches_source": true,
+      "source_checksum": "md5:f622bc4fea31f7b90df6d6ec8b9a8c62",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:23:34 2016"
+    },
+    {
+      "path": "S35.mat",
+      "size_bytes": 106284794,
+      "sha256": "c65a51f1c5729b5fee65baa755f000df649c51e8169c3ba86f7bbe1962a9c32d",
+      "expected_size_bytes": 106284794,
+      "size_matches_source": true,
+      "source_checksum": "md5:c80b7c72abad0e17ab8eab27d549e316",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:23:53 2016"
+    },
+    {
+      "path": "S4.mat",
+      "size_bytes": 105147494,
+      "sha256": "e23129762c7485d96b0a5a659f718f7284738e7407b15ea201a2612668ce4966",
+      "expected_size_bytes": 105147494,
+      "size_matches_source": true,
+      "source_checksum": "md5:6dd06df6ffb00d3dcc563c8602d87c3b",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:14:20 2016"
+    },
+    {
+      "path": "S5.mat",
+      "size_bytes": 106111426,
+      "sha256": "8043aea545d8201059a60094b57d24bfc38b4fa9624eb8be46f529851e7488d2",
+      "expected_size_bytes": 106111426,
+      "size_matches_source": true,
+      "source_checksum": "md5:dd9016d2844698010dec5f5061c5c81a",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:14:38 2016"
+    },
+    {
+      "path": "S6.mat",
+      "size_bytes": 106256847,
+      "sha256": "9d4a7ec57daf419a6155a66f4d47705608b8b985c082d2bcb23d7c3ad3fc6b48",
+      "expected_size_bytes": 106256847,
+      "size_matches_source": true,
+      "source_checksum": "md5:5c1e3401097deba330a2eccedb4a883d",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:14:57 2016"
+    },
+    {
+      "path": "S7.mat",
+      "size_bytes": 105335697,
+      "sha256": "8d3972765b2cff0cd49f7b0a7e36ac353bb3d1c9767106550e8299c8c8a4ec29",
+      "expected_size_bytes": 105335697,
+      "size_matches_source": true,
+      "source_checksum": "md5:fe63a5523576f76e5b5b3e7108cad720",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:15:15 2016"
+    },
+    {
+      "path": "S8.mat",
+      "size_bytes": 105908895,
+      "sha256": "485bd63914ab21a2058fe679454bc67fb698db1d59b28a0af773bd73798946d4",
+      "expected_size_bytes": 105908895,
+      "size_matches_source": true,
+      "source_checksum": "md5:c3b945bf6ac866f3b9546fd1138ee268",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:15:33 2016"
+    },
+    {
+      "path": "S9.mat",
+      "size_bytes": 105864048,
+      "sha256": "6fef7db08ae79a3893790cbd7dad4f9e47e5449a74f96bc1856baface1123094",
+      "expected_size_bytes": 105864048,
+      "size_matches_source": true,
+      "source_checksum": "md5:7957d827bbb28f1eb6b918fa0236dc61",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon Mar 21 10:15:52 2016"
+    },
+    {
+      "path": "Sub_info.txt",
+      "size_bytes": 2763,
+      "sha256": "5b5e833c438a169aca86cbabb99d0509ff3b1ca1d9c7de04ab54874a089a2d17",
+      "expected_size_bytes": 2763,
+      "size_matches_source": true,
+      "source_checksum": "md5:14e180db4a34252fcb32622e48b02277",
+      "matlab_header": null
+    }
+  ],
+  "requested_download_date": "2026-10-05"
+}

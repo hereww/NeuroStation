@@ -1,0 +1,36 @@
+{
+  "dataset_slug": "mne_sample_eeg_eog",
+  "dataset_name": "MNE-Python sample dataset — EEG/EOG-containing sample recording",
+  "provider": "MNE-Python project",
+  "source_page": "https://mne.tools/stable/generated/mne.datasets.sample.data_path.html",
+  "download_urls": [
+    "https://mne.tools/stable/generated/mne.datasets.sample.data_path.html"
+  ],
+  "download_date": "2026-10-04",
+  "requested_download_date": "2026-10-05",
+  "date_note": "任务要求中的下载日期为 2026-10-05，但当前日期为 2026-10-04；为避免写入未来日期，以下记录使用实际执行日期 2026-10-04，并保留该日期差异说明。",
+  "download_status": "candidate_only",
+  "direct_download": "yes_via_mne_dataset_fetcher",
+  "registration_or_restriction": "No account requirement was identified on the MNE dataset-fetcher documentation. The official workflow downloads the project-managed sample archive; an authenticated record-level URL was not verified here.",
+  "license": "Follow the license and citation instructions distributed with the MNE sample dataset; do not infer redistribution rights from the Python fetcher alone.",
+  "modalities": [
+    "MEG",
+    "EEG",
+    "EOG",
+    "ECG; EMG availability depends on the selected recording/run"
+  ],
+  "artifact_relevance": "Useful for testing MNE-native loading, channel typing, EOG/physiological artifact detection, and preprocessing pipelines; less targeted than TUAR or multimodal PhysioNet PSG.",
+  "intended_use": [
+    "loader and preprocessing integration tests",
+    "EOG-referenced quality metrics",
+    "cross-tool validation with MNE"
+  ],
+  "not_downloaded_reason": "The official MNE route is a large, multi-file managed download and did not expose a verified small record-level artifact subset during this run. It was not partially copied to avoid an incomplete dataset being mistaken for a usable corpus.",
+  "files": [],
+  "sha256": {},
+  "verification": {
+    "sha256_computed_locally": false,
+    "complete_dataset_copy_present": false,
+    "notes": "No signal/archive file is present in this folder; this folder is a documented candidate record only."
+  }
+}

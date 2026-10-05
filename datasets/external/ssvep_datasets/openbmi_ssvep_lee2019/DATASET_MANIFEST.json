@@ -1,0 +1,70 @@
+{
+  "schema_version": "1.0",
+  "dataset_slug": "openbmi_ssvep_lee2019",
+  "dataset_name": "OpenBMI SSVEP (Lee2019) verified subject-1 subset",
+  "download_date": "2026-10-04",
+  "download_date_note": "Actual download/verification date is 2026-10-04. The task requested 2026-10-05; because that date is after the applicable current date, it is retained only as requested_download_date and is not claimed as the actual download date.",
+  "status": "downloaded_subset_verified",
+  "scope": "subset",
+  "license": "CC0-1.0",
+  "doi": "10.5524/100542",
+  "source_urls": [
+    "https://doi.org/10.5524/100542",
+    "https://s3.ap-northeast-1.wasabisys.com/gigadb-datasets/live/pub/10.5524/100001_101000/100542/session1/s1/sess01_subj01_EEG_SSVEP.mat",
+    "https://s3.ap-northeast-1.wasabisys.com/gigadb-datasets/live/pub/10.5524/100001_101000/100542/session2/s1/sess02_subj01_EEG_SSVEP.mat"
+  ],
+  "acquisition": {
+    "original_sampling_rate_hz": 1000,
+    "stored_sampling_rate_hz": 100,
+    "eeg_channels": 62,
+    "subjects_downloaded": 1,
+    "sessions_downloaded": [
+      1,
+      2
+    ]
+  },
+  "experiment": {
+    "paradigm": "SSVEP",
+    "full_subject_count": 54,
+    "targets": 4,
+    "stimulus_frequencies_hz": [
+      12.0,
+      8.57,
+      6.67,
+      5.45
+    ],
+    "event_markers": "training labels available; online test phase may be unlabeled"
+  },
+  "data_format": "MAT v5 subject/session files",
+  "verification": {
+    "file_count": 2,
+    "total_size_bytes": 1174712956,
+    "all_source_sizes_match": true,
+    "all_sha256_present": true,
+    "removed_partial_files": [],
+    "notes": [
+      "Only subject 1, sessions 1 and 2 are local; full release not downloaded."
+    ]
+  },
+  "files": [
+    {
+      "path": "sess01_subj01_EEG_SSVEP.mat",
+      "size_bytes": 641775289,
+      "sha256": "cba21402e2a1811d3cad52565187a30cb3a5dfe9abc8bbd98a358701cd7eb882",
+      "expected_size_bytes": 641775289,
+      "size_matches_source": true,
+      "source_checksum": null,
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon May 28 10:55:29 2018"
+    },
+    {
+      "path": "sess02_subj01_EEG_SSVEP.mat",
+      "size_bytes": 532937667,
+      "sha256": "f277bfd9a50ac580e8f752186216f078dfa96cea9e7f426d360a87261495c3be",
+      "expected_size_bytes": 532937667,
+      "size_matches_source": true,
+      "source_checksum": null,
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: PCWIN64, Created on: Mon May 28 17:05:03 2018"
+    }
+  ],
+  "requested_download_date": "2026-10-05"
+}

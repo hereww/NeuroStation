@@ -1,0 +1,30 @@
+{
+  "status": "completed",
+  "dataset": "C:\\Users\\Administrator\\Documents\\ChatGPT\\脑机采集\\datasets\\processed\\learned_denoiser_v1.npz",
+  "model": "C:\\Users\\Administrator\\Documents\\ChatGPT\\脑机采集\\models\\denoiser_v1.pt",
+  "metrics": {
+    "noisy_rmse": 185.65249633789062,
+    "denoised_rmse": 142.1092529296875,
+    "rmse_improvement_fraction": 0.23454165318064832,
+    "noisy_correlation": 0.9999354997427349,
+    "denoised_correlation": 0.9999622835787872,
+    "clean_region_change_rmse": 65.28681182861328,
+    "artifact_region_rmse_before": 281.3905334472656,
+    "artifact_region_rmse_after": 202.14959716796875,
+    "candidate_model_metrics": {
+      "noisy_rmse": 185.65249633789062,
+      "denoised_rmse": 138.7218017578125,
+      "rmse_improvement_fraction": 0.25278784560302103,
+      "noisy_correlation": 0.9999354997427349,
+      "denoised_correlation": 0.9999640764081361,
+      "clean_region_change_rmse": 65.83566284179688,
+      "artifact_region_rmse_before": 281.3905334472656,
+      "artifact_region_rmse_after": 196.43235778808594
+    },
+    "artifact_precision": 0.7341542433119912,
+    "artifact_recall": 0.3665330814430778,
+    "mean_confidence": 0.8872430920600891,
+    "windows": 2507,
+    "artifact_f1": 0.48895233188141785
+  }
+}

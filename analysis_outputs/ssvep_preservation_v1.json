@@ -1,0 +1,24 @@
+{
+  "status": "completed",
+  "dataset": "C:\\Users\\Administrator\\Documents\\ChatGPT\\脑机采集\\datasets\\external\\ssvep_datasets\\dong2023_ssvep",
+  "model": "C:\\Users\\Administrator\\Documents\\ChatGPT\\脑机采集\\models\\denoiser_v1.pt",
+  "subjects": [
+    {
+      "subject_file": "S1.mat",
+      "target_count": 40,
+      "block_count": 4,
+      "raw_target_amplitude": 1.0419588400233288,
+      "denoised_target_amplitude": 1.0368042567157503,
+      "ratio_denoised_to_raw": 0.9950529875945358
+    },
+    {
+      "subject_file": "S10.mat",
+      "target_count": 40,
+      "block_count": 4,
+      "raw_target_amplitude": 1.3476650764534324,
+      "denoised_target_amplitude": 1.317067861496716,
+      "ratio_denoised_to_raw": 0.9772961283249714
+    }
+  ],
+  "note": "This is a target-frequency preservation smoke evaluation, not a decoded-target accuracy result. Validate with the project protocol and independent held-out subjects before formal release."
+}

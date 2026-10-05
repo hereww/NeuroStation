@@ -1,0 +1,155 @@
+{
+  "schema_version": "1.0",
+  "dataset_slug": "nakanishi2015_ssvep",
+  "dataset_name": "Nakanishi2015 12-class SSVEP",
+  "download_date": "2026-10-04",
+  "download_date_note": "Actual download/verification date is 2026-10-04. The task requested 2026-10-05; because that date is after the applicable current date, it is retained only as requested_download_date and is not claimed as the actual download date.",
+  "status": "downloaded_verified",
+  "scope": "complete",
+  "license": "Unknown (upstream repository has no explicit license)",
+  "doi": "10.1371/journal.pone.0140703",
+  "source_urls": [
+    "https://github.com/mnakanishi/12JFPM_SSVEP/tree/master/data",
+    "https://doi.org/10.1371/journal.pone.0140703"
+  ],
+  "acquisition": {
+    "sampling_rate_hz": 256,
+    "eeg_channels": 8,
+    "epoch_samples": 1114,
+    "channel_names": [
+      "PO7",
+      "PO3",
+      "POz",
+      "PO4",
+      "PO8",
+      "O1",
+      "Oz",
+      "O2"
+    ]
+  },
+  "experiment": {
+    "paradigm": "SSVEP",
+    "subjects": 10,
+    "targets": 12,
+    "trials_per_target": 15,
+    "stimulus_frequencies_hz": [
+      9.25,
+      11.25,
+      13.25,
+      9.75,
+      11.75,
+      13.75,
+      10.25,
+      12.25,
+      14.25,
+      10.75,
+      12.75,
+      14.75
+    ],
+    "event_markers": "implicit target tensor order; onset at sample 39"
+  },
+  "data_format": "MAT v5 subject files",
+  "verification": {
+    "file_count": 10,
+    "total_size_bytes": 153657066,
+    "all_source_sizes_match": true,
+    "all_sha256_present": true,
+    "removed_partial_files": [],
+    "notes": [
+      "License was not stated in the upstream repository; do not redistribute commercially without clarification."
+    ]
+  },
+  "files": [
+    {
+      "path": "s1.mat",
+      "size_bytes": 15011521,
+      "sha256": "dea3eecb45cf9295e41b1eb1dfca0d63febf3537a0e35f5036aba5cde661c9e5",
+      "expected_size_bytes": 15011521,
+      "size_matches_source": true,
+      "source_checksum": "github-blob-sha:207bfed4cffea53d851e3892ce58b3c075350765",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: GLNXA64, Created on: Fri Jul 31 12:59:34 2015"
+    },
+    {
+      "path": "s10.mat",
+      "size_bytes": 16033360,
+      "sha256": "e71f4968ee954d39ea184ae34611e4d2e43ea5f473f1825a73b28b09157e72ee",
+      "expected_size_bytes": 16033360,
+      "size_matches_source": true,
+      "source_checksum": "github-blob-sha:fed89f56f6cef2ea2cb4117f70f8392898bc80f4",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: GLNXA64, Created on: Fri Jul 31 13:00:24 2015"
+    },
+    {
+      "path": "s2.mat",
+      "size_bytes": 15013755,
+      "sha256": "d36e829c2e2d28f650ee424b0558db41f9db5236146700197395b01eef1bb4b4",
+      "expected_size_bytes": 15013755,
+      "size_matches_source": true,
+      "source_checksum": "github-blob-sha:21d9b2e0076e22e306195b35a1a3377d09a86932",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: GLNXA64, Created on: Fri Jul 31 12:59:39 2015"
+    },
+    {
+      "path": "s3.mat",
+      "size_bytes": 15517919,
+      "sha256": "60be5572f58c83aba05312003847bcab9c3d7004f888ed74685d5b61c1aabf0d",
+      "expected_size_bytes": 15517919,
+      "size_matches_source": true,
+      "source_checksum": "github-blob-sha:eb1b29481908680f00d2a8e75446bd1d34cafbc6",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: GLNXA64, Created on: Fri Jul 31 12:59:44 2015"
+    },
+    {
+      "path": "s4.mat",
+      "size_bytes": 14838183,
+      "sha256": "bbeaca8d516c9a958d4eac30211b771d30ead1404707744e77e226a08c45204e",
+      "expected_size_bytes": 14838183,
+      "size_matches_source": true,
+      "source_checksum": "github-blob-sha:afbf3fdc2c9a5a866235afef47143c60835fe1c7",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: GLNXA64, Created on: Fri Jul 31 12:59:49 2015"
+    },
+    {
+      "path": "s5.mat",
+      "size_bytes": 16203531,
+      "sha256": "ae516f18fb3c40f953a3e46e338f0d28a4bcdc79e63b5ff688f46db16729e501",
+      "expected_size_bytes": 16203531,
+      "size_matches_source": true,
+      "source_checksum": "github-blob-sha:b5516e0fb31d51736bc2f2fc5ed39f2b14bac572",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: GLNXA64, Created on: Fri Jul 31 12:59:55 2015"
+    },
+    {
+      "path": "s6.mat",
+      "size_bytes": 14869841,
+      "sha256": "647cd71eaac5085725024a65105fad1629c7c2bd8a478784999b767c5f40b589",
+      "expected_size_bytes": 14869841,
+      "size_matches_source": true,
+      "source_checksum": "github-blob-sha:0d8f6a12b86c168ee90b7921878f6228bcd7a64f",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: GLNXA64, Created on: Fri Jul 31 13:00:00 2015"
+    },
+    {
+      "path": "s7.mat",
+      "size_bytes": 14805617,
+      "sha256": "858e094341c9be47e133dcfdee3ecd4d216ee3de1812832115c7b231cfff0b64",
+      "expected_size_bytes": 14805617,
+      "size_matches_source": true,
+      "source_checksum": "github-blob-sha:e8366699ae94980d860f1d654acd553e2c1480f7",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: GLNXA64, Created on: Fri Jul 31 13:00:06 2015"
+    },
+    {
+      "path": "s8.mat",
+      "size_bytes": 15985195,
+      "sha256": "7a2ef2dfbedda89ec22a32b1f20083c9fd44ff6b2dfa298389985faf831f983f",
+      "expected_size_bytes": 15985195,
+      "size_matches_source": true,
+      "source_checksum": "github-blob-sha:49ead261948ec12dfd34cfb55b4d60e07e65d14e",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: GLNXA64, Created on: Fri Jul 31 13:00:11 2015"
+    },
+    {
+      "path": "s9.mat",
+      "size_bytes": 15378144,
+      "sha256": "03349983da36e4c619a44998453db5bfb7ca067dbee63e7b98050558dcb23396",
+      "expected_size_bytes": 15378144,
+      "size_matches_source": true,
+      "source_checksum": "github-blob-sha:aeb00c58b2e1f59cfc378f499be6bfa3ae680834",
+      "matlab_header": "MATLAB 5.0 MAT-file, Platform: GLNXA64, Created on: Fri Jul 31 13:00:18 2015"
+    }
+  ],
+  "requested_download_date": "2026-10-05"
+}

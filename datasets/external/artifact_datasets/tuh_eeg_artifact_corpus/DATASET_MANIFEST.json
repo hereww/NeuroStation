@@ -1,0 +1,34 @@
+{
+  "dataset_slug": "tuh_eeg_artifact_corpus",
+  "dataset_name": "TUH EEG Artifact Corpus (TUAR)",
+  "provider": "Temple University Hospital / Temple University Institute for Signal and Information Processing",
+  "source_page": "https://isip.piconepress.com/projects/tuh_eeg/html/downloads.shtml",
+  "download_urls": [
+    "https://isip.piconepress.com/projects/tuh_eeg/html/downloads.shtml"
+  ],
+  "download_date": "2026-10-04",
+  "requested_download_date": "2026-10-05",
+  "date_note": "任务要求中的下载日期为 2026-10-05，但当前日期为 2026-10-04；为避免写入未来日期，以下记录使用实际执行日期 2026-10-04，并保留该日期差异说明。",
+  "download_status": "candidate_only",
+  "direct_download": "no_public_anonymous_download_not_verified",
+  "registration_or_restriction": "The corpus is distributed through the TUH EEG access workflow; account/terms acceptance and authenticated access are required or may be required. Anonymous direct file download was not verified.",
+  "license": "Access terms are controlled by the TUH distribution workflow; do not assume a permissive redistribution license without accepting and recording the provider terms.",
+  "modalities": [
+    "EEG",
+    "artifact annotations"
+  ],
+  "artifact_relevance": "Highest-priority candidate for labeled EEG artifact classification and artifact-quality optimization because the corpus is specifically organized around EEG artifacts.",
+  "intended_use": [
+    "supervised artifact detection",
+    "artifact-type classification",
+    "quality metric calibration"
+  ],
+  "not_downloaded_reason": "No authenticated TUH account/session was available in this task. Per instruction, no files were fabricated or downloaded through an unverified mirror.",
+  "files": [],
+  "sha256": {},
+  "verification": {
+    "sha256_computed_locally": false,
+    "complete_dataset_copy_present": false,
+    "notes": "No signal/archive file is present in this folder; this folder is a documented candidate record only."
+  }
+}

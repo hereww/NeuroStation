@@ -43,3 +43,5 @@ files = [
   "eeg_tools/workstation/ssvep.py",
   "eeg_tools/workstation/task.py",
 ]
+[project.optional-dependencies]
+ml = ["torch>=2.4"]

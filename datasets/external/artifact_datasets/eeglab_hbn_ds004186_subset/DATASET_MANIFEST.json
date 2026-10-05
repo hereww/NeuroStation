@@ -1,0 +1,33 @@
+{
+  "dataset_slug": "eeglab_hbn_ds004186_subset",
+  "dataset_name": "EEGLAB tutorial data — HBN ds004186 eyes-open/eyes-closed subset",
+  "provider": "EEGLAB / SCCN, UCSD",
+  "source_page": "https://eeglab.org/tutorials/tutorial_data.html",
+  "download_urls": [
+    "https://sccn.ucsd.edu/eeglab/download/ds004186subset.zip"
+  ],
+  "download_date": "2026-10-04",
+  "requested_download_date": "2026-10-05",
+  "date_note": "任务要求中的下载日期为 2026-10-05，但当前日期为 2026-10-04；为避免写入未来日期，以下记录使用实际执行日期 2026-10-04，并保留该日期差异说明。",
+  "download_status": "candidate_only",
+  "direct_download": "yes_public_url_no_registration_observed",
+  "registration_or_restriction": "The EEGLAB tutorial exposes a public ZIP URL. The page does not itself state the dataset license; consult the HBN/OpenNeuro metadata before redistribution or external release.",
+  "license": "Not asserted here because the EEGLAB tutorial page does not provide the subset license in the download entry; verify the upstream HBN/OpenNeuro license and citation requirements.",
+  "modalities": [
+    "EEG; channel inventory and any auxiliary EOG/EMG channels must be verified from the BIDS files"
+  ],
+  "artifact_relevance": "Useful as an EEG quality baseline and eyes-open/eyes-closed robustness set, but it is not treated as an EEG+EOG/EMG artifact corpus until channel inventory is verified.",
+  "intended_use": [
+    "baseline EEG quality metrics",
+    "state-dependent preprocessing checks",
+    "EEGLAB/BIDS import regression tests"
+  ],
+  "not_downloaded_reason": "The official ZIP is approximately 499,003,596 bytes and the transfer did not complete in this environment. No partial ZIP was retained.",
+  "files": [],
+  "sha256": {},
+  "verification": {
+    "sha256_computed_locally": false,
+    "complete_dataset_copy_present": false,
+    "notes": "No signal/archive file is present in this folder; this folder is a documented candidate record only."
+  }
+}

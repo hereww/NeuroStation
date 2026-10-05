@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "status": "formal",
+  "model_version": "learned_denoise_v1",
+  "model_type": "residual_tcn",
+  "sample_rate_hz": 250,
+  "channel_count": 8,
+  "window_samples": 1000,
+  "hop_samples": 250,
+  "normalization": "per_channel_robust",
+  "inference": {
+    "mode": "shadow",
+    "min_confidence_for_replacement": 0.65,
+    "max_invalid_fraction": 0.2,
+    "preserve_invalid_samples": true
+  },
+  "loss": {
+    "time_weight": 1.0,
+    "spectral_weight": 0.25,
+    "mask_weight": 0.5,
+    "identity_weight": 0.2,
+    "confidence_weight": 0.1,
+    "ssvep_weight": 0.15
+  },
+  "release_gate": {
+    "raw_is_immutable": true,
+    "requires_session_split_evaluation": true,
+    "requires_downstream_ssvep_evaluation": true,
+    "unknown_artifacts_must_not_be_repaired": true,
+    "ui_mode_until_validated": "shadow"
+  }
+}

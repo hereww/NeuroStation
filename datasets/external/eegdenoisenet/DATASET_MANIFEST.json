@@ -1,0 +1,137 @@
+{
+  "dataset": "EEGdenoiseNet",
+  "task_fit": "EEG denoising / EOG and EMG artifact-removal training",
+  "download_date": "2026-10-04",
+  "download_date_note": "The requested 2026-10-05 is after the execution date (2026-10-04) and was not recorded as the actual download date.",
+  "official_sources": {
+    "repository": "https://github.com/ncclabsustech/EEGdenoiseNet",
+    "repository_data_directory": "https://github.com/ncclabsustech/EEGdenoiseNet/tree/master/data",
+    "repository_commit": "8d290661146c7189c98cc04812d37371d4b9426c",
+    "paper_arxiv": "https://arxiv.org/abs/2009.11662",
+    "paper_doi": "https://doi.org/10.1088/2634-4386/abdbdb",
+    "advertised_gnode_storage": "https://gin.g-node.org/NCClab/EEGdenoiseNet",
+    "repository_license": "https://github.com/ncclabsustech/EEGdenoiseNet/blob/master/LICENSE"
+  },
+  "license": {
+    "repository_license": "MIT",
+    "dataset_license": "NOT_SEPARATELY_SPECIFIED",
+    "usage_note": "The official repository contains an MIT LICENSE file, but it does not separately state a dataset/database license for the EEG/EOG/EMG recordings. Do not assume the MIT software license covers the underlying data; retain attribution and obtain any additional permission needed for redistribution or commercial use."
+  },
+  "download_status": {
+    "github_release": "COMPLETE",
+    "gnode_512hz_variant": "NOT_DOWNLOADED",
+    "gnode_check": {
+      "checked_on": "2026-10-04",
+      "result": "HTTP 403 Forbidden from this execution environment",
+      "consequence": "The 512-Hz files advertised by the repository README were not claimed as downloaded."
+    }
+  },
+  "contents": {
+    "clean_eeg": {
+      "present": true,
+      "count": 4514,
+      "shape": [
+        4514,
+        512
+      ],
+      "dtype": "float64",
+      "mat_variable": "EEG_all_epochs"
+    },
+    "eog_artifact_epochs": {
+      "present": true,
+      "count": 3400,
+      "shape": [
+        3400,
+        512
+      ],
+      "dtype": "float64",
+      "mat_variable": "EOG_all_epochs"
+    },
+    "emg_artifact_epochs": {
+      "present": true,
+      "count": 5598,
+      "shape": [
+        5598,
+        512
+      ],
+      "dtype": "float64",
+      "mat_variable": "EMG_all_epochs"
+    },
+    "sampling_rate": {
+      "verified_from_downloaded_mat_metadata_hz": 256,
+      "note": "All three downloaded MAT files contain fs=256. The repository README separately advertises EEG and EMG 512-Hz epochs in G-Node; that variant is missing here because the G-Node endpoint returned 403."
+    },
+    "pairing": {
+      "clean_noisy_pairs_present": false,
+      "eeg_eog_emg_simultaneous_pairs_present": false,
+      "training_use": "The release provides independent clean EEG, EOG, and EMG epoch pools for constructing synthetic mixtures with a clean EEG ground truth. It does not ship a ready-made noisy-clean paired training table in these files."
+    },
+    "metadata_missing_or_not_found": [
+      "subject/session identifiers",
+      "electrode locations or channel montage",
+      "recording-level provenance for each epoch",
+      "official train/validation/test split",
+      "pre-generated noisy EEG plus clean EEG pairs",
+      "separate dataset license for the recordings",
+      "the advertised 512-Hz G-Node files"
+    ]
+  },
+  "files": [
+    {
+      "path": "EEG_all_epochs.mat",
+      "source_url": "https://raw.githubusercontent.com/ncclabsustech/EEGdenoiseNet/master/data/EEG_all_epochs.mat",
+      "bytes": 17765145,
+      "sha256": "63a6cf5eec716137b73de0cb4939335c309575df8243c5a97075bc2593a0b514",
+      "verified": true,
+      "verification": "MAT variable EEG_all_epochs has shape [4514,512], fs=256, finite values"
+    },
+    {
+      "path": "EEG_all_epochs.npy",
+      "source_url": "https://raw.githubusercontent.com/ncclabsustech/EEGdenoiseNet/master/data/EEG_all_epochs.npy",
+      "bytes": 18489424,
+      "sha256": "89350579007ab18daf918a26c9f730484ba3755e861bbf8a6f68d1657843a748",
+      "verified": true,
+      "verification": "shape [4514,512], dtype float64, finite values; exact numeric match to EEG_all_epochs.mat variable"
+    },
+    {
+      "path": "EOG_all_epochs.mat",
+      "source_url": "https://raw.githubusercontent.com/ncclabsustech/EEGdenoiseNet/master/data/EOG_all_epochs.mat",
+      "bytes": 13421297,
+      "sha256": "d13fbaffcc7f5e317a7326a2e76faa8dad071b4239dc93a54e7e8905cec2692c",
+      "verified": true,
+      "verification": "MAT variable EOG_all_epochs has shape [3400,512], fs=256, finite values"
+    },
+    {
+      "path": "EOG_all_epochs.npy",
+      "source_url": "https://raw.githubusercontent.com/ncclabsustech/EEGdenoiseNet/master/data/EOG_all_epochs.npy",
+      "bytes": 13926480,
+      "sha256": "fe31f2c22efce5da7488a1047b6f05d678e80f48d22e20a70972aaf13784fa0a",
+      "verified": true,
+      "verification": "shape [3400,512], dtype float64, finite values; exact numeric match to EOG_all_epochs.mat variable"
+    },
+    {
+      "path": "EMG_all_epochs.mat",
+      "source_url": "https://raw.githubusercontent.com/ncclabsustech/EEGdenoiseNet/master/data/EMG_all_epochs.mat",
+      "bytes": 22044937,
+      "sha256": "a89be332116f233c0b6f7acbbdcdbe18928527240115d561cb441acc403d2c7e",
+      "verified": true,
+      "verification": "MAT variable EMG_all_epochs has shape [5598,512], fs=256, finite values"
+    },
+    {
+      "path": "EMG_all_epochs.npy",
+      "source_url": "https://raw.githubusercontent.com/ncclabsustech/EEGdenoiseNet/master/data/EMG_all_epochs.npy",
+      "bytes": 22929488,
+      "sha256": "8bb16dff87582823488dd2189dba9d8fa019a8cbc9af9a8a19acb421b3fcfb16",
+      "verified": true,
+      "verification": "shape [5598,512], dtype float64, finite values; exact numeric match to EMG_all_epochs.mat variable"
+    }
+  ],
+  "local_verification": {
+    "downloaded_file_count": 6,
+    "downloaded_total_bytes": 108576771,
+    "sha256_checked": true,
+    "mat_structure_checked": true,
+    "mat_npy_numeric_equivalence_checked": true,
+    "no_other_project_files_modified_by_this_task": true
+  }
+}
