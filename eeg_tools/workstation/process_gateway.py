@@ -62,6 +62,9 @@ class AcquisitionProcessGateway:
         self._live_waveform_position = 0
         self._live_waveform_header: list[str] = []
         self._live_channel_names: tuple[str, ...] = ()
+        self._learned_monitor_process: subprocess.Popen[bytes] | None = None
+        self._learned_monitor_log: Path | None = None
+        self._learned_monitor_started = False
 
     @property
     def snapshot(self) -> TaskSnapshot:
@@ -146,6 +149,76 @@ class AcquisitionProcessGateway:
             "-m",
             "eeg_tools.workstation.acquisition_worker",
         ], str(ROOT) if ROOT.is_dir() else None
+
+    def _learned_monitor_command(self, config: CaptureConfig) -> list[str] | None:
+        """Build the optional post-acquisition shadow worker command.
+
+        The monitor is a separate process so importing/inferencing with PyTorch
+        can never block the Qt event loop or the acquisition worker.
+        """
+        config_path = ROOT / "configs" / "learned_denoiser_v1.json"
+        if not config_path.is_file():
+            return None
+        try:
+            value = json.loads(config_path.read_text(encoding="utf-8"))
+            if not isinstance(value, dict) or value.get("status") != "formal":
+                return None
+            runtime = value.get("runtime") if isinstance(value.get("runtime"), dict) else {}
+            if runtime.get("enabled", True) is False:
+                return None
+            if (value.get("inference") or {}).get("mode", "shadow") != "shadow":
+                return None
+        except (OSError, ValueError, TypeError):
+            return None
+        model_path = Path(str(runtime.get("model_path") or "models/denoiser_v1.pt"))
+        if not model_path.is_absolute():
+            model_path = ROOT / model_path
+        if not model_path.is_file():
+            return None
+        if self._is_bundled_executable():
+            command = [str(self._bundled_executable()), "--learned-monitor"]
+        else:
+            command = [sys.executable, "-m", "eeg_tools.workstation.learned_monitor"]
+        command.extend([
+            "--status-file", str(self._status_file),
+            "--output-root", str(Path(config.save_directory).expanduser().resolve()),
+            "--config", str(config_path),
+            "--model", str(model_path),
+        ])
+        return command
+
+    def _start_learned_monitor(self, config: CaptureConfig) -> None:
+        self._learned_monitor_started = False
+        self._learned_monitor_process = None
+        command = self._learned_monitor_command(config)
+        if command is None or self._status_file is None or self._runtime_dir is None:
+            return
+        self._learned_monitor_log = self._runtime_dir / "learned_monitor.log"
+        try:
+            with self._learned_monitor_log.open("wb") as log:
+                self._learned_monitor_process = subprocess.Popen(
+                    command,
+                    cwd=str(ROOT) if not self._is_bundled_executable() else None,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=log,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
+                )
+            self._learned_monitor_started = True
+        except OSError:
+            # Shadow support is optional; acquisition continues normally.
+            self._learned_monitor_process = None
+
+    def _stop_learned_monitor(self) -> None:
+        process = self._learned_monitor_process
+        if process is None or process.poll() is not None:
+            return
+        try:
+            process.wait(timeout=0.2)
+        except subprocess.TimeoutExpired:
+            # The monitor owns no hardware and may finish asynchronously after
+            # the UI has received the terminal acquisition state.
+            return
 
     def _command(self, config: CaptureConfig) -> list[str]:
         command, _ = self._launch_context()
@@ -353,6 +426,7 @@ class AcquisitionProcessGateway:
         self._live_waveform_header = []
         channel_config = Path(config.channel_config or self.channel_config_path).resolve()
         self._live_channel_names = channel_labels_from_path(channel_config, self.device.channels)
+        self._start_learned_monitor(config)
         protocol = SSVEPProtocol.load(self.protocol_path).with_runtime_parameters(
             repetitions=config.repetitions,
             stimulus_s=config.stimulus_seconds,
@@ -381,6 +455,7 @@ class AcquisitionProcessGateway:
                 )
         except OSError as error:
             self._snapshot = TaskSnapshot(phase=Phase.FAILED, error=str(error))
+            self._stop_learned_monitor()
             rendered_command = locals().get("command", [])
             rendered_cwd = locals().get("working_directory")
             detail = f"{error}; command={rendered_command!r}; cwd={rendered_cwd!r}"
@@ -411,6 +486,7 @@ class AcquisitionProcessGateway:
                     protocol="ssvep",
                     error=detail or f"Acquisition worker exited with code {return_code}",
                 )
+        self._stop_learned_monitor()
         return self._snapshot
 
     def read_live_waveform(self, maximum_rows: int = 1000) -> dict[str, Any] | None:
@@ -599,7 +675,7 @@ class AcquisitionProcessGateway:
         if not output.is_dir():
             return ()
         copied: list[str] = []
-        for source, name in ((self._stderr_file, "worker.log"), (self._status_file, "status.final.json")):
+        for source, name in ((self._stderr_file, "worker.log"), (self._status_file, "status.final.json"), (self._learned_monitor_log, "learned_monitor.log")):
             if source is None or not source.is_file():
                 continue
             target = output / name

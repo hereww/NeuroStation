@@ -105,6 +105,10 @@ def main() -> int:
         from eeg_tools.workstation.acquisition_worker import main as worker_main
 
         return worker_main(sys.argv[2:])
+    if len(sys.argv) > 1 and sys.argv[1] == "--learned-monitor":
+        from eeg_tools.workstation.learned_monitor import main as monitor_main
+
+        return monitor_main(sys.argv[2:])
     parser = argparse.ArgumentParser(
         description=f"{PRODUCT_NAME} {PRODUCT_VERSION} EEG acquisition workstation"
     )

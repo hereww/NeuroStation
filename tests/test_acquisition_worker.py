@@ -99,6 +99,24 @@ class AcquisitionWorkerTests(unittest.TestCase):
         session_index = command.index("--session-name")
         self.assertEqual("task", command[session_index + 1])
 
+    def test_learned_shadow_worker_is_optional_and_out_of_process(self) -> None:
+        gateway = AcquisitionProcessGateway(
+            protocol_path=PROTOCOL,
+            channel_config_path=CHANNELS,
+        )
+        gateway._runtime_dir = ROOT / ".tmp-test-worker"
+        gateway._status_file = gateway._runtime_dir / "status.json"
+        config = CaptureConfig(
+            mode=CaptureMode.CYTON,
+            save_directory=ROOT / ".tmp-test-dataset",
+            acknowledge_flicker_risk=True,
+        )
+        command = gateway._learned_monitor_command(config)
+        self.assertIsNotNone(command)
+        assert command is not None
+        self.assertIn("eeg_tools.workstation.learned_monitor", " ".join(command))
+        self.assertIn("--status-file", command)
+
     def test_process_gateway_reflects_cyton_handshake_in_device_state(self) -> None:
         gateway = AcquisitionProcessGateway(
             protocol_path=PROTOCOL,
