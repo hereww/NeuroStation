@@ -111,7 +111,8 @@ class AcquisitionWorkerTests(unittest.TestCase):
             save_directory=ROOT / ".tmp-test-dataset",
             acknowledge_flicker_risk=True,
         )
-        command = gateway._learned_monitor_command(config)
+        with patch("pathlib.Path.is_file", return_value=True):
+            command = gateway._learned_monitor_command(config)
         self.assertIsNotNone(command)
         assert command is not None
         self.assertIn("eeg_tools.workstation.learned_monitor", " ".join(command))

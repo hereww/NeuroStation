@@ -1229,6 +1229,9 @@ class MainWindow(QMainWindow):
             self.channel_calibration_thread.quit()
             self.channel_calibration_thread.wait(4000)
         self.gateway.cancel()
+        close_gateway = getattr(self.gateway, "close", None)
+        if callable(close_gateway):
+            close_gateway()
         if self.persist_settings:
             self.settings.setValue("window/geometry", self.saveGeometry())
             page = self.pages.get("ssvep")

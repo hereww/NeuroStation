@@ -193,6 +193,10 @@ class MetadataGateway:
     def tick(self) -> TaskSnapshot:
         return self._snapshot
 
+    def close(self) -> None:
+        """Metadata-only gateways have no acquisition or shadow worker to stop."""
+        return None
+
     def read_live_waveform(self, maximum_rows: int = 1000):
         return None
 
@@ -607,6 +611,11 @@ class DesktopGateway:
 
     def tick(self) -> TaskSnapshot:
         return self._active.tick()
+
+    def close(self) -> None:
+        acquisition = getattr(self, "_acquisition", None)
+        if acquisition is not None:
+            acquisition.close()
 
     def read_live_waveform(self, maximum_rows: int = 1000):
         if self._active is self._acquisition:

@@ -166,7 +166,8 @@ class AcquisitionProcessGateway:
             runtime = value.get("runtime") if isinstance(value.get("runtime"), dict) else {}
             if runtime.get("enabled", True) is False:
                 return None
-            if (value.get("inference") or {}).get("mode", "shadow") != "shadow":
+            inference = value.get("inference")
+            if not isinstance(inference, dict) or inference.get("mode", "shadow") != "shadow":
                 return None
         except (OSError, ValueError, TypeError):
             return None
@@ -188,8 +189,10 @@ class AcquisitionProcessGateway:
         return command
 
     def _start_learned_monitor(self, config: CaptureConfig) -> None:
+        self._stop_learned_monitor()
         self._learned_monitor_started = False
         self._learned_monitor_process = None
+        self._learned_monitor_log = None
         command = self._learned_monitor_command(config)
         if command is None or self._status_file is None or self._runtime_dir is None:
             return
@@ -209,16 +212,24 @@ class AcquisitionProcessGateway:
             # Shadow support is optional; acquisition continues normally.
             self._learned_monitor_process = None
 
-    def _stop_learned_monitor(self) -> None:
+    def _poll_learned_monitor(self) -> None:
+        """Reap an exited shadow worker without ever waiting on a UI tick."""
         process = self._learned_monitor_process
-        if process is None or process.poll() is not None:
-            return
-        try:
-            process.wait(timeout=0.2)
-        except subprocess.TimeoutExpired:
-            # The monitor owns no hardware and may finish asynchronously after
-            # the UI has received the terminal acquisition state.
-            return
+        if process is not None and process.poll() is not None:
+            self._learned_monitor_process = None
+
+    def _stop_learned_monitor(self) -> None:
+        """Cancel optional work on shutdown/start failure; no synchronous wait."""
+        process = self._learned_monitor_process
+        if process is not None and process.poll() is None:
+            try:
+                process.kill()  # This worker owns neither hardware nor raw data.
+            except OSError:
+                pass
+        self._poll_learned_monitor()
+
+    def close(self) -> None:
+        self._stop_learned_monitor()
 
     def _command(self, config: CaptureConfig) -> list[str]:
         command, _ = self._launch_context()
@@ -426,7 +437,6 @@ class AcquisitionProcessGateway:
         self._live_waveform_header = []
         channel_config = Path(config.channel_config or self.channel_config_path).resolve()
         self._live_channel_names = channel_labels_from_path(channel_config, self.device.channels)
-        self._start_learned_monitor(config)
         protocol = SSVEPProtocol.load(self.protocol_path).with_runtime_parameters(
             repetitions=config.repetitions,
             stimulus_s=config.stimulus_seconds,
@@ -460,9 +470,11 @@ class AcquisitionProcessGateway:
             rendered_cwd = locals().get("working_directory")
             detail = f"{error}; command={rendered_command!r}; cwd={rendered_cwd!r}"
             raise RuntimeError(f"validation.worker_start: {detail}") from error
+        self._start_learned_monitor(config)
         return self._snapshot
 
     def tick(self) -> TaskSnapshot:
+        self._poll_learned_monitor()
         if self._process is None:
             return self._snapshot
         status = self._read_status()
@@ -486,7 +498,8 @@ class AcquisitionProcessGateway:
                     protocol="ssvep",
                     error=detail or f"Acquisition worker exited with code {return_code}",
                 )
-        self._stop_learned_monitor()
+        if self._snapshot.phase is Phase.FAILED and self._snapshot.result is None:
+            self._stop_learned_monitor()
         return self._snapshot
 
     def read_live_waveform(self, maximum_rows: int = 1000) -> dict[str, Any] | None:
