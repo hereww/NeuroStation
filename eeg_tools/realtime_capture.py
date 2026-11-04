@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from functools import partial
 import json
 import logging
+import queue
 import math
 from pathlib import Path
 import signal
@@ -25,7 +26,7 @@ from typing import Any, Callable, TextIO
 import numpy as np
 
 from eeg_tools import config as config_tools
-from eeg_tools.streaming import BlockRecorder
+from eeg_tools.streaming import BlockRecorder, AsyncConsumer
 from eeg_tools.session_files import (
     brainflow_column_definitions, format_raw_number, sha256,
     write_column_definitions, write_json, write_manifest,
@@ -368,12 +369,26 @@ def run_capture(
     quality: _Quality | None = None
     raw_writer = None
     recorder = None
-    quality_sink = None
+    quality_sink = quality_consumer = None
+    quality_ready = queue.Queue(maxsize=16)
     row_count = 0
     error_message = ""
     preflight: dict[str, Any] | None = None
 
+    def drain_quality():
+        while True:
+            try:result=quality_ready.get_nowait()
+            except queue.Empty:break
+            emit(_json_safe({'type':'quality_update','quality_v2':result}))
+
+    def process_quality(block,record):
+        quality_sink(block,record)
+        try:quality_ready.put_nowait(quality_sink.latest)
+        except queue.Full:
+            recorder.assessment_error(record,'quality_delivery_queue_full: UI coverage unknown')
+
     def consume(data: Any) -> None:
+        drain_quality()
         received_at = monotonic()
         raw = np.asarray(data, dtype=float)
         if raw.ndim != 2 or raw.shape[0] != row_count:
@@ -381,7 +396,7 @@ def run_capture(
         assert quality is not None
         for begin in range(0, raw.shape[1], SAMPLE_RATE):
             chunk = raw[:, begin:begin + SAMPLE_RATE]
-            records = [r for _, r in recorder.append(chunk, consumer=quality_sink, received_at=received_at)]
+            records = [r for _, r in recorder.append(chunk, consumer=quality_consumer, received_at=received_at)]
             quality.update(chunk)
             record = {**records[-1], "start": records[0]["start"], "segments": records,
                       "gaps": [gap for r in records for gap in r["gaps"]]}
@@ -393,7 +408,7 @@ def run_capture(
                 "timestamps_s": chunk[quality.timestamp_row].tolist(),
                 "timestamp_source": record["timestamp_source"],
                 "received_monotonic_s": received_at, "quality": quality.report(), "block": record,
-                "quality_v2": quality_sink.latest if quality_sink and quality_sink.latest and quality_sink.latest["stop"] == record["stop"] else None,
+                "quality_v2": None, "quality_delivery": "async",
             }))
 
     phase = "configuration_validation"
@@ -432,9 +447,13 @@ def run_capture(
             recorder = BlockRecorder(session_dir / "raw_blocks", session_id=session_dir.name,
                                      channel_names=CHANNEL_NAMES, eeg_rows=eeg_rows,
                                      package_row=package_row, timestamp_row=timestamp_row,
-                                     raw_handle=raw_handle, raw_writer=raw_writer)
+                                     raw_handle=raw_handle, raw_writer=raw_writer, configuration_id=digest)
             from eeg_tools.quality.recording import QualitySink
-            quality_sink = QualitySink(recorder.directory, eeg_rows, CHANNEL_NAMES)
+            try:
+                quality_sink = QualitySink(recorder.directory, eeg_rows, CHANNEL_NAMES)
+                quality_consumer = AsyncConsumer(recorder, process_quality)
+            except Exception as quality_error:
+                session["quality_error_v2"] = str(quality_error)
             write_column_definitions(session_dir / "raw_columns.tsv", definitions)
             owned_files.append(session_dir / "raw_columns.tsv")
             phase = "device_handshake"
@@ -506,9 +525,15 @@ def run_capture(
                 session["cleanup_errors"].append(f"release_session: {error}")
         if recorder is not None:
             try:
-                if quality_sink is not None:
-                    quality_sink.close()
-                recorder.close("failed" if error_message or session["cleanup_errors"] else "completed")
+                quality_stopped = quality_consumer is None or quality_consumer.close()
+                drain_quality()
+                session["consumer_queue_v2"] = quality_consumer.status if quality_consumer else None
+                if quality_sink is not None and quality_stopped:
+                    try:
+                        quality_sink.close()
+                    except Exception as quality_error:
+                        session["quality_error_v2"] = str(quality_error)
+                recorder.close("failed" if error_message or session["cleanup_errors"] else "completed", quality_complete=quality_stopped)
                 session["watermarks"] = recorder.watermarks
                 session["raw_blocks"] = {"path": "raw_blocks", "journal_sha256": sha256(recorder.directory / "blocks.jsonl"), "seal_sha256": sha256(recorder.directory / "seal.json")}
             except Exception as error:

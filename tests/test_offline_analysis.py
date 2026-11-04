@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
@@ -46,11 +47,26 @@ class OfflineAnalysisTests(unittest.TestCase):
             summary = analyze_session(session_dir)
             self.assertEqual(1, summary["trial_count"])
             self.assertEqual(1.0, summary["presented_target_accuracy"])
-            self.assertTrue((session_dir / "analysis.json").is_file())
-            self.assertTrue((session_dir / "trial_features.tsv").is_file())
-            with (session_dir / "trial_features.tsv").open(encoding="utf-8", newline="") as handle:
+            output_dir = Path(summary["output_dir"])
+            self.assertTrue(output_dir.is_relative_to(session_dir / "derived"))
+            self.assertTrue((output_dir / "analysis.json").is_file())
+            self.assertTrue((output_dir / "trial_features.tsv").is_file())
+            with (output_dir / "trial_features.tsv").open(encoding="utf-8", newline="") as handle:
                 rows = list(csv.DictReader(handle, delimiter="\t"))
             self.assertEqual("top_right", rows[0]["eeg_predicted_target_id"])
+            # Reanalysis must preserve even an old legacy analysis file byte-for-byte.
+            historical = session_dir / "analysis.json"
+            historical.write_bytes(b'{"historical":true}')
+            second = analyze_session(session_dir)
+            self.assertNotEqual(summary["output_dir"], second["output_dir"])
+            self.assertEqual(historical.read_bytes(), b'{"historical":true}')
+            with self.assertRaisesRegex(ValueError, "new derived directory"):
+                analyze_session(session_dir, output_dir)
+            with patch("eeg_tools.offline_analysis._ssvep_score", side_effect=ValueError("cannot score")):
+                failed_score = analyze_session(session_dir)
+            self.assertEqual(failed_score["statistics_v2"]["counts"]["all"], 1)
+            self.assertEqual(failed_score["trial_ledger_v2"][0]["reason"], "scoring_failed")
+
 
 
 if __name__ == "__main__":

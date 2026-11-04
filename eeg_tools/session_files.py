@@ -41,6 +41,10 @@ EVENT_FIELDS = [
     "recording_time_s",
     "wall_time_iso",
     "monotonic_s",
+    "software_clock",
+    "display_callback_time_s",
+    "marker_request_time_s",
+    "marker_api_return_time_s",
 ]
 
 

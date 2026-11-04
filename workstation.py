@@ -105,6 +105,7 @@ def main() -> int:
                          (Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "NeuroStationQualityUpgrade"))
     os.environ.setdefault("NEUROSTATION_DATASETS", str(branch_output / "recordings"))
     os.environ.setdefault("NEUROSTATION_SETTINGS", str(branch_output / "settings"))
+    os.environ.setdefault("NEUROSTATION_DIAGNOSTICS", str(branch_output / "diagnostics"))
     _configure_bundled_native_libraries()
     if len(sys.argv) > 1 and sys.argv[1] == "--realtime-commands":
         from apps.realtime_commands import main as realtime_main
@@ -165,8 +166,9 @@ def main() -> int:
     gateway = DesktopGateway(
         protocol_path=protocol_path,
         channel_config_path=channel_config,
-        dataset_root=arguments.dataset_root,
+        dataset_root=arguments.dataset_root or Path(os.environ["NEUROSTATION_DATASETS"]),
     )
+    gateway.auto_import_default = False  # Branch never automatically copies personal recordings.
     if arguments.diagnostics:
         report = build_diagnostics(gateway)
         report["root"] = str(ROOT)
@@ -201,6 +203,7 @@ def main() -> int:
         initial_mode=CaptureMode.CYTON,
         initial_port=arguments.port,
     )
+    window.setWindowTitle(window.windowTitle() + " · Quality Upgrade 支线（未合并）")
     window.show()
     if arguments.smoke_test:
         QTimer.singleShot(500, application.quit)

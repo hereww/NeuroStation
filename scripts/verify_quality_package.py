@@ -1,0 +1,35 @@
+"""Bounded packaged startup checks; no device open, stimulus, or model loading."""
+import argparse
+import json
+import os
+from pathlib import Path
+import subprocess
+
+
+def main():
+    p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--artifact',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
+    a=p.parse_args();artifact=a.artifact.resolve();output=a.output.resolve()
+    exe=artifact/'NeuroStationQualityUpgrade.exe';output.mkdir(parents=True,exist_ok=True)
+    env={**os.environ,'QT_QPA_PLATFORM':'offscreen','NEUROSTATION_DATASETS':str(output/'smoke-data'),
+         'NEUROSTATION_SETTINGS':str(output/'smoke-settings'),'NEUROSTATION_DIAGNOSTICS':str(output/'smoke-diagnostics'),
+         'PATH':os.environ['SystemRoot']+'/System32;'+os.environ['SystemRoot']}
+    env.pop('NEUROSTATION_RUNTIME_CONFIG',None);env.pop('PYTHONPATH',None)
+    checks=[]
+    for name,args in [('workstation',['--smoke-test']),('realtime',['--realtime-commands','--smoke-test']),
+                      ('capture_help',['--realtime-capture-worker','--help']),('main_worker_help',['--acquisition-worker','--help']),
+                      ('diagnostics',['--diagnostics'])]:
+        try:
+            run=subprocess.run([str(exe),*args],cwd=artifact,env=env,capture_output=True,timeout=45)
+            (output/(name+'.stdout.txt')).write_bytes(run.stdout);(output/(name+'.stderr.txt')).write_bytes(run.stderr)
+            checks.append({'check':name,'arguments':args,'exit_code':run.returncode,'passed':run.returncode==0})
+        except subprocess.TimeoutExpired:
+            checks.append({'check':name,'arguments':args,'passed':False,'error':'owned subprocess timed out after 45s'})
+    report={'schema_version':1,'artifact':str(artifact),'checks':checks,'all_passed':all(c['passed'] for c in checks),
+            'hardware_started':False,'stimulus_started':False,'model_included':False,'torch_included':False,
+            'fresh_windows_machine_validation':'not_run','smoke_path':env['PATH']}
+    (output/'build-verification.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
+    print(json.dumps(report,ensure_ascii=False,indent=2))
+    return 0 if report['all_passed'] else 2
+
+if __name__=='__main__':raise SystemExit(main())

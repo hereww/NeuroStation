@@ -5,6 +5,7 @@ from datetime import datetime
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import socket
 import sys
@@ -29,7 +30,7 @@ from eeg_tools.realtime_commands import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_DATA_ROOT = Path.home() / "Documents" / "NeuroStation" / "Datasets" / "RealtimeCommands"
+DEFAULT_DATA_ROOT = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "NeuroStationQualityUpgrade" / "realtime"
 DEFAULT_MODEL_PYTHON = bound_file("model_python", ROOT / ".venv-ml-gpu" / "Scripts" / "python.exe")
 DEFAULT_CAPTURE_PYTHON = bound_file("capture_python", ROOT / ".venv" / "Scripts" / "python.exe")
 if runtime_config().get("output_root"):
@@ -66,7 +67,7 @@ class RealtimeCommandsWindow(QMainWindow):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("NeuroStation 实时指令（独立应用）")
+        self.setWindowTitle("NeuroStation 实时指令（质量升级支线 · 未合并）")
         self.resize(960, 820)
         self.buffer = CommandWindowBuffer()
         self.gate = PendingPredictionGate(timeout_s=2.0)
@@ -89,6 +90,7 @@ class RealtimeCommandsWindow(QMainWindow):
         self.capture_mode = None
         self._settings = None
         self._inflight = None
+        self._quality_waiting_window = None
         self._next_request_id = 0
         self._next_event_id = 0
         self._capture_waiting = self._model_waiting = False
@@ -294,6 +296,7 @@ class RealtimeCommandsWindow(QMainWindow):
         self.preflight_report = None
         self.model_ready = self.calibrated = False
         self._inflight = None
+        self._quality_waiting_window = None
         self._next_event_id = 0
         self._settle_remaining = 0
         self.quality_gate.reset_session()
@@ -445,6 +448,9 @@ class RealtimeCommandsWindow(QMainWindow):
             self._fatal("capture_invalid_message")
             return
         kind = message.get("type")
+        if kind == "quality_update":
+            self._quality_update(message.get("quality_v2"))
+            return
         if kind == "samples":
             self._samples(message)
             return
@@ -543,14 +549,24 @@ class RealtimeCommandsWindow(QMainWindow):
             "RMS（本批原始幅值）：" + " / ".join(rms)
             + "\n仅展示信号质量，不代表电极接触验收。")
 
+    def _quality_update(self, quality):
+        if self.state != "running":return
+        if self.quality_gate.observe(quality):
+            self._discontinuity("processing_or_stream_changed", clear=True)
+        self.quality_panel.update_quality(quality)
+        waiting=self._quality_waiting_window
+        if waiting is not None:
+            self._attempt_window(*waiting, log_rejection=False)
+
     def _samples(self, message):
         if self.state != "running":
             return
         self._update_quality(message)
         quality = message.get("quality_v2")
-        if self.quality_gate.observe(quality):
-            self._discontinuity("processing_or_stream_changed", clear=True)
-        self.quality_panel.update_quality(quality)
+        if quality is not None or message.get("quality_delivery") != "async":
+            if self.quality_gate.observe(quality):
+                self._discontinuity("processing_or_stream_changed", clear=True)
+            self.quality_panel.update_quality(quality)
         metadata = {key: value for key, value in message.items() if key != "samples"}
         self._event("sample_batch", metadata=metadata)
         if self.state != "running":
@@ -588,12 +604,24 @@ class RealtimeCommandsWindow(QMainWindow):
         self.buffer_label.setText(f"连续窗口：{self.buffer.sample_count} / 1250 点 · 代次 {self.buffer.generation}")
         if window is None or self.state != "running" or not self.model_ready:
             return
+        self._attempt_window(window, now)
+
+    def _attempt_window(self, window, ready_at, *, log_rejection=True):
+        now=time.monotonic()
+        self._quality_waiting_window=None
+        if self.state != "running" or not self.model_ready or self._last_samples is None:return
+        if now-ready_at>2 or now-self._last_samples>=1:
+            self._publish_unknown("quality_window_wait_expired")
+            return
         if self._inflight is not None or self.gate.pending is not None:
             self._event("window_skipped", reason="model_inflight", sample_end=window["sample_end"])
             return
         quality_decision = self.quality_gate.assess(window)
         if not quality_decision["accepted"]:
-            self._publish_unknown(quality_decision["reason"], request={"window_metadata": {k:v for k,v in window.items() if k != "samples"}, "quality_v2": quality_decision})
+            if quality_decision["reason"] in ("quality_unavailable","quality_coverage_gap","quality_coverage_incomplete"):
+                self._quality_waiting_window=(window,ready_at)
+            if log_rejection:
+                self._publish_unknown(quality_decision["reason"], request={"window_metadata": {k:v for k,v in window.items() if k != "samples"}, "quality_v2": quality_decision})
             return
         ids = self.gate.begin(self._next_request_id)
         if ids is None:
@@ -637,6 +665,7 @@ class RealtimeCommandsWindow(QMainWindow):
         return result
 
     def _discontinuity(self, reason, *, clear):
+        self._quality_waiting_window = None
         if clear:
             self.buffer.clear(reason)
         self.gate.invalidate(reason)
@@ -930,6 +959,7 @@ class RealtimeCommandsWindow(QMainWindow):
             self._udp.close()
             self._udp = None
         self._inflight = None
+        self._quality_waiting_window = None
         self.preflight_report = None
         self._model_started = self._capture_started = self._last_samples = None
         self.capture_mode = None
@@ -958,6 +988,8 @@ def main(argv=None):
     app = QApplication.instance() or QApplication(sys.argv if argv is None else argv)
     window = RealtimeCommandsWindow()
     window.show()
+    if "--smoke-test" in (sys.argv if argv is None else argv):
+        QTimer.singleShot(500, window.close)
     return app.exec()
 
 

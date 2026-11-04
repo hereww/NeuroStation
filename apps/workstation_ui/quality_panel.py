@@ -47,7 +47,7 @@ class QualityPanel(QWidget):
         bar.addWidget(self.status,1);bar.addWidget(self.channel);layout.addLayout(bar)
         self.table=QTableWidget(0,6);self.table.setHorizontalHeaderLabels(['通道','均值 µV','AC RMS µV','峰峰值 µV','漂移 µV','规则状态'])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.table.setMaximumHeight(190);layout.addWidget(self.table)
+        self.table.setMaximumHeight(280);layout.addWidget(self.table)
         self.plot=QualityPlot();layout.addWidget(self.plot)
         self.details=QLabel('原始数据与模型专用处理互不替换。未知不等于合格。');self.details.setWordWrap(True);layout.addWidget(self.details)
         self.channel.currentIndexChanged.connect(self._plot)
@@ -63,12 +63,16 @@ class QualityPanel(QWidget):
             self.raw=[deque(maxlen=1250) for _ in channels];self.display=[deque(maxlen=1250) for _ in channels]
             self.channel.blockSignals(True);self.channel.clear();self.channel.addItems([r['channel'] for r in channels]);self.channel.blockSignals(False)
         if result.get('stop',-1)>self.last_stop:
+            # File/UI polling may skip blocks. Never join non-adjacent samples as one trace.
+            if self.last_stop >= 0 and result.get('start', self.last_stop) > self.last_stop:
+                missing=min(1250,result['start']-self.last_stop)
+                for buffer in (*self.raw,*self.display):buffer.extend([None]*missing)
             for buffers,name in ((self.raw,'raw_samples'),(self.display,'display_samples')):
                 for b,values in zip(buffers,result.get(name,[])):b.extend(values)
             self.last_stop=result.get('stop',-1)
         self.table.setRowCount(len(channels))
         for i,row in enumerate(channels):
-            values=[row['channel'],*[row.get(k) for k in ('mean_uv','ac_rms_uv','peak_to_peak_uv','drift_range_uv')],result.get('dimensions',{}).get('signal_quality','unknown')]
+            values=[row['channel'],*[row.get(k) for k in ('mean_uv','ac_rms_uv','peak_to_peak_uv','drift_range_uv')],row.get('quality_status','unknown')]
             for j,v in enumerate(values):self.table.setItem(i,j,QTableWidgetItem('待评估' if v is None else f'{v:.2f}' if isinstance(v,float) else str(v)))
         intervals=result.get('artifacts',{}).get('intervals',[])
         text='；'.join(f"{r['channel']} {r['rule']} [{r['start']},{r['stop']})" for r in intervals[-6:]) or '当前块无已确认异常；不表示全部规则合格'

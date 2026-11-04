@@ -448,6 +448,7 @@ def _analyze_array(
     events_source: list[dict[str, str]],
     artifact_mask: np.ndarray | None,
     marker: np.ndarray | None = None,
+    planned_trial_count: int | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     targets = _target_list(protocol)
     events = [dict(item) for item in events_source]
@@ -496,7 +497,7 @@ def _analyze_array(
             "scores_json": json.dumps(score["scores"], ensure_ascii=False, sort_keys=True),
         })
     from eeg_tools.quality.statistics import build_trial_ledger, summarize_trials
-    ledger = build_trial_ledger(events, rows, eeg.shape[1])
+    ledger = build_trial_ledger(events, rows, eeg.shape[1], planned_trial_count=planned_trial_count)
     presented_matches = [row["presented_target_match"] for row in rows]
     gaze_rows = [row for row in rows if row["gaze_target_id"]]
     return {
@@ -634,7 +635,7 @@ def _run_denoise_pipeline(session_dir: Path, pipeline_path: Path, output_dir: Pa
         artifact_mask[eeg_names.index(interval["channel"]), interval["start"]:interval["stop"]] = True
     line_noise = [float(item) for item in config["line_noise_hz"]]
     marker = raw.get("marker")
-    annotated_analysis, annotated_rows = _analyze_array(eeg, sample_rate, protocol, events, artifact_mask, marker)
+    annotated_analysis, annotated_rows = _analyze_array(eeg, sample_rate, protocol, events, artifact_mask, marker, session.get("trial_count"))
     filtered_tracks: dict[str, np.ndarray] = {}
     analyses: dict[str, dict[str, Any]] = {"annotated": annotated_analysis}
     rows_by_track: dict[str, list[dict[str, Any]]] = {"annotated": annotated_rows}
@@ -644,7 +645,7 @@ def _run_denoise_pipeline(session_dir: Path, pipeline_path: Path, output_dir: Pa
         filtered, long_gap = _filter_track(eeg, sample_rate, config, frequency)
         filtered_tracks[key] = filtered
         long_gap_masks[key] = long_gap
-        analyses[key], rows_by_track[key] = _analyze_array(filtered, sample_rate, protocol, events, artifact_mask | long_gap, marker)
+        analyses[key], rows_by_track[key] = _analyze_array(filtered, sample_rate, protocol, events, artifact_mask | long_gap, marker, session.get("trial_count"))
 
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "artifact_coverage_v2.json").write_text(json.dumps(rules_v2, ensure_ascii=False, indent=2), encoding="utf-8")

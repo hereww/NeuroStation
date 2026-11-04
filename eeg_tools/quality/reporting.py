@@ -14,7 +14,7 @@ def build_session_report(session_dir, output_dir=None):
     output=Path(output_dir) if output_dir else session/'derived'/('quality-report-v2-'+uuid.uuid4().hex[:12])
     if output.resolve()==session:raise ValueError('report must not replace source session')
     output.mkdir(parents=True,exist_ok=False)
-    inputs={p.name:sha256(p) for p in session.iterdir() if p.is_file() and p.suffix in ('.json','.jsonl','.tsv','.csv')}
+    inputs={p.name:sha256(p) for p in session.iterdir() if p.is_file() and p.suffix in ('.json','.jsonl','.ndjson','.tsv','.csv')}
     meta={}
     if (session/'session.json').is_file():meta=json.loads((session/'session.json').read_text(encoding='utf-8'))
     events=[]
@@ -24,13 +24,15 @@ def build_session_report(session_dir, output_dir=None):
     events=[r for r in events if str(r.get('trial_index','')) not in ('','-1','None')]
     recovered=recover_blocks(session/'raw_blocks') if (session/'raw_blocks/blocks.jsonl').is_file() else None
     count=recovered['verified_samples'] if recovered else int(meta.get('sample_count') or meta.get('recorded_samples_per_channel') or 0)
-    ledger=build_trial_ledger(events,[],count)
+    ledger=build_trial_ledger(events,[],count,planned_trial_count=meta.get('trial_count'))
     commands=[]
-    for p in session.glob('*command*.jsonl'):
+    for p in sorted({*session.glob('*command*.jsonl'), *session.glob('*command*.ndjson')}):
         with p.open(encoding='utf-8') as f:
             for line in f:
+                if not line.strip():continue
                 try:
                     row=json.loads(line)
+                    if not isinstance(row,dict):raise ValueError('not a command object')
                     if row.get('type')=='command':commands.append(row)
                 except ValueError:commands.append({'accepted':False,'reason':'unreadable_command_record'})
     accepted=sum(r.get('accepted') is True for r in commands)
@@ -38,6 +40,7 @@ def build_session_report(session_dir, output_dir=None):
             'recording_status':meta.get('recording_status',meta.get('status','unknown')),
             'raw_blocks':{k:v for k,v in recovered.items() if k!='records'} if recovered else {'status':'legacy_no_block_journal'},
             'trials':summarize_trials(ledger),'trial_ledger':ledger,
+            'planned_trial_count':meta.get('trial_count') if type(meta.get('trial_count')) is int else None,
             'commands':{'all':len(commands),'accepted':accepted,'rejected_or_unassessable':len(commands)-accepted,
                         'acceptance':ratio(accepted,len(commands),'emitted command records, including UNKNOWN; not accuracy')},
             'limitations':['This report does not rescore EEG or infer missing labels.',

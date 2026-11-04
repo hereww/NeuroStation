@@ -257,6 +257,42 @@ class ControllerTests(unittest.TestCase):
         log = [json.loads(line) for line in (self.window.session_dir / "commands.ndjson").read_text(encoding="utf-8").splitlines()]
         self.assertEqual(log[-1], record)
 
+    def test_async_quality_waits_for_full_matching_window(self):
+        self.run_capture()
+        qualities=[]
+        for start in range(0,1500,250):
+            message=batch(start);qualities.append(message.pop("quality_v2"))
+            message["quality_delivery"]="async"
+            self.window.capture_worker.message.emit(message)
+        self.assertEqual(self.window.model_worker.requests,[])
+        for quality in qualities[:-1]:
+            self.window.capture_worker.message.emit({"type":"quality_update","quality_v2":quality})
+        self.assertEqual(self.window.model_worker.requests,[])
+        self.window.capture_worker.message.emit({"type":"quality_update","quality_v2":qualities[-1]})
+        self.assertEqual(len(self.window.model_worker.requests),1)
+        request=self.window.model_worker.requests[-1]
+        self.window.model_worker.message.emit(prediction(request))
+        self.assertEqual(self.outputs()[-1]["command"],"SELECT")
+
+    def test_repeated_select_is_locked_until_accepted_nonselect(self):
+        self.run_capture()
+        request = self.fill_window()
+        self.window.model_worker.message.emit(prediction(request))
+        self.assertEqual(self.outputs()[-1]["command"], "SELECT")
+        for start, index, expected in ((1500, 2, "UNKNOWN"), (1750, 0, "MOVE_LEFT"), (2000, 2, "SELECT")):
+            before = len(self.window.model_worker.requests)
+            self.window.capture_worker.message.emit(batch(start))
+            self.assertEqual(len(self.window.model_worker.requests), before + 1)
+            request = self.window.model_worker.requests[-1]
+            self.window.model_worker.message.emit(prediction(request, index=index))
+            self.assertEqual(self.outputs()[-1]["command"], expected)
+            self.assertFalse(self.outputs()[-1]["executed"])
+        # A quality refusal is never an accepted non-SELECT and cannot rearm.
+        value = batch(2250)
+        value["quality_v2"]["dimensions"]["signal_quality"] = "unknown"
+        self.window.capture_worker.message.emit(value)
+        self.assertFalse(self.window.quality_gate.select_armed)
+
     def test_gap_invalidates_pending_response_and_requires_new_window(self):
         self.run_capture()
         request = self.fill_window()

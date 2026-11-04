@@ -111,7 +111,10 @@ def analyze_session(session_dir: Path, output_dir: Path | None = None) -> dict[s
     """Analyze one saved session and write derived, non-destructive outputs."""
 
     session_dir = Path(session_dir).expanduser().resolve()
-    output_dir = Path(output_dir or session_dir).expanduser().resolve()
+    import uuid
+    output_dir = Path(output_dir or session_dir / "derived" / ("fft-analysis-v2-" + uuid.uuid4().hex[:12])).expanduser().resolve()
+    if output_dir == session_dir or output_dir.exists():
+        raise ValueError("analysis requires a new derived directory; existing results remain immutable")
     session = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
     protocol_path = session_dir / "protocol.json"
     if not protocol_path.is_file():
@@ -166,7 +169,11 @@ def analyze_session(session_dir: Path, output_dir: Path | None = None) -> dict[s
         trim = min(int(0.5 * sample_rate), max(0, (end - start) // 5))
         window_start = min(start + trim, max(start, end - 16))
         eeg = np.vstack([raw[name][window_start:end] for name in eeg_names])
-        score = _ssvep_score(eeg, sample_rate, targets)
+        try:
+            score = _ssvep_score(eeg, sample_rate, targets)
+        except ValueError:
+            # Keep this trial as unassessable in the v2 ledger instead of losing the whole report.
+            continue
         presented = onset.get("presented_target_id") or onset.get("target_id") or ""
         if not presented:
             frequency = _float(onset.get("frequency_hz"))
@@ -196,7 +203,7 @@ def analyze_session(session_dir: Path, output_dir: Path | None = None) -> dict[s
         }
         rows.append(row)
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=False)
     feature_path = output_dir / "trial_features.tsv"
     feature_fields = [
         "trial_index", "onset_sample_index", "offset_sample_index",
@@ -213,8 +220,14 @@ def analyze_session(session_dir: Path, output_dir: Path | None = None) -> dict[s
     presented_matches = [row["presented_target_match"] for row in rows]
     gaze_rows = [row for row in rows if row["gaze_target_id"]]
     gaze_matches = [row["gaze_target_match"] for row in gaze_rows]
+    from eeg_tools.quality.statistics import build_trial_ledger, summarize_trials
+    ledger = build_trial_ledger(events, rows, len(raw[eeg_names[0]]), planned_trial_count=session.get("trial_count"))
     summary = {
         "schema_version": 1,
+        "statistics_v2": summarize_trials(ledger),
+        "trial_ledger_v2": ledger,
+        "output_dir": str(output_dir),
+        "legacy_statistics_semantics": "scored FFT rows, not model acceptance or validated signal quality",
         "analysis": "fft_ssvep_baseline",
         "session_id": session.get("session_id", session_dir.name),
         "session_dir": str(session_dir),

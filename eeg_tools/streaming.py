@@ -1,6 +1,6 @@
 """Single-owner acquisition and append-only, recoverable raw block recording.
 
-Saving is synchronous and precedes optional consumers. A disk failure is fatal;
+Saving is synchronous and precedes bounded asynchronous production consumers. A disk failure is fatal;
 consumer failures retain raw data and explicitly invalidate assessment. No sample
 is dropped, deduplicated, interpolated, or indexed by a guessed device time.
 """
@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import threading
+import queue
 import time
 import numpy as np
 from eeg_tools.runtime_bindings import sha256
@@ -26,15 +27,19 @@ def atomic_json(path, value):
     os.replace(temporary, path)
 
 
+DEFERRED_ASSESSMENT = object()
+
+
 class BlockRecorder:
     def __init__(self, directory, *, session_id, channel_names, eeg_rows, package_row,
-                 timestamp_row, sample_rate=250, raw_handle=None, raw_writer=None, clock=time.monotonic):
+                 timestamp_row, sample_rate=250, raw_handle=None, raw_writer=None, clock=time.monotonic, configuration_id=None):
         self.directory = Path(directory)
         self.directory.mkdir(exist_ok=False)
         self.session_id, self.channels = session_id, tuple(channel_names)
         self.eeg_rows = tuple(eeg_rows)
         self.package_row, self.timestamp_row = package_row, timestamp_row
         self.sample_rate, self.clock = sample_rate, clock
+        self.configuration_id = configuration_id
         self.raw_handle, self.raw_writer = raw_handle, raw_writer
         self.journal = (self.directory/'blocks.jsonl').open('x', encoding='utf-8')
         self.received = self.written = self.durable = self.assessed = 0
@@ -42,6 +47,7 @@ class BlockRecorder:
         self.last_packet = self.last_timestamp = None
         self.previous_hash = '0'*64
         self.consumer_errors = []
+        self.assessment_lock = threading.Lock()
         self.latencies = []
         self.closed = False
         self.failed = None
@@ -49,6 +55,18 @@ class BlockRecorder:
     @property
     def watermarks(self):
         return dict(received=self.received, written=self.written, durable=self.durable, assessed=self.assessed)
+
+    def assessment_error(self, record, error):
+        with self.assessment_lock:
+            if self.closed:return
+            self.consumer_errors.append({'start':record.get('start'),'stop':record.get('stop'),
+                                         'error':str(error)})
+            self.consumer_errors=self.consumer_errors[-32:]
+
+    def acknowledge_assessment(self, record):
+        with self.assessment_lock:
+            if not self.closed and self.assessed==record['start'] and record['stop']<=self.durable:
+                self.assessed=record['stop']
 
     def _boundary(self, packet, timestamp):
         reasons = []
@@ -110,6 +128,7 @@ class BlockRecorder:
                 record = {**meta, 'sequence': self.sequence, 'file': filename,
                           'sha256': sha256(self.directory/filename), 'previous_hash': self.previous_hash,
                           'received_monotonic_s': arrival, 'eeg_rows': list(self.eeg_rows),
+                          'configuration_id': self.configuration_id,
                           'package_row': self.package_row, 'timestamp_row': self.timestamp_row}
                 record['record_hash'] = identity(record)
                 self.journal.write(json.dumps(record, allow_nan=False, sort_keys=True) + '\n')
@@ -122,33 +141,33 @@ class BlockRecorder:
                 self.sequence += 1
                 block.flags.writeable = False
                 consumer_record = {**record, "watermarks": self.watermarks}
+                consumer_ok = False
                 if consumer:
                     try:
-                        consumer(block, consumer_record)
-                        self.assessed = self.durable
+                        outcome = consumer(block, consumer_record)
+                        consumer_ok = outcome is not DEFERRED_ASSESSMENT
+                        if consumer_ok:self.acknowledge_assessment(record)
                     except Exception as exc:
-                        self.consumer_errors.append({'start':meta['start'], 'stop':meta['stop'],
-                                                     'error':type(exc).__name__ + ': ' + str(exc)})
-                        self.consumer_errors = self.consumer_errors[-32:]
+                        self.assessment_error(record,type(exc).__name__ + ': ' + str(exc))
                 self.latencies.append(self.clock() - began)
                 self.latencies = self.latencies[-2048:]
                 atomic_json(self.directory/'watermarks.json', {**self.watermarks, 'status':'recording',
                             'consumer_errors':self.consumer_errors, 'processing_latency_s':self.latencies[-1],
                             'backpressure': self.latencies[-1] > block.shape[1]/self.sample_rate})
-                results.append((block, {**record, 'watermarks':self.watermarks}))
+                results.append((block, {**record, 'watermarks':self.watermarks, 'consumer_ok':consumer_ok}))
             except Exception as exc:
                 self.failed = type(exc).__name__ + ': ' + str(exc)
                 raise
         return results
 
-    def close(self, status='completed'):
+    def close(self, status='completed', *, quality_complete=True):
         if self.closed:
             return
         try:
             self.journal.close()
             atomic_json(self.directory/'seal.json', {'schema_version':2,'status':'failed' if self.failed else status,
                         'error':self.failed, 'watermarks':self.watermarks, 'last_hash':self.previous_hash,
-                        'consumer_errors':self.consumer_errors, 'quality_evidence':{p.name:sha256(p) for p in self.directory.glob('quality-*') if p.is_file()}})
+                        'consumer_errors':self.consumer_errors, 'quality_complete':quality_complete, 'quality_evidence':{p.name:sha256(p) for p in (*self.directory.glob('quality-*'),*self.directory.glob('processing-*.json')) if p.is_file()} if quality_complete else {}})
         finally:
             self.closed = True
 
@@ -171,39 +190,104 @@ def recover_blocks(directory):
                 if r['file'] != f'{sequence:08d}.npy' or sha256(directory/r['file']) != r['sha256']:
                     raise ValueError('block content mismatch')
                 block = np.load(directory/r['file'], allow_pickle=False, mmap_mode='r')
-                if block.ndim != 2 or block.shape[1] != r['stop']-r['start']:
-                    raise ValueError('block shape mismatch')
+                try:
+                    if block.ndim != 2 or block.shape[1] != r['stop']-r['start']:
+                        raise ValueError('block shape mismatch')
+                finally:
+                    block._mmap.close()
                 records.append(r)
                 previous, expected, sequence = digest, r['stop'], sequence+1
             except (OSError, ValueError, KeyError, TypeError) as exc:
                 issues.append(str(exc)); break
+    committed = {r['file'] for r in records}
+    uncommitted = sorted(p.name for p in directory.glob('[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].npy') if p.name not in committed)
+    temporary = sorted(p.name for p in directory.glob('*.tmp'))
     seal = directory/'seal.json'
     complete = False
     if seal.is_file():
         try:
             s = json.loads(seal.read_text(encoding='utf-8'))
-            complete = not issues and s['status']=='completed' and s['last_hash']==previous and s['watermarks']['received']==expected
+            complete = not issues and not uncommitted and not temporary and s['status']=='completed' and s['last_hash']==previous and all(s['watermarks'][k]==expected for k in ('received','written','durable'))
         except (ValueError, KeyError, TypeError):
             issues.append('invalid seal')
     return {'records':records, 'verified_samples':expected, 'complete':complete, 'issues':issues,
-            'uncommitted_files':[p.name for p in directory.glob('[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].npy') if p.name not in {r['file'] for r in records}]}
+            'uncommitted_files':uncommitted, 'temporary_files':temporary}
 
 
 def materialize_verified(directory):
     report = recover_blocks(directory)
     if report['issues']:
         raise ValueError('recording integrity failed: ' + repr(report['issues']))
-    blocks = [np.load(Path(directory)/r['file'], allow_pickle=False, mmap_mode='r') for r in report['records']]
-    if not blocks:
+    records = report['records']
+    if not records:
         return np.empty((0, 0))
-    # Disk-backed legacy analysis view; raw acquisition memory is bounded.
+    first = np.load(Path(directory)/records[0]['file'], allow_pickle=False, mmap_mode='r')
+    row_count = first.shape[0]
+    first._mmap.close()
+    # Disk-backed legacy analysis view; keep only one raw-block mapping open at once.
     import uuid
     result = np.lib.format.open_memmap(Path(directory)/('legacy-analysis-'+uuid.uuid4().hex+'.npy'), mode='w+', dtype=np.float64,
-                                      shape=(blocks[0].shape[0], report['verified_samples']))
-    for record, block in zip(report['records'], blocks):
-        result[:, record['start']:record['stop']] = block
+                                      shape=(row_count, report['verified_samples']))
+    for record in records:
+        block = np.load(Path(directory)/record['file'], allow_pickle=False, mmap_mode='r')
+        try:
+            result[:, record['start']:record['stop']] = block
+        finally:
+            block._mmap.close()
     result.flush()
     return result
+
+
+class AsyncConsumer:
+    """Bounded optional work. A slow/failed quality consumer never stalls raw writes.
+
+    Full queues refuse NEW work, record its exact interval, and leave the contiguous
+    assessed watermark at the first missing interval. The next processed block's
+    start/stream contract resets causal state after a skipped interval.
+    """
+    def __init__(self, recorder, consumer, max_pending=8):
+        if max_pending<1:raise ValueError('positive quality queue capacity required')
+        self.recorder,self.consumer=recorder,consumer
+        self.queue=queue.Queue(maxsize=max_pending)
+        self.stop_event=threading.Event();self.active=None
+        self.submitted=self.completed=self.dropped=0
+        self.thread=threading.Thread(target=self._run,name='NeuroStationOptionalQuality',daemon=True)
+        self.thread.start()
+
+    def __call__(self,block,record):
+        if self.stop_event.is_set():raise RuntimeError('quality consumer stopped')
+        try:
+            self.queue.put_nowait((block,record));self.submitted+=1
+        except queue.Full:
+            self.dropped+=1
+            self.recorder.assessment_error(record,'quality_queue_full: interval unassessed')
+        return DEFERRED_ASSESSMENT
+
+    def _run(self):
+        while not self.stop_event.is_set() or not self.queue.empty():
+            try:block,record=self.queue.get(timeout=.02)
+            except queue.Empty:continue
+            self.active=record
+            try:
+                self.consumer(block,record)
+                self.recorder.acknowledge_assessment(record);self.completed+=1
+            except Exception as exc:
+                self.recorder.assessment_error(record,type(exc).__name__+': '+str(exc))
+            finally:
+                self.active=None;self.queue.task_done()
+
+    def close(self,timeout=3.0):
+        self.stop_event.set();self.thread.join(timeout=timeout)
+        stopped=not self.thread.is_alive()
+        if not stopped:
+            self.recorder.assessment_error(self.active or {},'quality_shutdown_timeout: pending quality is unknown')
+        return stopped
+
+    @property
+    def status(self):
+        return {'submitted':self.submitted,'completed':self.completed,'dropped':self.dropped,
+                'pending':self.queue.qsize(),'active':self.active is not None,
+                'capacity':self.queue.maxsize,'thread_stopped':not self.thread.is_alive()}
 
 
 class AcquisitionOwner:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 from dataclasses import asdict
 from datetime import datetime
 import json
@@ -1074,7 +1075,7 @@ def main(argv: list[str] | None = None) -> int:
         status_file.parent / "live_waveform.tsv" if status_file is not None else None
     )
     live_waveform_writer: _LiveWaveformWriter | None = None
-    capture_owner = recorder = raw_handle = quality_sink = None
+    capture_owner = recorder = raw_handle = quality_sink = quality_consumer = None
     column_definitions = None
     completed_trials = 0
     status = "error"
@@ -1125,8 +1126,11 @@ def main(argv: list[str] | None = None) -> int:
         label_source: str = "",
         event_monotonic: float | None = None,
     ) -> None:
+        marker_request = marker_return = None
         if board is not None and streaming:
+            marker_request = time.perf_counter() - session_started_monotonic
             board.insert_marker(float(marker))
+            marker_return = time.perf_counter() - session_started_monotonic
         event_id = len(events) + 1
         planned_target = target_id if name in {"stimulus_onset", "stimulus_offset"} else ""
         presented_target = planned_target
@@ -1163,9 +1167,13 @@ def main(argv: list[str] | None = None) -> int:
                 "recording_time_s": "",
                 "wall_time_iso": iso_now(),
                 "monotonic_s": round(
-                    (event_monotonic or time.perf_counter()) - session_started_monotonic,
+                    (event_monotonic if event_monotonic is not None else time.perf_counter()) - session_started_monotonic,
                     6,
                 ),
+                "software_clock": "host_perf_counter_relative_to_session_start",
+                "display_callback_time_s": event_monotonic - session_started_monotonic if event_monotonic is not None and name in ("stimulus_onset", "stimulus_offset") else None,
+                "marker_request_time_s": marker_request,
+                "marker_api_return_time_s": marker_return,
             }
         )
 
@@ -1258,7 +1266,7 @@ def main(argv: list[str] | None = None) -> int:
                 live_waveform_writer = _LiveWaveformWriter(
                     live_waveform_path, board, int(board_id)
                 )
-            from eeg_tools.streaming import BlockRecorder, AcquisitionOwner
+            from eeg_tools.streaming import BlockRecorder, AcquisitionOwner, AsyncConsumer
             from eeg_tools.session_files import brainflow_column_definitions
             eeg_rows = tuple(BoardShim.get_eeg_channels(board_id))
             column_definitions = brainflow_column_definitions(int(board_id), int(BoardShim.get_num_rows(board_id)), sampling_rate_hz=int(BoardShim.get_sampling_rate(board_id)))
@@ -1267,20 +1275,33 @@ def main(argv: list[str] | None = None) -> int:
             raw_writer.writerow([row["column_name"] for row in column_definitions])
             raw_handle.flush()
             recorder = BlockRecorder(session_dir / "raw_blocks", session_id=session_id,
-                                     channel_names=[f"eeg_ch{i+1}" for i in range(len(eeg_rows))],
+                                     channel_names=[str(c.get("electrode_position") or c["name"]) for c in (channel_config or {}).get("channels", [])] or [f"eeg_ch{i+1}" for i in range(len(eeg_rows))],
                                      eeg_rows=eeg_rows, package_row=int(BoardShim.get_package_num_channel(board_id)),
                                      timestamp_row=int(BoardShim.get_timestamp_channel(board_id)),
                                      sample_rate=int(BoardShim.get_sampling_rate(board_id)),
-                                     raw_handle=raw_handle, raw_writer=raw_writer)
+                                     raw_handle=raw_handle, raw_writer=raw_writer, configuration_id=(channel_provenance or {}).get("sha256"))
             from eeg_tools.quality.recording import QualitySink
-            quality_sink = QualitySink(recorder.directory, eeg_rows, recorder.channels,
-                                       sample_rate=int(BoardShim.get_sampling_rate(board_id)),
-                                       live_path=status_file.parent / "quality-live.json" if status_file else None)
+            try:
+                quality_sink = QualitySink(recorder.directory, eeg_rows, recorder.channels,
+                                           sample_rate=int(BoardShim.get_sampling_rate(board_id)),
+                                           live_path=status_file.parent / "quality-live.json" if status_file else None)
+            except Exception as quality_error:
+                recorder.consumer_errors.append({"error": str(quality_error), "phase": "quality_initialize"})
             def consume_block(data, record):
-                quality_sink(data, record)
+                error = None
+                if quality_sink is not None:
+                    try:
+                        quality_sink(data, record)
+                    except Exception as exc:
+                        error = exc
                 if live_waveform_writer is not None:
                     live_waveform_writer.consume(data, record)
-            capture_owner = AcquisitionOwner(board, recorder, consume_block)
+                if error is not None:
+                    raise error
+                if quality_sink is None:
+                    raise RuntimeError("quality unavailable; raw recording continues")
+            quality_consumer = AsyncConsumer(recorder, consume_block)
+            capture_owner = AcquisitionOwner(board, recorder, quality_consumer)
             capture_owner.start()
             acquisition_started = time.perf_counter()
             add_event(
@@ -1476,13 +1497,17 @@ def main(argv: list[str] | None = None) -> int:
         if capture_owner is not None and capture_owner.thread.is_alive():
             # Never close or read files while the sole capture owner can still write.
             raise RuntimeError("Capture owner remains active; recording requires offline recovery")
-        if live_waveform_writer is not None:
+        quality_stopped = quality_consumer is None or quality_consumer.close()
+        if live_waveform_writer is not None and quality_stopped:
             live_waveform_writer.close()
         if recorder is not None:
             try:
-                if quality_sink is not None:
-                    quality_sink.close()
-                recorder.close("completed" if status == "completed" else status)
+                if quality_sink is not None and quality_stopped:
+                    try:
+                        quality_sink.close()
+                    except Exception as quality_error:
+                        recorder.consumer_errors.append({"error": str(quality_error), "phase": "quality_close"})
+                recorder.close("completed" if status == "completed" else status, quality_complete=quality_stopped)
                 from eeg_tools.streaming import materialize_verified
                 raw_data = materialize_verified(recorder.directory)
             except Exception as exc:
@@ -1545,6 +1570,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     if recorder is not None:
         quality_report["watermarks_v2"] = recorder.watermarks
+        quality_report["consumer_queue_v2"] = quality_consumer.status if quality_consumer else None
         quality_report["consumer_errors_v2"] = recorder.consumer_errors
     quality_report["frame_timing"] = display_metadata["frame_timing"]
     quality_report["graphics"] = display_metadata.get("rendering", {})
@@ -1658,6 +1684,8 @@ def main(argv: list[str] | None = None) -> int:
             "error": error_message,
         },
     )
+    if isinstance(raw_data, np.memmap):
+        raw_data._mmap.close()
     return exit_code
 
 

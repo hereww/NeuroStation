@@ -296,7 +296,7 @@ class RealtimeCaptureTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("native wrapper reading", logs.getvalue())
         messages = [json.loads(line) for line in stream.getvalue().splitlines()]
-        self.assertEqual([message["type"] for message in messages], ["capture_ready", "samples", "capture_stopped"])
+        self.assertEqual([message["type"] for message in messages], ["capture_ready", "samples", "quality_update", "capture_stopped"])
 
     def test_cancelled_before_hardware_does_not_prepare(self):
         self.preflight()

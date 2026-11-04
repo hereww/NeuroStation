@@ -7,6 +7,9 @@ New-Item -ItemType Directory -Path $output | Out-Null
 $env:PYTHONPATH=(Resolve-Path -LiteralPath $Tools).Path
 $env:PYTHONUTF8='1'
 $env:PYTHONDONTWRITEBYTECODE='1'
+$basePython = & $Python -B -c 'import sys; print(sys.base_prefix)'
+$env:PATH = @((Split-Path -Parent $Python), $basePython, "$env:SystemRoot\System32", $env:SystemRoot) -join ';'
+# Exclude unrelated toolchain DLLs (e.g. Poppler ICU) from dependency resolution.
 Push-Location -LiteralPath $root
 try {
     & $Python -B scripts/validate_release_configs.py
@@ -24,12 +27,8 @@ try {
     & $Python @args
     if ($LASTEXITCODE -ne 0) { throw 'Isolated Windows build failed' }
     $artifact=Join-Path $output 'dist\NeuroStationQualityUpgrade'
-    $env:QT_QPA_PLATFORM='offscreen'
-    $env:NEUROSTATION_DATASETS=Join-Path $output 'smoke-data'
-    $env:NEUROSTATION_SETTINGS=Join-Path $output 'smoke-settings'
-    & (Join-Path $artifact 'NeuroStationQualityUpgrade.exe') --smoke-test
-    if ($LASTEXITCODE -ne 0) { throw 'Independent executable smoke test failed' }
-    & (Join-Path $artifact 'NeuroStationQualityUpgrade.exe') --diagnostics | Set-Content -Encoding utf8 (Join-Path $output 'diagnostics.json')
-    if ($LASTEXITCODE -ne 0) { throw 'Independent executable diagnostics failed' }
+    # The smoke runner removes source Python and build-tool paths from the executable environment.
+    & $Python -B scripts/verify_quality_package.py --artifact $artifact --output $output
+    if ($LASTEXITCODE -ne 0) { throw 'Independent executable verification failed; inspect build-verification.json' }
     Write-Output "VERIFIED_ARTIFACT=$artifact"
 } finally { Pop-Location }

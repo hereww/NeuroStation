@@ -12,7 +12,12 @@ def associate_events(events, markers, timestamps):
              'event_name':event.get('event_name'), 'marker_code':event.get('marker_code'),
              'sample_index':None, 'device_timestamp_s':None, 'association':'unknown',
              'physical_stimulus_onset_s':None, 'timestamp_source':'unknown',
-             'software_request_time_s':event.get('event_monotonic') or event.get('monotonic_s'),
+             'software_request_time_s':event.get('event_monotonic') if event.get('event_monotonic') is not None else event.get('monotonic_s'),
+             'software_clock':event.get('software_clock','legacy_host_monotonic_unspecified_basis'),
+             'display_callback_time_s':event.get('display_callback_time_s'),
+             'marker_request_time_s':event.get('marker_request_time_s'),
+             'marker_api_return_time_s':event.get('marker_api_return_time_s'),
+             'marker_acknowledgement':'host_API_return_only' if event.get('marker_api_return_time_s') is not None else 'unknown',
              'stimulus_acknowledged':event.get('stimulus_acknowledged',None)}
         result.append(row)
         try:
