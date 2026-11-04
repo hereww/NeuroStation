@@ -38,6 +38,7 @@ $sourceItems = @(
     "configs",
     "eeg_tools",
     "neurostation_contract.py",
+    "neurostation_signal.py",
     "neurostation_display.py",
     "analyze_ssvep_session.py",
     "preprocess_eeg_session.py",

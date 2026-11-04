@@ -1626,6 +1626,9 @@ def main(argv: list[str] | None = None) -> int:
             "description": PRODUCT_DESCRIPTION,
         },
     }
+    if recorder is not None:
+        session_value["raw_blocks_v2"] = {"path": "raw_blocks", "journal_sha256": sha256(recorder.directory / "blocks.jsonl"),
+                                         "seal_sha256": sha256(recorder.directory / "seal.json"), "watermarks": recorder.watermarks}
     write_json(session_path, session_value)
     output_files.append(session_path)
     if preflight_report is not None:
@@ -1634,6 +1637,12 @@ def main(argv: list[str] | None = None) -> int:
         output_files.append(preflight_path)
     manifest_path = session_dir / "manifest.csv"
     write_manifest(manifest_path, session_id, output_files)
+    try:
+        from eeg_tools.quality.reporting import build_session_report
+        build_session_report(session_dir)
+    except Exception as report_error:
+        # Report failure never rewrites raw files or claims successful assessment.
+        write_json(session_dir / "quality-report-error.json", {"status": "unknown", "error": str(report_error)})
 
     emit(
         status,

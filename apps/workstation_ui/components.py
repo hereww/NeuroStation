@@ -462,7 +462,7 @@ class _OpenBCIDisplayFilter:
     """Causal 4th-order 5-50 Hz Butterworth path plus 50/60 Hz notches."""
 
     def __init__(self, sample_rate_hz: int):
-        from eeg_tools.quality.filtering import CausalProcessor, ProcessingConfig
+        from neurostation_signal import CausalProcessor, ProcessingConfig
         self.sample_rate_hz = sample_rate_hz
         self.processor = CausalProcessor(ProcessingConfig(sample_rate_hz=sample_rate_hz, channels=("display",)))
         self.index = 0
@@ -530,7 +530,25 @@ class WaveformDisplayModel:
             return
         self.__init__(names, int(sample_rate_hz))
 
-    def append(self, samples: list[list[float]]):
+    def append(self, samples: list[list[float]], stream_ids=None):
+        if stream_ids is None:
+            return self._append_samples(samples)
+        if not samples or len(stream_ids) != len(samples[0]):
+            raise ValueError("stream metadata length mismatch")
+        start = 0
+        while start < len(stream_ids):
+            stream = stream_ids[start]
+            stop = start + 1
+            while stop < len(stream_ids) and stream_ids[stop] == stream:
+                stop += 1
+            if stream != getattr(self, "_stream_id", None):
+                for processor in self._filters:
+                    processor.reset()
+                self._stream_id = stream
+            self._append_samples([row[start:stop] for row in samples])
+            start = stop
+
+    def _append_samples(self, samples: list[list[float]]):
         if len(samples) != self.CHANNEL_COUNT:
             raise ValueError("waveform channel count")
         sample_count = len(samples[0]) if samples else 0
@@ -633,12 +651,12 @@ class WaveformWidget(QWidget):
             elif self._test_signal_enabled:
                 samples = self._generate_test_samples(self._model.SAMPLES_PER_UPDATE)
             if samples:
-                self._model.append(samples)
+                self._model.append(samples, stream_ids=stream_ids)
         self.update()
 
-    def push_samples(self, samples: list[list[float]]) -> None:
+    def push_samples(self, samples: list[list[float]], stream_ids=None) -> None:
         if self._active:
-            self._model.append(samples)
+            self._model.append(samples, stream_ids=stream_ids)
         self.update()
 
     def set_active(self, active: bool):
@@ -700,14 +718,19 @@ class WaveformWidget(QWidget):
             values = self._model.visible_samples(channel)
             path = QPainterPath()
             scale = (bar_height * 0.46) / self._model.Y_LIMIT_UV
+            connected = False
             for index, value in enumerate(values):
+                if not isfinite(value):
+                    connected = False
+                    continue
                 normalized = max(-self._model.Y_LIMIT_UV, min(self._model.Y_LIMIT_UV, value))
                 x = left + (right - left) * index / max(1, len(values) - 1)
                 y = center - normalized * scale
-                if index == 0:
+                if not connected:
                     path.moveTo(x, y)
                 else:
                     path.lineTo(x, y)
+                connected = True
             pen = QPen(colors[channel], 1.1)
             if not self._active:
                 pen.setColor(QColor(colors[channel].red(), colors[channel].green(), colors[channel].blue(), 100))

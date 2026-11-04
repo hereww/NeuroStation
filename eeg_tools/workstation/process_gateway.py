@@ -565,6 +565,11 @@ class AcquisitionProcessGateway:
         channel_names = self._live_channel_names or channel_labels_from_path(
             self.channel_config_path, len(eeg_columns)
         )
+        quality_v2 = None
+        try:
+            quality_v2 = json.loads((self._runtime_dir / "quality-live.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
         metadata = {}
         for key in ("sample_index", "timestamp_s", "stream_id", "generation", "package_number", "received_monotonic_s"):
             if key in self._live_waveform_header:
@@ -572,6 +577,7 @@ class AcquisitionProcessGateway:
                 metadata[key] = [row[index] if index < len(row) else None for row in rows]
         return {
             "metadata_v2": metadata,
+            "quality_v2": quality_v2,
             "channel_names": channel_names[: len(eeg_columns)],
             "sample_rate_hz": int(self.device.sample_rate or 250),
             "samples": samples,

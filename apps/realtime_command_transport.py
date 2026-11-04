@@ -63,7 +63,13 @@ class JsonWorker(QObject):
         environment.insert("PYTHONUNBUFFERED", "1")
         environment.insert("PYTHONUTF8", "1")
         self.process.setProcessEnvironment(environment)
-        self.process.start(str(python), ["-u", str(script), *[str(a) for a in args]])
+        import sys
+        arguments = ["-u", str(script), *[str(a) for a in args]]
+        if getattr(sys, "frozen", False) and Path(python).resolve() == Path(sys.executable).resolve():
+            if Path(script).name != "run_realtime_capture.py":
+                raise ValueError("packaged model inference needs an explicitly bound external Python")
+            arguments = ["--realtime-capture-worker", *[str(a) for a in args]]
+        self.process.start(str(python), arguments)
 
     def send(self, value: dict) -> bool:
         if not self.running or self._closing or self._failed:

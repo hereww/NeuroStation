@@ -102,7 +102,12 @@ def batch(start, *, packet_offset=0):
             "sample_indices": list(range(start, start + 250)),
             "package_numbers": [(i + start + packet_offset) % 256 for i in range(250)],
             "timestamps_s": [100.] * 250, "received_monotonic_s": time.monotonic(),
-            "quality": {"status": "passed", "fixture_only": True}}
+            "quality": {"status": "passed", "fixture_only": True},
+            # Synthetic control-flow authority only; never a hardware-validation record.
+            "quality_v2": {"schema_version": 2, "fixture_only": True,
+                           "processing_id": "quality-fixture", "stream_id": "fixture-stream",
+                           "start": start, "stop": start + 250, "updated_monotonic_s": time.monotonic(),
+                           "dimensions": {k: "pass" for k in ("integrity", "signal_quality", "coverage", "stimulus_timing")}}}
 
 
 def prediction(request, index=2):
@@ -181,6 +186,15 @@ class ControllerTests(unittest.TestCase):
             self.window.capture_worker.message.emit(batch(start))
         self.assertEqual(len(self.window.model_worker.requests), 1)
         return self.window.model_worker.requests[-1]
+
+    def test_missing_quality_cannot_send_or_accept(self):
+        self.run_capture()
+        for start in range(0, 1500, 250):
+            message = batch(start)
+            message.pop("quality_v2")
+            self.window.capture_worker.message.emit(message)
+        self.assertEqual(self.window.model_worker.requests, [])
+        self.assertFalse(any(r.get("accepted") for r in self.outputs()))
 
     def outputs(self):
         return [json.loads(line) for line in self.stdout.getvalue().splitlines()]

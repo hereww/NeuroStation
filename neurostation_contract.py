@@ -172,6 +172,9 @@ def default_save_directory() -> Path:
 def default_user_settings_directory() -> Path:
     """Return the writable per-user directory for calibrated acquisition settings."""
 
+    override = os.environ.get("NEUROSTATION_SETTINGS")
+    if override:
+        return Path(override).expanduser().resolve()
     return (Path.home() / "Documents" / PRODUCT_NAME / "Settings").resolve()
 
 

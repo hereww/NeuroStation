@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 from .components import KeyValues, Section, WaveformWidget, action, label
 from .gateway import CaptureConfig, DeviceInfo, Phase, TaskSnapshot, format_duration
 from .monitor_model import AcquisitionMonitorModel
+from .quality_panel import QualityPanel
 
 
 class AcquisitionMonitorWindow(QMainWindow):
@@ -85,6 +86,8 @@ class AcquisitionMonitorWindow(QMainWindow):
         channel_section.layout.addWidget(self.invalid_label)
         details.addWidget(channel_section, 2)
         layout.addLayout(details, 1)
+        self.quality_panel = QualityPanel(self)
+        layout.addWidget(self.quality_panel)
         self.screen_label = label("", "muted")
         layout.addWidget(self.screen_label)
         layout.addWidget(label(tr("monitor.metrics_note"), "muted"))
@@ -99,11 +102,11 @@ class AcquisitionMonitorWindow(QMainWindow):
         self.setGeometry(screen.availableGeometry())
         self.showMaximized()
 
-    def update_samples(self, names, rate: int, samples: list[list[float]]) -> None:
+    def update_samples(self, names, rate: int, samples: list[list[float]], stream_ids=None) -> None:
         self.model.configure(names, rate)
         self.waveform.configure(names, rate)
         self.model.append(samples)
-        self.waveform.push_samples(samples)
+        self.waveform.push_samples(samples, stream_ids=stream_ids)
         self.last_sample_at = time.monotonic()
         self.table.setRowCount(len(self.model.channel_names))
         for row, (name, metric) in enumerate(zip(self.model.channel_names, self.model.metrics())):

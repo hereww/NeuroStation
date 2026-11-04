@@ -2,6 +2,7 @@
 from collections import deque
 from dataclasses import asdict
 import time
+import hashlib
 import numpy as np
 from scipy import signal
 from eeg_tools.quality.contracts import identity, IMPLEMENTATION_VERSION
@@ -79,6 +80,7 @@ class QualityEngine:
                 'display_valid':display['valid'].tolist(),
                 'watermarks':record.get('watermarks',{}),
                 'initial_window_seconds':{'amplitude':2,'psd':8,'drift':10,'trend':30},
+                'display_sha256':hashlib.sha256(display['samples'].astype('<f8').tobytes()).hexdigest(),
                 'compute_ms':(self.clock()-began)*1000}
         self.latest=result
         return result

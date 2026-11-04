@@ -186,7 +186,7 @@ def recover_blocks(directory):
         except (ValueError, KeyError, TypeError):
             issues.append('invalid seal')
     return {'records':records, 'verified_samples':expected, 'complete':complete, 'issues':issues,
-            'uncommitted_files':[p.name for p in directory.glob('*.npy') if p.name not in {r['file'] for r in records}]}
+            'uncommitted_files':[p.name for p in directory.glob('[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].npy') if p.name not in {r['file'] for r in records}]}
 
 
 def materialize_verified(directory):
@@ -197,7 +197,8 @@ def materialize_verified(directory):
     if not blocks:
         return np.empty((0, 0))
     # Disk-backed legacy analysis view; raw acquisition memory is bounded.
-    result = np.lib.format.open_memmap(Path(directory)/'legacy-analysis.npy', mode='w+', dtype=np.float64,
+    import uuid
+    result = np.lib.format.open_memmap(Path(directory)/('legacy-analysis-'+uuid.uuid4().hex+'.npy'), mode='w+', dtype=np.float64,
                                       shape=(blocks[0].shape[0], report['verified_samples']))
     for record, block in zip(report['records'], blocks):
         result[:, record['start']:record['stop']] = block

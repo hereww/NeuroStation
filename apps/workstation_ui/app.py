@@ -1208,10 +1208,11 @@ class MainWindow(QMainWindow):
         if samples is None:
             return
         waveform = self.pages["task"].waveform
-        waveform.push_samples(samples)
+        waveform.push_samples(samples, stream_ids=getattr(self, "_quality_stream_ids", None))
         if self.monitor_window is not None:
             self.monitor_window.update_samples(
                 waveform.model.CHANNEL_NAMES, waveform.model.SAMPLE_RATE_HZ, samples,
+                stream_ids=getattr(self, "_quality_stream_ids", None),
             )
             self.monitor_window.update_snapshot(
                 self.gateway.snapshot, self.gateway.config, self.gateway.device,
@@ -1224,6 +1225,9 @@ class MainWindow(QMainWindow):
         payload = reader(maximum_rows)
         if not isinstance(payload, dict):
             return None
+        if self.monitor_window is not None and hasattr(self.monitor_window, "quality_panel"):
+            self.monitor_window.quality_panel.update_quality(payload.get("quality_v2"))
+        self._quality_stream_ids = payload.get("metadata_v2", {}).get("stream_id")
         samples = payload.get("samples")
         names = payload.get("channel_names")
         rate = payload.get("sample_rate_hz")

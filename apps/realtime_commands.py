@@ -22,6 +22,8 @@ from PySide6.QtWidgets import (
 from apps.realtime_command_display import CommandStimulusWindow
 from apps.realtime_command_transport import JsonWorker
 from eeg_tools.runtime_bindings import bound_file, runtime_config
+from eeg_tools.quality.commands import QualityCommandGate
+from apps.workstation_ui.quality_panel import QualityPanel
 from eeg_tools.realtime_commands import (
     CHANNEL_NAMES, CommandJournal, CommandWindowBuffer, PendingPredictionGate,
 )
@@ -68,6 +70,7 @@ class RealtimeCommandsWindow(QMainWindow):
         self.resize(960, 820)
         self.buffer = CommandWindowBuffer()
         self.gate = PendingPredictionGate(timeout_s=2.0)
+        self.quality_gate = QualityCommandGate()
         self.capture_worker = JsonWorker(self)
         self.model_worker = JsonWorker(self)
         self.capture_worker.message.connect(self._capture_message)
@@ -181,6 +184,8 @@ class RealtimeCommandsWindow(QMainWindow):
         self.quality_label = QLabel("信号质量：等待采样（不代表电极接触验收）")
         self.quality_label.setWordWrap(True)
         layout.addWidget(self.quality_label)
+        self.quality_panel = QualityPanel(self)
+        layout.addWidget(self.quality_panel)
         self.command_label = QLabel("UNKNOWN")
         self.command_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.command_label.setStyleSheet("font-size: 42px; font-weight: bold; padding: 16px; color: #8a6a16;")
@@ -291,6 +296,7 @@ class RealtimeCommandsWindow(QMainWindow):
         self._inflight = None
         self._next_event_id = 0
         self._settle_remaining = 0
+        self.quality_gate.reset_session()
         self.buffer.clear("new_session")
         self.gate.invalidate("new_session")
         self.capture_mode = "preflight"
@@ -541,6 +547,10 @@ class RealtimeCommandsWindow(QMainWindow):
         if self.state != "running":
             return
         self._update_quality(message)
+        quality = message.get("quality_v2")
+        if self.quality_gate.observe(quality):
+            self._discontinuity("processing_or_stream_changed", clear=True)
+        self.quality_panel.update_quality(quality)
         metadata = {key: value for key, value in message.items() if key != "samples"}
         self._event("sample_batch", metadata=metadata)
         if self.state != "running":
@@ -581,6 +591,10 @@ class RealtimeCommandsWindow(QMainWindow):
         if self._inflight is not None or self.gate.pending is not None:
             self._event("window_skipped", reason="model_inflight", sample_end=window["sample_end"])
             return
+        quality_decision = self.quality_gate.assess(window)
+        if not quality_decision["accepted"]:
+            self._publish_unknown(quality_decision["reason"], request={"window_metadata": {k:v for k,v in window.items() if k != "samples"}, "quality_v2": quality_decision})
+            return
         ids = self.gate.begin(self._next_request_id)
         if ids is None:
             return
@@ -588,7 +602,7 @@ class RealtimeCommandsWindow(QMainWindow):
         # The ONLY fields transmitted to the inference worker are this whitelist.
         request = {"type": "window", **ids, "sample_rate_hz": window["sample_rate_hz"],
                    "channel_names": window["channel_names"], "samples": window["samples"]}
-        self._inflight = {**ids, "started_at": now,
+        self._inflight = {**ids, "started_at": now, "quality_v2": quality_decision,
                           "window_metadata": {key: value for key, value in window.items() if key != "samples"}}
         self._event("inference_requested", **ids, buffer_generation=self.buffer.generation,
                     window_metadata={key: value for key, value in window.items() if key != "samples"})
@@ -670,7 +684,13 @@ class RealtimeCommandsWindow(QMainWindow):
             reason = "accepted" if accepted else str(message.get("reason", "invalid_model_prediction"))
             if not accepted and reason == "accepted":
                 reason = "invalid_model_prediction"
+            quality_decision = self.quality_gate.assess(inflight.get("window_metadata", {}),
+                processing_id=inflight.get("quality_v2", {}).get("processing_id"))
+            if not quality_decision["accepted"]:
+                accepted, reason = False, quality_decision["reason"]
             command = message["prediction"]["command"] if accepted else "UNKNOWN"
+            if accepted:
+                command, reason = self.quality_gate.latch(command)
             self._publish(command, reason, message, request=inflight)
         elif kind == "error":
             self._fatal("model_error: " + str(message.get("error", "unknown")))
@@ -735,6 +755,7 @@ class RealtimeCommandsWindow(QMainWindow):
         metadata = request.get("window_metadata", {})
         record = {
             **FLAGS, "type": "command", "command": command, "accepted": accepted,
+            "quality_v2": request.get("quality_v2"),
             "session_id": self.session_dir.name if self.session_dir else None, "event_id": event_id,
             "inference_latency_ms": max(0., (now - request["started_at"]) * 1000)
                 if _finite(request.get("started_at")) else None,
@@ -894,6 +915,10 @@ class RealtimeCommandsWindow(QMainWindow):
             journal, self.journal = self.journal, None
             try:
                 journal.close()
+                if (self.session_dir / "session.json").is_file():
+                    from eeg_tools.quality.reporting import build_session_report
+                    report = build_session_report(self.session_dir)
+                    self.session_label.setText("会话：" + str(self.session_dir) + "\n报告：" + report["output_dir"])
                 if self._failure_reason is None:
                     self.status_label.setText("已停止；会话与独立命令清单已保存")
                 else:

@@ -100,7 +100,18 @@ def build_diagnostics(gateway=None) -> dict:
 
 
 def main() -> int:
+    from eeg_tools.runtime_bindings import runtime_config
+    branch_output = Path(runtime_config().get("output_root") or os.environ.get("NEUROSTATION_QUALITY_ROOT") or
+                         (Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "NeuroStationQualityUpgrade"))
+    os.environ.setdefault("NEUROSTATION_DATASETS", str(branch_output / "recordings"))
+    os.environ.setdefault("NEUROSTATION_SETTINGS", str(branch_output / "settings"))
     _configure_bundled_native_libraries()
+    if len(sys.argv) > 1 and sys.argv[1] == "--realtime-commands":
+        from apps.realtime_commands import main as realtime_main
+        return realtime_main(sys.argv[2:])
+    if len(sys.argv) > 1 and sys.argv[1] == "--realtime-capture-worker":
+        from eeg_tools.realtime_capture import main as capture_main
+        return capture_main(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] == "--acquisition-worker":
         from eeg_tools.workstation.acquisition_worker import main as worker_main
 
@@ -164,7 +175,7 @@ def main() -> int:
         print(json.dumps(report, ensure_ascii=True, indent=2))
         return 0
     try:
-        from PySide6.QtCore import QTimer
+        from PySide6.QtCore import QTimer, QSettings
         from PySide6.QtWidgets import QApplication
         from apps.workstation_ui.app import MainWindow
     except ModuleNotFoundError as error:
@@ -185,6 +196,7 @@ def main() -> int:
         gateway=gateway,
         locale=arguments.language,
         persist_settings=True,
+        settings=QSettings("NeuroStationQualityUpgrade", "NeuroStationQualityUpgrade"),
         save_directory_override=arguments.dataset_root,
         initial_mode=CaptureMode.CYTON,
         initial_port=arguments.port,
