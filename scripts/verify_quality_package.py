@@ -18,13 +18,14 @@ def main():
     checks=[]
     for name,args in [('workstation',['--smoke-test']),('realtime',['--realtime-commands','--smoke-test']),
                       ('capture_help',['--realtime-capture-worker','--help']),('main_worker_help',['--acquisition-worker','--help']),
-                      ('diagnostics',['--diagnostics'])]:
+                      ('diagnostics',['--diagnostics']),
+                      ('quality_workflow',['--quality-workflow-smoke',str(output/'quality-workflow')])]:
         try:
-            run=subprocess.run([str(exe),*args],cwd=artifact,env=env,capture_output=True,timeout=45)
+            run=subprocess.run([str(exe),*args],cwd=artifact,env=env,capture_output=True,timeout=120 if name=='quality_workflow' else 45)
             (output/(name+'.stdout.txt')).write_bytes(run.stdout);(output/(name+'.stderr.txt')).write_bytes(run.stderr)
             checks.append({'check':name,'arguments':args,'exit_code':run.returncode,'passed':run.returncode==0})
         except subprocess.TimeoutExpired:
-            checks.append({'check':name,'arguments':args,'passed':False,'error':'owned subprocess timed out after 45s'})
+            checks.append({'check':name,'arguments':args,'passed':False,'error':'owned subprocess exceeded its startup/workflow deadline'})
     report={'schema_version':1,'artifact':str(artifact),'checks':checks,'all_passed':all(c['passed'] for c in checks),
             'hardware_started':False,'stimulus_started':False,'model_included':False,'torch_included':False,
             'fresh_windows_machine_validation':'not_run','smoke_path':env['PATH']}

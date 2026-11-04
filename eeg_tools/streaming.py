@@ -172,13 +172,14 @@ class BlockRecorder:
             self.closed = True
 
 
-def recover_blocks(directory):
+def recover_blocks(directory, *, cancelled=None):
     """Read verified journal prefix only, never edit raw files or claim omitted tail complete."""
     directory = Path(directory)
     previous, expected, sequence = '0'*64, 0, 0
     records, issues = [], []
     with (directory/'blocks.jsonl').open(encoding='utf-8') as f:
         for line in f:
+            if cancelled and cancelled():raise InterruptedError("quality.cancelled")
             try:
                 r = json.loads(line)
                 digest = r.pop('record_hash')

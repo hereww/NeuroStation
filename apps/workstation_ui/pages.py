@@ -1699,6 +1699,11 @@ class DiagnosticsPage(Page):
 class AppsPage(Page):
     def __init__(self, tr, navigate, device_info: DeviceInfo | None = None):
         super().__init__(tr, tr("nav.apps"), tr("apps.subtitle"))
+        quality = Section(tr("quality.entry_title"))
+        quality.layout.addWidget(label(tr("quality.entry_note"), "muted"))
+        self.quality_button = action(tr("quality.entry_action"), lambda: navigate("quality"), True)
+        quality.layout.addWidget(self.quality_button)
+        self.layout.addWidget(quality)
         grid = QGridLayout()
         grid.setSpacing(18)
         entries = [
@@ -2133,7 +2138,7 @@ class TaskPage(Page):
 
 
 class ResultPage(Page):
-    def __init__(self, tr, result: Dataset, navigate, offline_controller=None):
+    def __init__(self, tr, result: Dataset, navigate, offline_controller=None, quality_callback=None):
         title_key = {
             "completed": "result.title",
             "aborted": "result.aborted_title",
@@ -2166,6 +2171,9 @@ class ResultPage(Page):
         values_key = "result.recorded_values"
         super().__init__(tr, tr(title_key), f"{result.name} · {tr(status_key)}")
         self.layout.addWidget(label(tr(notice_key), "notice"))
+        if quality_callback is not None:
+            self.quality_button = action(tr("quality.dataset_entry"), lambda: quality_callback(result.path), True)
+            self.layout.addWidget(self.quality_button)
         self.layout.addWidget(KeyValues([
             (tr("field.participant"), result.participant),
             (tr("field.eye_side"), tr("eye." + result.eye_side) if result.eye_side in {"left", "right"} else tr("dataset_summary.unlabeled")),
@@ -2214,9 +2222,12 @@ class ResultPage(Page):
 
 
 class DatasetSummaryPage(Page):
-    def __init__(self, tr, result: Dataset, navigate, offline_controller=None):
+    def __init__(self, tr, result: Dataset, navigate, offline_controller=None, quality_callback=None):
         super().__init__(tr, tr("dataset_summary.title"), result.name)
         self._result_path = result.path
+        if quality_callback is not None:
+            self.quality_button = action(tr("quality.dataset_entry"), lambda: quality_callback(result.path), True)
+            self.layout.addWidget(self.quality_button)
         self.layout.addWidget(label(tr("dataset_summary.readonly"), "notice"))
         source_name = (
             tr("dataset_summary.legacy")

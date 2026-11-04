@@ -11,21 +11,24 @@ STABLE_FIELDS=('schema_version','processing_id','stream_id','generation','start'
                'reasons','channels','artifacts','display_sha256','initial_window_seconds')
 
 
-def replay_quality(directory):
+def replay_quality(directory, *, on_result=None, cancelled=None):
     directory=Path(directory)
-    recovery=recover_blocks(directory)
+    if cancelled and cancelled():raise InterruptedError('quality.cancelled')
+    recovery=recover_blocks(directory, cancelled=cancelled)
     if recovery['issues']:raise ValueError('block integrity failure: '+repr(recovery['issues']))
     reference=directory/'quality-v2.jsonl'
     observed=[json.loads(line) for line in reference.read_text(encoding='utf-8').splitlines()] if reference.is_file() else []
     before={r['file']:sha256(directory/r['file']) for r in recovery['records']}
     engine=None; mismatches=[];results=[]
     for index,record in enumerate(recovery['records']):
+        if cancelled and cancelled():raise InterruptedError('quality.cancelled')
         if engine is None:
             engine=QualityEngine(record['channel_names'],int(record['sample_rate_hz']))
         raw=np.load(directory/record['file'],allow_pickle=False)
         result=safe_json(engine.process(raw[record['eeg_rows']],record))
         stable={k:result.get(k) for k in STABLE_FIELDS}
         results.append(stable)
+        if on_result is not None:on_result(result,index+1,len(recovery['records']))
         if index>=len(observed):mismatches.append({'block':index,'reason':'missing_online_quality'})
         else:
             fields=[k for k in STABLE_FIELDS if stable[k]!=observed[index].get(k)]

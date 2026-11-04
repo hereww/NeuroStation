@@ -150,6 +150,8 @@ def main() -> int:
         default="AUTO",
         help="Cyton serial port (default: AUTO)",
     )
+    parser.add_argument("--quality-page", action="store_true", help="Open the signal and quality workspace without starting acquisition")
+    parser.add_argument("--quality-workflow-smoke", type=Path, help="Run the synthetic demo/replay/report GUI workflow into a fresh output folder, then exit")
     arguments = parser.parse_args()
     from eeg_tools.workstation.desktop_gateway import DesktopGateway
 
@@ -197,14 +199,20 @@ def main() -> int:
     window = MainWindow(
         gateway=gateway,
         locale=arguments.language,
-        persist_settings=True,
+        persist_settings=not (arguments.smoke_test or arguments.quality_workflow_smoke),
         settings=QSettings("NeuroStationQualityUpgrade", "NeuroStationQualityUpgrade"),
         save_directory_override=arguments.dataset_root,
         initial_mode=CaptureMode.CYTON,
         initial_port=arguments.port,
     )
-    window.setWindowTitle(window.windowTitle() + " · Quality Upgrade 支线（未合并）")
+    if arguments.quality_page or arguments.quality_workflow_smoke:
+        window.navigate("quality")
     window.show()
+    if arguments.quality_workflow_smoke:
+        from apps.workstation_ui.quality_smoke import run_quality_workflow_smoke
+        result = run_quality_workflow_smoke(window, arguments.quality_workflow_smoke)
+        print(json.dumps(result, ensure_ascii=True, indent=2))
+        return 0 if result["all_passed"] else 2
     if arguments.smoke_test:
         QTimer.singleShot(500, application.quit)
     return application.exec()

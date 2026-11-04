@@ -35,4 +35,4 @@ class QualityPanelTests(unittest.TestCase):
         self.panel.update_quality(self.record(5,8,processing_id='new',updated_monotonic_s=time.monotonic()-3))
         self.assertEqual(len(self.panel.raw[0]),3)
         self.assertIn('UNKNOWN',self.panel.status.text())
-        self.assertEqual(self.panel.table.item(0,5).text(),'unknown')
+        self.assertIn('unknown',self.panel.table.item(0,5).text())

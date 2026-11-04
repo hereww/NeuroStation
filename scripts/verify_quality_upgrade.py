@@ -58,7 +58,7 @@ def main(argv=None):
     sys.path.insert(0,str(ROOT));os.chdir(ROOT)
     files=git('ls-files','--cached','--others','--exclude-standard','-z').split('\0')
     source={name:hashlib.sha256((ROOT/name).read_bytes()).hexdigest() for name in files if name and
-            (ROOT/name).is_file() and ((name.endswith(('.py','.ps1','.toml')) or name.startswith('configs/')))}
+            (ROOT/name).is_file() and ((name.endswith(('.py','.ps1','.toml')) or name.startswith(('configs/', 'apps/workstation_ui/locales/'))))}
     identity=hashlib.sha256(json.dumps(source,sort_keys=True).encode()).hexdigest()
     (output/'source-manifest.json').write_text(json.dumps(source,indent=2,ensure_ascii=False),encoding='utf-8')
     loader=unittest.TestLoader()

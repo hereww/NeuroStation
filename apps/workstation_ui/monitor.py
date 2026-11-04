@@ -86,7 +86,7 @@ class AcquisitionMonitorWindow(QMainWindow):
         channel_section.layout.addWidget(self.invalid_label)
         details.addWidget(channel_section, 2)
         layout.addLayout(details, 1)
-        self.quality_panel = QualityPanel(self)
+        self.quality_panel = QualityPanel(self, tr=tr)
         layout.addWidget(self.quality_panel)
         self.screen_label = label("", "muted")
         layout.addWidget(self.screen_label)

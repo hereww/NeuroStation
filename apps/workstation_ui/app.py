@@ -18,6 +18,7 @@ from .gateway import CaptureGateway, CaptureConfig, CaptureMode, Phase, Dataset
 from .i18n import Translator
 from .monitor import AcquisitionMonitorWindow
 from .v9_offline import V9OfflineController
+from .quality_workspace import QualityWorkspaceController, QualityWorkspacePage
 from neurostation_display import resolve_monitor_screen
 from .pages import (
     HomePage, DevicesPage, AppsPage, SSVEPPage, TaskPage,
@@ -96,7 +97,7 @@ class _ImportWorker(QObject):
 
 
 NAVIGATION = (
-    "home", "devices", "users", "apps", "datasets", "trash", "openbci",
+    "home", "devices", "users", "apps", "quality", "datasets", "trash", "openbci",
     "integrations", "diagnostics",
 )
 
@@ -155,7 +156,7 @@ def product_stylesheet(dark: bool) -> str:
         QLabel#pageTitle {{ font-size: 23px; font-weight: 500; }}
         QLabel#sectionTitle {{ font-weight: 500; }}
         QLabel#muted, QLabel#path {{ color: {muted}; font-size: 12px; }}
-        QLabel#notice {{ background: {surface}; padding: 12px; border-left: 3px solid #b58b3a; }}
+        QLabel#notice, QLabel#qualitySourceBanner {{ background: {surface}; padding: 12px; border-left: 3px solid #b58b3a; }}
         QLabel#error {{ color: {'#f39393' if dark else '#b44242'}; }}
         QLabel#estimate {{ font-size: 15px; color: {accent}; }}
         QLabel#countdown {{ font-size: 64px; color: {accent}; }}
@@ -247,6 +248,9 @@ class MainWindow(QMainWindow):
         self.preflight_worker: _PreflightWorker | None = None
         self.channel_calibration_thread: QThread | None = None
         self.channel_calibration_worker: _ChannelCalibrationWorker | None = None
+        self.quality_controller = QualityWorkspaceController(self)
+        self.quality_controller.changed.connect(self._update_quality_banner)
+        self.quality_controller.busy_changed.connect(lambda _busy: self._update_controls())
         self.offline_controller = V9OfflineController(self)
         self.offline_controller.busy_changed.connect(lambda _busy: self._update_controls())
         self._channel_calibration_index: int | None = None
@@ -278,7 +282,7 @@ class MainWindow(QMainWindow):
                 self.restoreGeometry(geometry)
 
     def _build_shell(self):
-        self.setWindowTitle(self.tr("app.title"))
+        self.setWindowTitle(self.tr("app.title") + " · Quality Upgrade 支线（未合并）")
         application = QApplication.instance()
         dark = application.palette().color(QPalette.ColorRole.Window).lightness() < 128
         self.setStyleSheet(product_stylesheet(dark))
@@ -370,6 +374,7 @@ class MainWindow(QMainWindow):
         )
         self._replace_page("users", self._build_users_page())
         self._replace_page("apps", AppsPage(self.tr, self.navigate, self.gateway.device))
+        self._replace_page("quality", QualityWorkspacePage(self.tr, self.quality_controller))
         detail = SSVEPPage(self.tr, self.draft_config, self.navigate, self.gateway.users)
         detail.start_requested.connect(self.start_ssvep)
         detail.serial_scan_requested.connect(self.scan_serial_ports)
@@ -457,7 +462,7 @@ class MainWindow(QMainWindow):
                 self.latest_dataset,
                 self.show_dataset,
                 self.navigate,
-                import_busy=self.import_thread is not None or self.offline_controller.busy,
+                import_busy=self.import_thread is not None or self._analysis_busy(),
                 import_status=self.import_status,
                 import_directory=self._last_import_directory(),
                 search_text=self._dataset_search,
@@ -495,7 +500,7 @@ class MainWindow(QMainWindow):
                 key = "apps"
             else:
                 page = DatasetSummaryPage if self._showing_dataset_summary else ResultPage
-                self._replace_page(key, page(self.tr, self.result, self.navigate, offline_controller=self.offline_controller))
+                self._replace_page(key, page(self.tr, self.result, self.navigate, offline_controller=self.offline_controller, quality_callback=self.open_dataset_quality))
         elif key == "diagnostics":
             self._refresh_diagnostics()
         self.current_page = key
@@ -578,7 +583,7 @@ class MainWindow(QMainWindow):
             self.timer.start()
 
     def start_ssvep(self, config: CaptureConfig, speed: float, *, _preflight_ready: bool = False):
-        if self.offline_controller.busy:
+        if self._analysis_busy():
             self.pages["ssvep"].error.setText(self.tr("v9.busy_mutation"))
             return
         self._record(
@@ -599,6 +604,7 @@ class MainWindow(QMainWindow):
             self._error(error)
             return
         self.draft_config = config
+        self.quality_controller.use_live()
         self._dispose_acquisition_monitor()
         self._monitor_suppressed = False
         self._preflight_ready = False
@@ -612,7 +618,7 @@ class MainWindow(QMainWindow):
         self._record("capture", "ssvep task started", mode=CaptureMode(config.mode).value)
 
     def preflight_cyton(self):
-        if self.offline_controller.busy or self.preflight_thread is not None or self.channel_calibration_thread is not None:
+        if self._analysis_busy() or self.preflight_thread is not None or self.channel_calibration_thread is not None:
             return
         page = self.pages.get("devices")
         if page is not None and hasattr(page, "preflight_status"):
@@ -661,7 +667,7 @@ class MainWindow(QMainWindow):
         return str(value.get("status") or "unknown") if isinstance(value, dict) else "unknown"
 
     def calibrate_cyton_channel(self, channel_index: int):
-        if self.offline_controller.busy or self.gateway.snapshot.active or self.preflight_thread is not None:
+        if self._analysis_busy() or self.gateway.snapshot.active or self.preflight_thread is not None:
             return
         if self.channel_calibration_thread is not None:
             return
@@ -1052,6 +1058,10 @@ class MainWindow(QMainWindow):
         self._showing_dataset_summary = result.imported
         self.navigate("result")
 
+    def open_dataset_quality(self, path):
+        if self.quality_controller.select_session(path):
+            self.navigate("quality")
+
     def show_dataset(self, result: Dataset):
         self.result = result
         self._showing_dataset_summary = True
@@ -1086,18 +1096,26 @@ class MainWindow(QMainWindow):
         if snapshot.active:
             self._pump_live_samples()
 
+    def _analysis_busy(self):
+        return self.offline_controller.busy or self.quality_controller.busy
+
     def _offline_capture_busy(self):
         return (self.gateway.snapshot.active or self.preflight_thread is not None
                 or self.channel_calibration_thread is not None or self.import_thread is not None)
 
     def _offline_guarded_mutation(self, callback, *args, **kwargs):
-        if self.offline_controller.busy:
+        if self._analysis_busy():
             raise ValueError("v9.busy_mutation")
         return callback(*args, **kwargs)
 
+    def _update_quality_banner(self):
+        if getattr(self, "current_page", None) == "quality" and hasattr(self, "mode_banner_label"):
+            self.mode_banner_label.setText(self.tr("quality.mode." + self.quality_controller.mode))
+
     def _update_controls(self):
-        self.offline_controller.set_capture_busy(self._offline_capture_busy())
-        offline_busy = self.offline_controller.busy
+        self.offline_controller.set_capture_busy(self._offline_capture_busy() or self.quality_controller.busy)
+        self.quality_controller.set_capture_busy(self._offline_capture_busy() or self.offline_controller.busy)
+        offline_busy = self._analysis_busy()
         for key in ("datasets", "trash"):
             page = self.pages.get(key)
             if page is not None:
@@ -1127,6 +1145,7 @@ class MainWindow(QMainWindow):
             self.gateway.config.mode if snapshot.active else self.draft_config.mode
         )
         self.mode_banner_label.setText(self.tr("mode.banner", mode=self.tr("mode." + mode.value)))
+        self._update_quality_banner()
         if snapshot.active:
             device_name, device_port, device_channels, device_rate = (
                 device.name, device.port, device.channels, device.sample_rate
@@ -1225,6 +1244,7 @@ class MainWindow(QMainWindow):
         payload = reader(maximum_rows)
         if not isinstance(payload, dict):
             return None
+        self.quality_controller.accept_live(payload.get("quality_v2"))
         if self.monitor_window is not None and hasattr(self.monitor_window, "quality_panel"):
             self.monitor_window.quality_panel.update_quality(payload.get("quality_v2"))
         self._quality_stream_ids = payload.get("metadata_v2", {}).get("stream_id")
@@ -1253,6 +1273,10 @@ class MainWindow(QMainWindow):
         return samples
 
     def closeEvent(self, event):
+        if not self.quality_controller.close():
+            self.navigate("quality")
+            event.ignore()
+            return
         if not self.offline_controller.close():
             event.ignore()
             return
@@ -1294,7 +1318,7 @@ class MainWindow(QMainWindow):
             self._start_import(source, automatic=True)
 
     def _start_import(self, source_root: Path | str, automatic: bool = False):
-        if self.offline_controller.busy or self.import_thread is not None:
+        if self._analysis_busy() or self.import_thread is not None:
             return
         source = Path(source_root).expanduser().resolve()
         self._record("datasets", "OpenBCI import started", source_root=str(source), automatic=automatic)
