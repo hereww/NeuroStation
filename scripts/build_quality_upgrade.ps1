@@ -35,7 +35,7 @@ try {
             'set "NEUROSTATION_DIAGNOSTICS=%NEUROSTATION_QUALITY_ROOT%\diagnostics"',
             'set "QT_QPA_PLATFORM="',
             'set "NS_QUALITY_EXE=%~dp0NeuroStationQualityUpgrade.exe"')
-        $command = "Start-Process -FilePath `$env:NS_QUALITY_EXE -WindowStyle Hidden"
+        $command = "Start-Process -FilePath `$env:NS_QUALITY_EXE -WindowStyle Normal"
         if ($entry[1]) { $command += " -ArgumentList '$($entry[1])'" }
         $launcher += "powershell.exe -NoProfile -WindowStyle Hidden -Command `"$command`""
         Set-Content -LiteralPath (Join-Path $artifact $entry[0]) -Value ($launcher -join "`r`n") -Encoding ascii
