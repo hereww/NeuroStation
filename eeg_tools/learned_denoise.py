@@ -8,8 +8,9 @@ helpers remain usable and inference fails with an actionable error.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
+import pickle
 from pathlib import Path
 from typing import Any
 
@@ -85,13 +86,15 @@ def validate_config(config: dict[str, Any]) -> None:
         raise LearnedDenoiseError("unsupported learned denoiser schema_version")
     if config.get("status") != "formal":
         raise LearnedDenoiseError("learned denoiser config status must be formal")
+    if config.get("model_version") != MODEL_VERSION:
+        raise LearnedDenoiseError("unsupported learned denoiser model_version")
     if config.get("model_type") != "residual_tcn":
         raise LearnedDenoiseError("only residual_tcn is supported")
     sample_rate = float(config.get("sample_rate_hz", 0))
     channels = int(config.get("channel_count", 0))
     window = int(config.get("window_samples", 0))
     hop = int(config.get("hop_samples", 0))
-    if sample_rate <= 0 or channels <= 0 or window <= 0 or hop <= 0:
+    if not np.isfinite(sample_rate) or sample_rate <= 0 or channels <= 0 or window <= 0 or hop <= 0:
         raise LearnedDenoiseError("sample_rate_hz, channel_count, window_samples and hop_samples must be positive")
     if hop > window:
         raise LearnedDenoiseError("hop_samples cannot exceed window_samples")
@@ -111,7 +114,7 @@ def robust_normalize(values: np.ndarray, valid_mask: np.ndarray | None = None) -
         raise LearnedDenoiseError("signal must have shape [channels, samples]")
     finite = np.isfinite(x)
     if valid_mask is not None:
-        finite &= np.asarray(valid_mask, dtype=bool)
+        finite &= _validated_mask(valid_mask, x.shape)
     safe = np.where(finite, x, np.nan)
     center = np.nanmedian(safe, axis=1)
     q25 = np.nanpercentile(safe, 25, axis=1)
@@ -121,7 +124,7 @@ def robust_normalize(values: np.ndarray, valid_mask: np.ndarray | None = None) -
     scale = np.where(np.isfinite(scale) & (scale > 1e-6), scale, fallback)
     scale = np.where(np.isfinite(scale) & (scale > 1e-6), scale, 1.0)
     center = np.where(np.isfinite(center), center, 0.0)
-    normalized = (np.where(np.isfinite(x), x, center[:, None]) - center[:, None]) / scale[:, None]
+    normalized = (np.where(finite, x, center[:, None]) - center[:, None]) / scale[:, None]
     return normalized.astype(np.float32), center.astype(np.float32), scale.astype(np.float32)
 
 
@@ -213,21 +216,63 @@ class ModelBundle:
     model: Any
     config: dict[str, Any]
     checkpoint_path: Path
+    # Defaults keep legacy three-argument construction compatible. Never expose weights here.
+    checkpoint_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 def load_model(checkpoint_path: Path, config: dict[str, Any], device: str = "cpu") -> ModelBundle:
     if torch is None or ResidualTCNDenoiser is None:
         raise LearnedDenoiseError("PyTorch is required for learned denoiser inference; install the optional ml dependencies")
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    validate_config(config)
+    try:
+        # No unsafe pickle fallback, including for legacy checkpoints.
+        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+    except (pickle.UnpicklingError, TypeError, RuntimeError) as error:
+        raise LearnedDenoiseError(f"cannot safely load learned denoiser checkpoint: {error}") from error
+    if not isinstance(checkpoint, dict) or not isinstance(checkpoint.get("config"), dict):
+        raise LearnedDenoiseError("checkpoint must include model_state and training config")
+    if checkpoint.get("checkpoint_schema_version", 1) != 1:
+        raise LearnedDenoiseError("unsupported checkpoint_schema_version")
+    saved_config = checkpoint["config"]
+    version = checkpoint.get("model_version", saved_config.get("model_version"))
+    if version != MODEL_VERSION or version != config["model_version"]:
+        raise LearnedDenoiseError("checkpoint model_version does not match supported config")
+    if saved_config.get("model_version", version) != version:
+        raise LearnedDenoiseError("checkpoint model_version metadata is inconsistent")
+    # Historical status does not change inference compatibility. Sampling rate and
+    # channel count, however, cannot safely be guessed from a weight tensor.
+    for key in ("sample_rate_hz", "channel_count"):
+        if key not in saved_config or saved_config[key] != config[key]:
+            raise LearnedDenoiseError(f"checkpoint {key} does not match config")
+    for key in ("schema_version", "model_type", "normalization", "window_samples"):
+        if key in saved_config and saved_config[key] != config.get(key):
+            raise LearnedDenoiseError(f"checkpoint {key} does not match config")
+    for key in ("channel_names", "channel_order", "channel_config", "channels"):
+        if key in saved_config or key in config:
+            if saved_config.get(key) != config.get(key):
+                raise LearnedDenoiseError(f"checkpoint {key} does not match config")
     model = ResidualTCNDenoiser(
         channel_count=int(config["channel_count"]),
         hidden_channels=int(checkpoint.get("hidden_channels", 48)),
         dropout=0.0,
     )
-    model.load_state_dict(checkpoint["model_state"], strict=True)
+    try:
+        model.load_state_dict(checkpoint["model_state"], strict=True)
+    except (KeyError, RuntimeError, TypeError) as error:
+        raise LearnedDenoiseError(f"invalid checkpoint model_state: {error}") from error
     model.to(device)
     model.eval()
-    return ModelBundle(model=model, config=config, checkpoint_path=checkpoint_path)
+    metadata = {key: value for key, value in checkpoint.items() if key != "model_state"}
+    return ModelBundle(model=model, config=config, checkpoint_path=checkpoint_path, checkpoint_metadata=metadata)
+
+
+def _validated_mask(valid_mask: np.ndarray, shape: tuple[int, ...]) -> np.ndarray:
+    mask = np.asarray(valid_mask)
+    if mask.shape != shape:
+        raise LearnedDenoiseError("valid_mask must have exactly the same shape as signal; broadcasting is forbidden")
+    if mask.dtype.kind not in "biuf" or not np.all((mask == 0) | (mask == 1)):
+        raise LearnedDenoiseError("valid_mask must contain only booleans or finite binary values")
+    return mask.astype(bool)
 
 
 def apply_model_to_array(
@@ -235,16 +280,30 @@ def apply_model_to_array(
     signal: np.ndarray,
     valid_mask: np.ndarray | None = None,
 ) -> dict[str, np.ndarray]:
-    """Apply a trained model with overlap-add and preserve invalid samples."""
+    """Produce derived tracks; reject unsafe windows and preserve original invalid values.
+
+    Padding is not an acquisition dropout. Gating counts only real samples and
+    uses the worst channel. A rejected window vetoes replacement over its entire
+    real span, even where a neighbouring accepted window overlaps it.
+    """
     if torch is None:
         raise LearnedDenoiseError("PyTorch is required for learned denoiser inference")
-    x = np.asarray(signal, dtype=np.float32)
-    if x.ndim != 2:
-        raise LearnedDenoiseError("signal must have shape [channels, samples]")
+    validate_config(bundle.config)
+    raw = np.asarray(signal)
+    if raw.ndim != 2 or raw.dtype.kind not in "iuf":
+        raise LearnedDenoiseError("signal must be a real numeric array with shape [channels, samples]")
+    with np.errstate(over="ignore", invalid="ignore"):
+        x = np.asarray(raw, dtype=np.float32)
+    if np.any(np.isfinite(raw) & ~np.isfinite(x)):
+        raise LearnedDenoiseError("signal contains values outside the finite float32 range")
     channels, samples = x.shape
     if channels != int(bundle.config["channel_count"]):
         raise LearnedDenoiseError(f"expected {bundle.config['channel_count']} channels, got {channels}")
-    valid = np.isfinite(x) if valid_mask is None else np.asarray(valid_mask, dtype=bool) & np.isfinite(x)
+    if samples == 0:
+        raise LearnedDenoiseError("signal must contain at least one real sample")
+    valid = np.isfinite(x)
+    if valid_mask is not None:
+        valid &= _validated_mask(valid_mask, x.shape)
     window = int(bundle.config["window_samples"])
     hop = int(bundle.config["hop_samples"])
     padded_samples = max(window, samples)
@@ -257,48 +316,75 @@ def apply_model_to_array(
     weights = np.zeros(padded_samples, dtype=np.float64)
     masks = np.zeros_like(padded, dtype=np.float64)
     confidences = np.zeros(padded_samples, dtype=np.float64)
-    counts = np.zeros(padded_samples, dtype=np.float64)
-    analysis_window = np.hanning(window).astype(np.float64)
-    analysis_window = np.maximum(analysis_window, 1e-3)
-    device = next(bundle.model.parameters()).device
+    rejected = np.zeros(padded_samples, dtype=bool)
+    analysis_window = np.maximum(np.hanning(window).astype(np.float64), 1e-3)
+    device = next(bundle.model.parameters(), torch.empty(0)).device
+    max_invalid = float(bundle.config["inference"]["max_invalid_fraction"])
     with torch.no_grad():
         for start in range(0, padded_samples - window + 1, hop):
             end = start + window
+            real_samples = min(end, samples) - start
             segment = padded[:, start:end]
             segment_valid = padded_valid[:, start:end]
-            normalized, center, scale = robust_normalize(segment, segment_valid)
+            if real_samples <= 0:
+                continue
+            # Per-channel gating also rejects a wholly absent channel hidden by
+            # an otherwise small global missing fraction.
+            invalid_fraction = 1.0 - segment_valid[:, :real_samples].mean(axis=1)
+            if np.any(invalid_fraction > max_invalid) or not np.all(segment_valid[:, :real_samples].any(axis=1)):
+                rejected[start:end] = True
+                continue
+            with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+                normalized, center, scale = robust_normalize(segment, segment_valid)
+            if not np.all(np.isfinite(normalized)):
+                rejected[start:end] = True
+                continue
             signal_tensor = torch.from_numpy(normalized[None]).to(device)
             valid_tensor = torch.from_numpy(segment_valid.astype(np.float32)[None]).to(device)
             prediction = bundle.model(signal_tensor, valid_tensor)
+            expected_shapes = {"denoised": (1, channels, window), "artifact_probability": (1, channels, window), "confidence": (1, 1, window)}
+            if not isinstance(prediction, dict) or any(
+                not isinstance(prediction.get(key), torch.Tensor) or tuple(prediction[key].shape) != shape
+                for key, shape in expected_shapes.items()
+            ):
+                rejected[start:end] = True
+                continue
             denoised = prediction["denoised"][0].detach().cpu().numpy()
             artifact = prediction["artifact_probability"][0].detach().cpu().numpy()
             confidence = prediction["confidence"][0, 0].detach().cpu().numpy()
-            denoised = robust_denormalize(denoised, center, scale)
+            with np.errstate(over="ignore", invalid="ignore"):
+                denoised = robust_denormalize(denoised, center, scale)
+            if (not all(np.all(np.isfinite(value)) for value in (denoised, artifact, confidence))
+                    or np.any((artifact < 0) | (artifact > 1))
+                    or np.any((confidence < 0) | (confidence > 1))):
+                rejected[start:end] = True
+                continue
             out[:, start:end] += denoised * analysis_window[None, :]
             masks[:, start:end] += artifact * analysis_window[None, :]
             confidences[start:end] += confidence * analysis_window
             weights[start:end] += analysis_window
-            counts[start:end] += 1.0
-    weights = np.maximum(weights, 1e-6)
-    result = out / weights[None, :]
-    artifact = masks / weights[None, :]
-    confidence = confidences / weights
-    candidate = result[:, :samples].astype(np.float32)
-    artifact = artifact[:, :samples].astype(np.float32)
-    confidence = confidence[:samples].astype(np.float32)
-    valid_trimmed = valid[:, :samples]
-    replacement_mask = (confidence[None, :] >= float(bundle.config["inference"]["min_confidence_for_replacement"])) & valid_trimmed
+    safe_weights = np.maximum(weights, 1e-6)
+    with np.errstate(over="ignore", invalid="ignore"):
+        candidate = (out[:, :samples] / safe_weights[None, :samples]).astype(np.float32)
+    artifact = (masks[:, :samples] / safe_weights[None, :samples]).astype(np.float32)
+    confidence = (confidences[:samples] / safe_weights[:samples]).astype(np.float32)
+    unsafe = rejected[:samples] | (weights[:samples] == 0) | ~np.all(np.isfinite(candidate), axis=0)
+    confidence[unsafe] = 0.0
+    artifact[:, unsafe] = 0.0
+    candidate[:, unsafe] = x[:, unsafe]
+    candidate[~valid] = x[~valid]
+    replacement_mask = (
+        (confidence[None, :] >= float(bundle.config["inference"]["min_confidence_for_replacement"]))
+        & valid & ~unsafe[None, :]
+    )
     deployed = np.where(replacement_mask, candidate, x).astype(np.float32)
-    if bool(bundle.config["inference"].get("preserve_invalid_samples", True)):
-        candidate[~valid_trimmed] = np.nan
-        deployed[~valid_trimmed] = np.nan
     return {
         "denoised": deployed,
         "model_denoised": candidate,
         "replacement_mask": replacement_mask,
         "artifact_probability": artifact,
         "confidence": confidence,
-        "valid_mask": valid_trimmed,
+        "valid_mask": valid,
     }
 
 

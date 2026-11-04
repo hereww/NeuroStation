@@ -42,6 +42,11 @@ files = [
   "eeg_tools/workstation/preflight.py",
   "eeg_tools/workstation/ssvep.py",
   "eeg_tools/workstation/task.py",
+  "apps/workstation_ui/v9_offline.py",
+  "eeg_tools/workstation/v9_offline.py",
+  "eeg_tools/workstation/personal_decoder_analysis.py",
+  "eeg_tools/personal_ssvep_decoder.py",
+  "scripts/run_v9_offline_analysis.py",
 ]
 [project.optional-dependencies]
 ml = ["torch>=2.4"]

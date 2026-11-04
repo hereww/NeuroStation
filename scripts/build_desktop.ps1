@@ -44,10 +44,16 @@ $sourceItems = @(
     "workstation.py",
     "neurostation_diagnostics.py",
     "pysidedeploy.spec",
-    "pyproject.toml"
+    "pyproject.toml",
+    "scripts/run_v9_offline_analysis.py",
+    "scripts/diagnose_neurostation_v9_output.py"
 )
 foreach ($item in $sourceItems) {
-    Copy-Item -LiteralPath (Join-Path $projectRoot $item) -Destination $stageRoot -Recurse -Force
+    $sourcePath = Join-Path $projectRoot $item
+    $destinationPath = Join-Path $stageRoot $item
+    $destinationParent = Split-Path -Parent $destinationPath
+    New-Item -ItemType Directory -Path $destinationParent -Force | Out-Null
+    Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Recurse -Force
 }
 $integrationTarget = Join-Path $stageRoot "integrations\openbci_gui"
 New-Item -ItemType Directory -Force -Path $integrationTarget | Out-Null

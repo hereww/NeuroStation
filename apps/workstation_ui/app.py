@@ -10,13 +10,14 @@ from PySide6.QtCore import QObject, QSettings, QThread, QTimer, Qt, Signal, Slot
 from PySide6.QtGui import QIcon, QPalette, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QListWidget,
-    QListWidgetItem, QComboBox, QStackedWidget, QScrollArea, QMessageBox, QFileDialog,
+    QListWidgetItem, QComboBox, QStackedWidget, QScrollArea, QMessageBox, QFileDialog, QPushButton,
 )
 
 from .components import action, label
 from .gateway import CaptureGateway, CaptureConfig, CaptureMode, Phase, Dataset
 from .i18n import Translator
 from .monitor import AcquisitionMonitorWindow
+from .v9_offline import V9OfflineController
 from neurostation_display import resolve_monitor_screen
 from .pages import (
     HomePage, DevicesPage, AppsPage, SSVEPPage, TaskPage,
@@ -246,6 +247,8 @@ class MainWindow(QMainWindow):
         self.preflight_worker: _PreflightWorker | None = None
         self.channel_calibration_thread: QThread | None = None
         self.channel_calibration_worker: _ChannelCalibrationWorker | None = None
+        self.offline_controller = V9OfflineController(self)
+        self.offline_controller.busy_changed.connect(lambda _busy: self._update_controls())
         self._channel_calibration_index: int | None = None
         self._pending_ssvep: tuple[CaptureConfig, float] | None = None
         self._preflight_ready = False
@@ -454,7 +457,7 @@ class MainWindow(QMainWindow):
                 self.latest_dataset,
                 self.show_dataset,
                 self.navigate,
-                import_busy=self.import_thread is not None,
+                import_busy=self.import_thread is not None or self.offline_controller.busy,
                 import_status=self.import_status,
                 import_directory=self._last_import_directory(),
                 search_text=self._dataset_search,
@@ -462,7 +465,7 @@ class MainWindow(QMainWindow):
                 status_value=self._dataset_status,
                 callbacks={
                     "rename": self.rename_dataset,
-                    "delete": self.gateway.delete_dataset,
+                    "delete": lambda dataset_id: self._offline_guarded_mutation(self.gateway.delete_dataset, dataset_id),
                     "refresh": self.refresh_datasets,
                 },
             )
@@ -478,8 +481,8 @@ class MainWindow(QMainWindow):
                 source_value=self._dataset_source,
                 status_value=self._dataset_status,
                 callbacks={
-                    "restore": self.gateway.restore_dataset,
-                    "purge": self.gateway.purge_dataset,
+                    "restore": lambda dataset_id: self._offline_guarded_mutation(self.gateway.restore_dataset, dataset_id),
+                    "purge": lambda dataset_id: self._offline_guarded_mutation(self.gateway.purge_dataset, dataset_id),
                     "refresh": self.refresh_datasets,
                 },
             )
@@ -492,7 +495,7 @@ class MainWindow(QMainWindow):
                 key = "apps"
             else:
                 page = DatasetSummaryPage if self._showing_dataset_summary else ResultPage
-                self._replace_page(key, page(self.tr, self.result, self.navigate))
+                self._replace_page(key, page(self.tr, self.result, self.navigate, offline_controller=self.offline_controller))
         elif key == "diagnostics":
             self._refresh_diagnostics()
         self.current_page = key
@@ -509,7 +512,7 @@ class MainWindow(QMainWindow):
         self._dataset_status = status
 
     def rename_dataset(self, dataset_id: str, name: str) -> Dataset:
-        dataset = self.gateway.rename_dataset(dataset_id, name)
+        dataset = self._offline_guarded_mutation(self.gateway.rename_dataset, dataset_id, name)
         if self.result is not None and self.result.id == dataset_id:
             self.result = dataset
         return dataset
@@ -575,6 +578,9 @@ class MainWindow(QMainWindow):
             self.timer.start()
 
     def start_ssvep(self, config: CaptureConfig, speed: float, *, _preflight_ready: bool = False):
+        if self.offline_controller.busy:
+            self.pages["ssvep"].error.setText(self.tr("v9.busy_mutation"))
+            return
         self._record(
             "capture",
             "ssvep start requested",
@@ -606,7 +612,7 @@ class MainWindow(QMainWindow):
         self._record("capture", "ssvep task started", mode=CaptureMode(config.mode).value)
 
     def preflight_cyton(self):
-        if self.preflight_thread is not None or self.channel_calibration_thread is not None:
+        if self.offline_controller.busy or self.preflight_thread is not None or self.channel_calibration_thread is not None:
             return
         page = self.pages.get("devices")
         if page is not None and hasattr(page, "preflight_status"):
@@ -655,7 +661,7 @@ class MainWindow(QMainWindow):
         return str(value.get("status") or "unknown") if isinstance(value, dict) else "unknown"
 
     def calibrate_cyton_channel(self, channel_index: int):
-        if self.gateway.snapshot.active or self.preflight_thread is not None:
+        if self.offline_controller.busy or self.gateway.snapshot.active or self.preflight_thread is not None:
             return
         if self.channel_calibration_thread is not None:
             return
@@ -959,10 +965,10 @@ class MainWindow(QMainWindow):
         callbacks = {
             "next_id": self.gateway.next_user_id,
             "add": self.gateway.add_user,
-            "update": self.gateway.update_user,
-            "delete": self.gateway.delete_user,
-            "restore": self.gateway.restore_user,
-            "purge": self.gateway.purge_user,
+            "update": lambda *args, **kwargs: self._offline_guarded_mutation(self.gateway.update_user, *args, **kwargs),
+            "delete": lambda *args, **kwargs: self._offline_guarded_mutation(self.gateway.delete_user, *args, **kwargs),
+            "restore": lambda *args, **kwargs: self._offline_guarded_mutation(self.gateway.restore_user, *args, **kwargs),
+            "purge": lambda *args, **kwargs: self._offline_guarded_mutation(self.gateway.purge_user, *args, **kwargs),
             "refresh": self.refresh_users,
         }
         page = UserManagementPage(
@@ -972,6 +978,8 @@ class MainWindow(QMainWindow):
             callbacks,
         )
         page.export_requested.connect(self.export_public_users)
+        page.table.itemSelectionChanged.connect(self._update_controls)
+        page.trash_table.itemSelectionChanged.connect(self._update_controls)
         return page
 
     def export_public_users(self):
@@ -1078,7 +1086,34 @@ class MainWindow(QMainWindow):
         if snapshot.active:
             self._pump_live_samples()
 
+    def _offline_capture_busy(self):
+        return (self.gateway.snapshot.active or self.preflight_thread is not None
+                or self.channel_calibration_thread is not None or self.import_thread is not None)
+
+    def _offline_guarded_mutation(self, callback, *args, **kwargs):
+        if self.offline_controller.busy:
+            raise ValueError("v9.busy_mutation")
+        return callback(*args, **kwargs)
+
     def _update_controls(self):
+        self.offline_controller.set_capture_busy(self._offline_capture_busy())
+        offline_busy = self.offline_controller.busy
+        for key in ("datasets", "trash"):
+            page = self.pages.get(key)
+            if page is not None:
+                for button in page.findChildren(QPushButton):
+                    if button.objectName() in {"datasetMutationButton", "datasetRenameButton"}:
+                        button.setEnabled(not offline_busy)
+                import_button = getattr(page, "import_button", None)
+                if import_button is not None:
+                    import_button.setEnabled(not offline_busy and self.import_thread is None)
+        users = self.pages.get("users")
+        if users is not None:
+            users._selection_changed()
+            for name in ("delete_button", "edit_button", "restore_button", "purge_button"):
+                button = getattr(users, name, None)
+                if button is not None and offline_busy:
+                    button.setEnabled(False)
         snapshot = self.gateway.snapshot
         device = self.gateway.device
         for key in ("home", "devices", "apps"):
@@ -1109,7 +1144,7 @@ class MainWindow(QMainWindow):
         )
         self.active_banner.setVisible(snapshot.active and self.current_page != "task")
         self.pages["ssvep"].start_button.setEnabled(
-            not snapshot.active and self.preflight_thread is None
+            not snapshot.active and self.preflight_thread is None and not offline_busy
         )
         self.pages["task"].update_snapshot(snapshot, self.gateway.config)
         self._sync_acquisition_monitor(snapshot)
@@ -1214,6 +1249,9 @@ class MainWindow(QMainWindow):
         return samples
 
     def closeEvent(self, event):
+        if not self.offline_controller.close():
+            event.ignore()
+            return
         self._record("ui", "workstation window closing")
         self.timer.stop()
         self._dispose_acquisition_monitor()
@@ -1252,7 +1290,7 @@ class MainWindow(QMainWindow):
             self._start_import(source, automatic=True)
 
     def _start_import(self, source_root: Path | str, automatic: bool = False):
-        if self.import_thread is not None:
+        if self.offline_controller.busy or self.import_thread is not None:
             return
         source = Path(source_root).expanduser().resolve()
         self._record("datasets", "OpenBCI import started", source_root=str(source), automatic=automatic)
@@ -1268,12 +1306,14 @@ class MainWindow(QMainWindow):
         self.import_thread.finished.connect(self.import_thread.deleteLater)
         self.import_thread.finished.connect(self._import_thread_finished)
         self.import_thread.start()
+        self._update_controls()
         if self.current_page == "datasets":
             self.navigate("datasets")
 
     def _import_thread_finished(self):
         self.import_thread = None
         self.import_worker = None
+        self._update_controls()
         if self.current_page == "datasets":
             self.navigate("datasets")
 

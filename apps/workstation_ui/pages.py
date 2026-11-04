@@ -36,6 +36,7 @@ from .components import (
     label,
 )
 from .gateway import CaptureConfig, CaptureMode, TaskSnapshot, Phase, Dataset, format_duration
+from .v9_offline import V9OfflinePanel
 from neurostation_contract import (
     GENDERS,
     MEDICAL_OPTIONS,
@@ -2132,7 +2133,7 @@ class TaskPage(Page):
 
 
 class ResultPage(Page):
-    def __init__(self, tr, result: Dataset, navigate):
+    def __init__(self, tr, result: Dataset, navigate, offline_controller=None):
         title_key = {
             "completed": "result.title",
             "aborted": "result.aborted_title",
@@ -2187,6 +2188,12 @@ class ResultPage(Page):
             (tr("result.dropped_frames"), str(result.dropped_frame_count)),
             (tr("result.flat_channels"), str(result.flat_channel_count)),
         ]))
+        self.v9_panel = V9OfflinePanel(
+            tr, result.path, offline_controller,
+            native=(not result.imported and not result.simulated
+                    and result.source == CaptureMode.CYTON and not result.deleted_at),
+        )
+        self.layout.addWidget(self.v9_panel)
         denoising = _denoising_section(tr, result)
         if denoising is not None:
             self.layout.addWidget(denoising)
@@ -2207,7 +2214,7 @@ class ResultPage(Page):
 
 
 class DatasetSummaryPage(Page):
-    def __init__(self, tr, result: Dataset, navigate):
+    def __init__(self, tr, result: Dataset, navigate, offline_controller=None):
         super().__init__(tr, tr("dataset_summary.title"), result.name)
         self._result_path = result.path
         self.layout.addWidget(label(tr("dataset_summary.readonly"), "notice"))
@@ -2267,6 +2274,12 @@ class DatasetSummaryPage(Page):
         session_table.setMinimumHeight(min(420, max(150, session_table.sizeHintForRow(0) * len(session_rows) + 44)))
         self.layout.addWidget(session_table)
 
+        self.v9_panel = V9OfflinePanel(
+            tr, result.path, offline_controller,
+            native=(not result.imported and not result.simulated
+                    and result.source == CaptureMode.CYTON and not result.deleted_at),
+        )
+        self.layout.addWidget(self.v9_panel)
         denoising = _denoising_section(tr, result)
         if denoising is not None:
             self.layout.addWidget(denoising)
@@ -2538,10 +2551,17 @@ class _DatasetCollectionPage(Page):
             rename_button.setObjectName("datasetRenameButton")
             rename_button.setEnabled("rename" in self._callbacks)
             controls.addWidget(rename_button)
-            controls.addWidget(action(self.tr("datasets.delete"), lambda _checked=False, d=dataset: self._delete_dataset(d)))
+            delete_button = action(self.tr("datasets.delete"), lambda _checked=False, d=dataset: self._delete_dataset(d))
+            delete_button.setObjectName("datasetMutationButton")
+            controls.addWidget(delete_button)
         else:
-            controls.addWidget(action(self.tr("datasets.restore"), lambda _checked=False, d=dataset: self._restore_dataset(d)))
-            controls.addWidget(action(self.tr("datasets.purge"), lambda _checked=False, d=dataset: self._purge_dataset(d)))
+            for text, callback in (
+                ("datasets.restore", lambda _checked=False, d=dataset: self._restore_dataset(d)),
+                ("datasets.purge", lambda _checked=False, d=dataset: self._purge_dataset(d)),
+            ):
+                button = action(self.tr(text), callback)
+                button.setObjectName("datasetMutationButton")
+                controls.addWidget(button)
         controls.addStretch()
         item.layout.addLayout(controls)
         return item

@@ -31,3 +31,4 @@ datasets/external/**/*.npy
 datasets/external/**/*.rec
 datasets/external/**/*.edf
 datasets/external/**/*.zip
+.venv-ml-gpu/

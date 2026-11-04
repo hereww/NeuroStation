@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "status": "formal",
+  "model_version": "learned_denoise_v10_personal",
+  "model_type": "fixed_line_notch_then_learned_protected_spectral_shrinkage",
+  "sample_rate_hz": 250,
+  "channel_count": 8,
+  "window_samples": 512,
+  "hop_samples": 128,
+  "preprocessing": {
+    "notch_hz": 50.0,
+    "notch_q": 30.0,
+    "phase": "offline_zero_phase",
+    "mean_restore": "input_mean_per_window",
+    "unit_conversion": false,
+    "resample": false
+  },
+  "model": {
+    "hidden_channels": 24,
+    "feature_channels": 4,
+    "kernels": [
+      7,
+      5,
+      1
+    ],
+    "attenuation": "sigmoid per source channel and frequency bin",
+    "initial_gate_bias": -4.0,
+    "protected_band_hz": [
+      8.0,
+      40.0
+    ],
+    "dc_preserved": true,
+    "allow_amplification": false
+  },
+  "data": {
+    "reference_directory": "datasets/processed/ssvep_reference_v5_20261007/Wearable",
+    "fit_subjects": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "selection_subjects": [
+      5,
+      6
+    ],
+    "evaluation_subjects": [
+      7,
+      8
+    ],
+    "window_start_sample": 125,
+    "window_end_sample_exclusive": 637,
+    "reference_definition": "50Hz notch-conditioned recorded reference; not clean EEG truth",
+    "raw_reference_is_clean_ground_truth": false,
+    "personal_sessions_used_for_training": false,
+    "task_labels_enter_forward": false,
+    "all_public_subjects_previously_available_in_project": true,
+    "evaluation_is_pristine_project_holdout": false
+  },
+  "augmentation": {
+    "conditions": [
+      "identity",
+      "drift",
+      "high_burst",
+      "gaussian",
+      "combined"
+    ],
+    "seed": 20261013,
+    "rms_amplitude_range": [
+      0.2,
+      1.5
+    ],
+    "drift_frequency_hz": [
+      0.25,
+      5.0
+    ],
+    "high_frequency_hz": [
+      45.0,
+      110.0
+    ],
+    "synthetic_training_examples": 480,
+    "synthetic_frequency_range_hz": [
+      8.0,
+      22.0
+    ],
+    "synthetic_reference_has_background": true
+  },
+  "training": {
+    "seed": 20261013,
+    "epochs": 24,
+    "batch_size": 64,
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "optimizer": "AdamW",
+    "device": "cuda:0",
+    "require_cuda": true,
+    "amp": false,
+    "allow_tf32": false,
+    "deterministic_algorithms": true,
+    "cpu_threads": 4,
+    "gradient_clip": 1.0,
+    "identity_loss_weight": 20.0,
+    "selection": "minimum selection corrupted NMSE among checkpoints satisfying identity<=0.002; otherwise save lowest loss with gate failed"
+  },
+  "engineering_gates": {
+    "identity_mean_normalized_change_max": 0.002,
+    "corrupted_mean_error_reduction_min": 0.05,
+    "protected_window_complex_energy_ratio_max": 1e-06,
+    "all_conditions_nonworse": true,
+    "independent_personal_validation": false
+  },
+  "runtime": {
+    "enabled": false,
+    "production_validated": false,
+    "deployment_scope": "explicit_offline_v10_research_only"
+  },
+  "limitations": [
+    "Notch is fixed engineering preprocessing, not learned noise removal.",
+    "Recorded conditioned references are surrogate reconstruction targets, not biological clean truth.",
+    "Model protects discrete 8-40Hz FFT bins per window; whole-record task/phase preservation must be measured separately.",
+    "No uncalibrated classification candidate is a validated command."
+  ]
+}

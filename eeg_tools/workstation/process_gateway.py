@@ -164,6 +164,10 @@ class AcquisitionProcessGateway:
             if not isinstance(value, dict) or value.get("status") != "formal":
                 return None
             runtime = value.get("runtime") if isinstance(value.get("runtime"), dict) else {}
+            # Enabling a known-failed checkpoint must not bypass the launcher gate
+            # when the GUI is started directly through workstation.py.
+            if str(runtime.get("validation_status", "")).startswith("failed"):
+                return None
             if runtime.get("enabled", True) is False:
                 return None
             inference = value.get("inference")

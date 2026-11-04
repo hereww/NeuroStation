@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "status": "formal",
+  "model_version": "personal_ssvep_calibration_v1",
+  "type": "transparent_personal_score_calibrator",
+  "method": "target_specific_positive_negative_cca_score_calibration",
+  "source_domain": "personal_Cyton",
+  "source_domain_validated": false,
+  "production_validated": false,
+  "detection_validated": false,
+  "confidence_is_probability": false,
+  "label_source": "recorded_presentation_target_proxy_not_independent_gaze_truth",
+  "forward_uses_recorded_labels": false,
+  "sample_rate_hz": 250.0,
+  "channel_count": 8,
+  "selected_channel_indices": [4, 5, 6, 7],
+  "selected_channel_names": ["CH5", "CH6", "CH7", "CH8"],
+  "selected_electrode_positions_from_preset": ["P7", "P8", "O1", "O2"],
+  "window_start_after_onset_samples": 125,
+  "window_samples": 1000,
+  "minimum_repetitions_per_target": 8,
+  "holdout_required": true,
+  "minimum_holdout_match_rate": 0.8,
+  "minimum_holdout_trials": 16,
+  "evidence_gates": {
+    "minimum_calibrated_evidence": 0.5,
+    "minimum_top_two_margin": 0.15
+  },
+  "target_selection": "calibrated_evidence_with_unknown_allowed",
+  "intended_scope": "explicit_offline_personal_calibration_diagnostic_only",
+  "runtime_enabled": false,
+  "default_deployment_authorized": false
+}

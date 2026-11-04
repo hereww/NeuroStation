@@ -8,9 +8,9 @@
     "https://physionet.org/files/sleep-edf/1.0.0/sc4002e0.hyp",
     "https://physionet.org/files/sleep-edf/1.0.0/SHA256SUMS.txt"
   ],
-  "download_date": "2026-10-04",
+  "download_date": "2026-10-05",
   "requested_download_date": "2026-10-05",
-  "date_note": "任务要求中的下载日期为 2026-10-05，但当前日期为 2026-10-04；为避免写入未来日期，以下记录使用实际执行日期 2026-10-04，并保留该日期差异说明。",
+  "date_note": "本次检查/下载尝试记录日期为 2026-10-05（Asia/Shanghai）。此前文件曾错误记录为 2026-10-04，现按当前实际日期更正。",
   "download_status": "not_downloaded",
   "direct_download": "yes_public_url_no_registration",
   "registration_or_restriction": "PhysioNet page states anyone can access the files subject to the license.",

@@ -1,0 +1,1519 @@
+{
+  "schema_version": 1,
+  "baseline_head": "8697608303bdf4d5f1a84454e0837fb8f647df88",
+  "source_root": "F:/脑机采集/NeuroStation",
+  "branch": "codex/neurostation-quality-upgrade",
+  "software_files": [
+    {
+      "path": ".gitignore",
+      "size": 636,
+      "sha256": "a5f3f37413227260fe910f1705284db9a690411e2e1f649782f9ecf80027a8ee"
+    },
+    {
+      "path": "apps/workstation_ui/app.py",
+      "size": 60143,
+      "sha256": "876b73c111e6c1f9ddb9446f3ae74390f0722c0caf83884f9d6d941328bd3fef"
+    },
+    {
+      "path": "apps/workstation_ui/locales/en-US.json",
+      "size": 40814,
+      "sha256": "7a1a472f3b1aa0c017be80993a00f25ff61f6a81b226e5c04dc7e312b0e7d45f"
+    },
+    {
+      "path": "apps/workstation_ui/locales/zh-CN.json",
+      "size": 39072,
+      "sha256": "a0ffce71966f27109ab38ffe6d9cbba86c5540ae648c039b461976b6717c3b46"
+    },
+    {
+      "path": "apps/workstation_ui/pages.py",
+      "size": 121872,
+      "sha256": "2ca6e6c2de7bfaf3e2a9b060d00dc1105234a1701327e0edf4bb115e23116d8e"
+    },
+    {
+      "path": "configs/learned_denoiser_v1.json",
+      "size": 1666,
+      "sha256": "601860190d20a69d0324a52fe35b2372e1ae1035266ec8bb11c3217424fc112c"
+    },
+    {
+      "path": "configs/protocols/ssvep_four_target_v2.json",
+      "size": 1124,
+      "sha256": "c0385230aaca262be4511e13abc60c3a9504cdcb497e6dfe7cdb7962b27fec26"
+    },
+    {
+      "path": "datasets/external/artifact_datasets/physionet_sleep_edfx_sc4002e0/DATASET_MANIFEST.json",
+      "size": 1960,
+      "sha256": "3fbf913ebdef3deb3158dcd8527f10f56176a80f1f0da0664722674963f78876"
+    },
+    {
+      "path": "datasets/external/artifact_datasets/physionet_sleep_edfx_sc4002e0/README.md",
+      "size": 1629,
+      "sha256": "134cf69b4b94b82ee5c87f1a487b621b1882b4e9df2e2eff8ccbe2623b104c4a"
+    },
+    {
+      "path": "docs/NeuroStation-学习型EEG质量优化模型v1.md",
+      "size": 17361,
+      "sha256": "b7f330d2ced797605f1ba26628e03b95408a4818096325ef94f8361ec16519fc"
+    },
+    {
+      "path": "eeg_tools/learned_denoise.py",
+      "size": 19057,
+      "sha256": "3b3b1a37a765e57f4cf7a97e30fa10fb398291952fc57ce8505816a61095f590"
+    },
+    {
+      "path": "eeg_tools/workstation/learned_monitor.py",
+      "size": 13901,
+      "sha256": "c8402a666ac5e54d1588a3189191613b9a1269ca0e1fe546ec36a943caa99e84"
+    },
+    {
+      "path": "eeg_tools/workstation/process_gateway.py",
+      "size": 35783,
+      "sha256": "b0b7858af739baa488844bb22f5a3b71611178c89e758cd4d8ab171311586d0b"
+    },
+    {
+      "path": "models/denoiser_v1.pt",
+      "size": 395503,
+      "sha256": "01ded565fb87ded0057fc1a614bfcaec70a86cf7c4995bac1067c7159cd5ba6e"
+    },
+    {
+      "path": "pyproject.toml",
+      "size": 1740,
+      "sha256": "dbd9d6a65c0d8f391083e2ba586fdbe40f46e471f74bdb483f4103bfc4a551a8"
+    },
+    {
+      "path": "scripts/build_desktop.ps1",
+      "size": 9194,
+      "sha256": "2dc3c126f15a15e60bf7e4d56836da4a179f0b1ec31521f6fb6476a81b2e7b42"
+    },
+    {
+      "path": "scripts/evaluate_denoiser.py",
+      "size": 13179,
+      "sha256": "6b1ee957e422bb8075478a0d09cfb377655b6522f1698745cccf8e5436017608"
+    },
+    {
+      "path": "scripts/run_learned_denoise.py",
+      "size": 7449,
+      "sha256": "39c5ad69f0aeac32416e7f76b75d913d3c9289644e425b3d35b471df9f875b94"
+    },
+    {
+      "path": "scripts/start_learned_workstation.ps1",
+      "size": 3985,
+      "sha256": "e9ae049e6ea81f0aace2551f4bf61b2201a474233ec7a83599cec57931508232"
+    },
+    {
+      "path": "scripts/train_denoiser.py",
+      "size": 17551,
+      "sha256": "9c842632d846cb761d91883b0b7f9aec2804a026299beaeb4430dcfe59e3b228"
+    },
+    {
+      "path": "tests/test_acquisition_worker.py",
+      "size": 6464,
+      "sha256": "eb5d5422a80e8c64a8c9477a2ea3566789434a3b99fdd95fcb1b5c64b525e66c"
+    },
+    {
+      "path": "tests/test_learned_monitor.py",
+      "size": 19420,
+      "sha256": "d4dc03aebbb96a8056e656b9b1d2537031a329e2ba70cec323fc8f26b2e3b021"
+    },
+    {
+      "path": "tests/test_workstation_ssvep.py",
+      "size": 2529,
+      "sha256": "e16a9a130bb3691fe319b5529ff37ff1856d8941bc7ba152680162e254890fb6"
+    },
+    {
+      "path": "apps/realtime_command_display.py",
+      "size": 28330,
+      "sha256": "84f78fcc95deed2c5990647493a49a5ccd8585cb1732b7c7676f1acdd3a4ef1a"
+    },
+    {
+      "path": "apps/realtime_command_transport.py",
+      "size": 7954,
+      "sha256": "e049c3dc997316ceb52a7e74b342e38dc6e76ffbfdaf21b93ee0d594ffd02950"
+    },
+    {
+      "path": "apps/realtime_commands.py",
+      "size": 49023,
+      "sha256": "099e88c4c14ed00db5b375e48e7a27028622a31f1bef54a58307db91b9705600"
+    },
+    {
+      "path": "apps/workstation_ui/tests/test_v9_offline_ui.py",
+      "size": 34807,
+      "sha256": "f76c026a3e49f063d519e2f5edd394bc117f176b6e36cb33ec6d21c384ef3995"
+    },
+    {
+      "path": "apps/workstation_ui/v9_offline.py",
+      "size": 29603,
+      "sha256": "01d29fec88f96b1bd4c355e2fc0670c9fce0a542aec4b3ee104622fa26724553"
+    },
+    {
+      "path": "configs/learned_denoiser_v10_personal.json",
+      "size": 3436,
+      "sha256": "b8187ddd5382e404254c53bd44bdbc22bb63b2be5f07705549dade16d3bace14"
+    },
+    {
+      "path": "configs/learned_denoiser_v11_personal.json",
+      "size": 3780,
+      "sha256": "f74495d028c55e25887ba9e89a9bc8ff5e6c1ad7ab52ed604d33b04cd8721693"
+    },
+    {
+      "path": "configs/learned_denoiser_v12_personal.json",
+      "size": 4523,
+      "sha256": "48f5e13569b7a08b1ede17dc20683663547b1064ed240b031199c57dbcb97b1a"
+    },
+    {
+      "path": "configs/learned_denoiser_v13_personal.json",
+      "size": 5171,
+      "sha256": "6d8b1eeb5a09657b71a499767058dc69a3685d14d9e097d766b9d4c1a669bb5a"
+    },
+    {
+      "path": "configs/learned_denoiser_v14_personal.json",
+      "size": 6621,
+      "sha256": "3d0f73ef5575d51b5e7ce2e66e4e765d6108166cf95dad7d08b44a89149a98d0"
+    },
+    {
+      "path": "configs/learned_denoiser_v2.json",
+      "size": 1970,
+      "sha256": "6c64adec6eadd043bed47b5803f910233cfb970b98392091bc949331a7177643"
+    },
+    {
+      "path": "configs/learned_denoiser_v3.json",
+      "size": 1241,
+      "sha256": "a04da9b510a9af13511ca9f381ad02aa5d914eff543d31d2c8b9f6cb3ed053b3"
+    },
+    {
+      "path": "configs/learned_denoiser_v4.json",
+      "size": 1408,
+      "sha256": "66afc6cccd1fcfd8835be1a87301b06f056f8c8cf9b215ef529ca7a3e650e15f"
+    },
+    {
+      "path": "configs/learned_denoiser_v5_ssvep.json",
+      "size": 3001,
+      "sha256": "5c5ea64a992bda5aed30351e572a361d4361269b4d3bdf33ed2e3a7dbed92838"
+    },
+    {
+      "path": "configs/learned_denoiser_v6_ssvep.json",
+      "size": 4899,
+      "sha256": "f1deaf6f28add5f14f24719675fb071f1c27c62befc7bafafc47c3e8c66eb8f0"
+    },
+    {
+      "path": "configs/learned_denoiser_v7_ssvep.json",
+      "size": 5703,
+      "sha256": "ac578c9f2343510aeb7f6eeb843497b6e7a8320028fc409d8afd5cdfc660e243"
+    },
+    {
+      "path": "configs/learned_denoiser_v8_ssvep.json",
+      "size": 6049,
+      "sha256": "484950220254e0b2c256d8cea2bf4f5d8f9084fe7aa4616f406d5e240553a16a"
+    },
+    {
+      "path": "configs/learned_denoiser_v9_ssvep.json",
+      "size": 1173,
+      "sha256": "68cffb24a0c74047f2496cabcc9ad131cc39396ad6c5fa8abfea0d9d457ab59a"
+    },
+    {
+      "path": "configs/personal_ball_decoder_candidate.json",
+      "size": 2483,
+      "sha256": "6f2c3110d546d63831b622c04dae32f07da9b5d010121ffef64c1de7c50bedc4"
+    },
+    {
+      "path": "configs/personal_ssvep_calibration_v1.json",
+      "size": 1266,
+      "sha256": "d3abe603b16409153952c2f9f3ce05c0d8dade0db91fed9d67bae3dbb4def067"
+    },
+    {
+      "path": "configs/personal_ssvep_decoder_v1.json",
+      "size": 1148,
+      "sha256": "c2c0c248d0289c5c3bd6dc094024541897fd5e8e821c064850e498895d58ca13"
+    },
+    {
+      "path": "configs/personal_ssvep_decoder_v2.json",
+      "size": 1421,
+      "sha256": "0b998c9855fc2a205db51a2e7353b1c134a6bb746830de844bb4341a77b2579e"
+    },
+    {
+      "path": "configs/personal_ssvep_decoder_v3.json",
+      "size": 1803,
+      "sha256": "fc7eab99ef4261a4ffe474b9e4dc3677433fc14f6bfd5f2ec025eb0c806fac68"
+    },
+    {
+      "path": "configs/personal_ssvep_decoder_v4.json",
+      "size": 2611,
+      "sha256": "20a1404699419bf83c1dddacfa050c6ed642148fdbec6bc4e66887db6db58d77"
+    },
+    {
+      "path": "docs/NeuroStation-SSVEP数据接入与v5前置审核.md",
+      "size": 8827,
+      "sha256": "d28259a2d750b7c245ff7b6399cb741f8ed61c0d2bb44b3e418c82a2e50ce29e"
+    },
+    {
+      "path": "docs/NeuroStation-matched-public-SSVEP-20261014.md",
+      "size": 6614,
+      "sha256": "6935a0326bf1136cb4b6f9c120968f980bea32ddeee12882915652f084bb55e0"
+    },
+    {
+      "path": "docs/NeuroStation-personal-CCA-integration-20261013.md",
+      "size": 6177,
+      "sha256": "e82aa99795d9e9a0e548a380d015ec4b742e296ab600746a7ce68c816b815729"
+    },
+    {
+      "path": "docs/NeuroStation-personal-dataset-review-20261009.md",
+      "size": 8113,
+      "sha256": "064f80c57e0521e4065ec67472877ef725bde738bbedb67481745dc24631f60c"
+    },
+    {
+      "path": "docs/NeuroStation-personal-v9-output-diagnosis-20261011.md",
+      "size": 6291,
+      "sha256": "4cf11a36029b66c5efe7096863dacb35ea71f20d10249c5a1d5f104b2adf9905"
+    },
+    {
+      "path": "docs/NeuroStation-v10-v11-personal-training-20261013.md",
+      "size": 5643,
+      "sha256": "253c0f1360bb483422fad3407ae1df0c005c24c896c0010dfd731884cb65e472"
+    },
+    {
+      "path": "docs/NeuroStation-v12-personal-training-20261013.md",
+      "size": 7893,
+      "sha256": "f071329316f5d7e53a388439a5faa0aa73fa382b714f1803427000c1fbcc283e"
+    },
+    {
+      "path": "docs/NeuroStation-v13-followup-diagnosis-20261014.md",
+      "size": 7238,
+      "sha256": "c442cb60435ce438f9fe1b20d0ffdc67890006ca509dce4f750e5501ed7a1f10"
+    },
+    {
+      "path": "docs/NeuroStation-v13-long-context-training-20261013.md",
+      "size": 9274,
+      "sha256": "573c25f54e459d360dff374be453bca9951942f3a1ef5a54f96a9f39fb095ff0"
+    },
+    {
+      "path": "docs/NeuroStation-v14-personal-diagnostic-20261014.md",
+      "size": 9694,
+      "sha256": "b3dc7bd29d856d8ac7bc754c443293fb4b95679e6dc1327fc21de827636967a2"
+    },
+    {
+      "path": "docs/NeuroStation-v5-internal-diagnostic-and-safety-audit-20261007.md",
+      "size": 7474,
+      "sha256": "28c49e305d999320616d9c39544bd14116d0d6f9e554a34ad540e50a5fcb44df"
+    },
+    {
+      "path": "docs/NeuroStation-v6-GPU-training-and-internal-gate-20261007.md",
+      "size": 8044,
+      "sha256": "5014a0149843b3cb8c5fbd3f38dd447b1d349420ab58b94aa3522a90627d2128"
+    },
+    {
+      "path": "docs/NeuroStation-v7-internal-diagnostic-patch-20261008.md",
+      "size": 2338,
+      "sha256": "1292395fbeb84c860180c4b8e9c5b911330dd45b94485d8f8c4b69fe4d38a1ef"
+    },
+    {
+      "path": "docs/NeuroStation-v8-GPU-training-and-internal-diagnostic-20261008.md",
+      "size": 3467,
+      "sha256": "0f19261a0887d8f0c7ed681a86fad7464667b29a252e3dcdd07686ec945bb6ce"
+    },
+    {
+      "path": "docs/NeuroStation-v9-desktop-offline-analysis-20261011.md",
+      "size": 4745,
+      "sha256": "b0885dd9761666685354184dd84f66931d8c74c8340d727f614f391f36925c92"
+    },
+    {
+      "path": "docs/NeuroStation-v9-offline-test-model-20261008.md",
+      "size": 9864,
+      "sha256": "a69dafe07fe83a9db9067d38cc70c28dee2a3adc9958979113ce37623230cfe9"
+    },
+    {
+      "path": "docs/NeuroStation-个人SSVEP校准与独立会话采集.md",
+      "size": 7615,
+      "sha256": "1740f894612e0200d87d0010c905d5fc61bf580ecc9ea68099eae9a2c29d0342"
+    },
+    {
+      "path": "docs/NeuroStation-学习型EEG质量优化模型v2.md",
+      "size": 25148,
+      "sha256": "c4c9d5362cea1bf3fac51ddba863e19dc0e18041d3a5016f7c434e9bf1f9bb0d"
+    },
+    {
+      "path": "docs/NeuroStation-学习型EEG质量优化模型v3.md",
+      "size": 16338,
+      "sha256": "7a70d4140bc31bbf3ccdb47cd8dc3022a9945a609e5df3fdc4e0417bf96a9754"
+    },
+    {
+      "path": "docs/NeuroStation-学习型EEG质量优化模型v4.md",
+      "size": 3335,
+      "sha256": "fe7e1cae0d86df8b4cb421e6a00efef0c1678c3dda99b9bb19ddae1714c7cc4f"
+    },
+    {
+      "path": "docs/NeuroStation-学习型EEG质量优化模型v5-SSVEP任务保真评估.md",
+      "size": 11348,
+      "sha256": "db0e1d15fecc86bdcf27eae69bb989a759af786ac9a8a92671dfaba152048696"
+    },
+    {
+      "path": "docs/NeuroStation-改进开发推进执行方案-20261103.md",
+      "size": 38492,
+      "sha256": "85fca1637803853fea2f49a31108c27c8890fabe8d9b30b96f31426c9d61fbcf"
+    },
+    {
+      "path": "docs/NeuroStation-独立实时脑电指令应用.md",
+      "size": 5998,
+      "sha256": "93667b22026de5e76ec92d9f3933d102b7da83097cfa11147120e5b29c8f0e81"
+    },
+    {
+      "path": "docs/左右固定与单向移动闪烁脑电采集方案_正式版V1.0_20261022.docx",
+      "size": 48708,
+      "sha256": "ab73d13a935eae111439171883063e6f9c87bd3fbab0e53c1cb3b908f33cc089"
+    },
+    {
+      "path": "eeg_tools/learned_dataset_v2.py",
+      "size": 23588,
+      "sha256": "fbd034480634a366da63dfa458906503bc79ac69caba0756f4d0fe136fe0e922"
+    },
+    {
+      "path": "eeg_tools/learned_dataset_v4.py",
+      "size": 37211,
+      "sha256": "701f1358d08ffa8cbfc067e65de152e655574932a94a3818d4d66dce24c4567d"
+    },
+    {
+      "path": "eeg_tools/learned_denoise_v2.py",
+      "size": 25414,
+      "sha256": "9e7a9d0fec134784fe615c4cddab25091cacaee3cca93d4a115cd9681d103780"
+    },
+    {
+      "path": "eeg_tools/learned_denoise_v3.py",
+      "size": 26479,
+      "sha256": "276662a4ffdafaf16066e605ffa74028968e40c9cfda5e989c94bd5d23513974"
+    },
+    {
+      "path": "eeg_tools/learned_denoise_v4.py",
+      "size": 35746,
+      "sha256": "fc19a4470399d2e29a26076e6cd37a5f3b07d724804cfd8f735d619558d9082f"
+    },
+    {
+      "path": "eeg_tools/learned_domain_dataset_v3.py",
+      "size": 13421,
+      "sha256": "9f5ef5adf92f05d079ae76f28a0da92d00a47817b265add88eaf7bd4cf5c19c9"
+    },
+    {
+      "path": "eeg_tools/matched_ssvep_decoder.py",
+      "size": 3740,
+      "sha256": "016292f3415b843630d3cae1ba5a23431d3d7f3e06da8c71707ccb67e126770a"
+    },
+    {
+      "path": "eeg_tools/personal_ssvep_calibration_v1.py",
+      "size": 9550,
+      "sha256": "2bf0ac18c4725684898ad66456878d5efa5cf7d1fa3eb971b02283674560320d"
+    },
+    {
+      "path": "eeg_tools/personal_ssvep_decoder.py",
+      "size": 12622,
+      "sha256": "c2d4895d005049f3b351b76dddeaa689dfa6d27f847708a76dd25528cee27ecf"
+    },
+    {
+      "path": "eeg_tools/personal_ssvep_decoder_v2.py",
+      "size": 9624,
+      "sha256": "3271acc575472e748f5c6ca600782d4849279b681cba6ca52420ab13b0af057f"
+    },
+    {
+      "path": "eeg_tools/personal_ssvep_decoder_v3.py",
+      "size": 12261,
+      "sha256": "9fbd0cae8f0d952a35b2cdc7ebd2e777ab0cc7d522a497d9aa155e96e4350978"
+    },
+    {
+      "path": "eeg_tools/personal_ssvep_decoder_v4.py",
+      "size": 26351,
+      "sha256": "2b610a98d26189a2bd00586435392d8c4733b8596dbb50e4d968e88f2446d54e"
+    },
+    {
+      "path": "eeg_tools/personal_ssvep_session_contract.py",
+      "size": 17569,
+      "sha256": "cfc8164cf9082f4ff6884f7561d0cf562e1095eb817e7d2875d65638ba49a79e"
+    },
+    {
+      "path": "eeg_tools/realtime_capture.py",
+      "size": 29421,
+      "sha256": "b3616c74d49f3483a812a28ce1a298d68c191b25e3c0608ef9270dea214d0087"
+    },
+    {
+      "path": "eeg_tools/realtime_command_inference.py",
+      "size": 8566,
+      "sha256": "f5c7d4d99dfa9ca98e6362426ad3c1e22907a8bfe18d53c3bbe2a66808fbd97e"
+    },
+    {
+      "path": "eeg_tools/realtime_commands.py",
+      "size": 17030,
+      "sha256": "1a151842de8d3abda23933f119dcdde3ebc93284d4a178632390db65f45aa324"
+    },
+    {
+      "path": "eeg_tools/ssvep_denoise_v10.py",
+      "size": 8182,
+      "sha256": "439f5c582f03d86b5e41f5c2f468aafef7142ae6c9f5348ccb08eb27af70ff71"
+    },
+    {
+      "path": "eeg_tools/ssvep_denoise_v5.py",
+      "size": 18979,
+      "sha256": "e912e3fef500eee389e9a36c98f4d64d93a8506b9c0f6635d0909a69108fa5ac"
+    },
+    {
+      "path": "eeg_tools/ssvep_denoise_v6.py",
+      "size": 23178,
+      "sha256": "4172b56005a36ae1be90f923a01e49b1669d6dc5c1123608d59278bed5eb5c75"
+    },
+    {
+      "path": "eeg_tools/ssvep_denoise_v7.py",
+      "size": 19878,
+      "sha256": "e7d351e894b8f309cb443384624447590869b5964a1e5de3735e79a925cbc444"
+    },
+    {
+      "path": "eeg_tools/ssvep_denoise_v8.py",
+      "size": 21442,
+      "sha256": "f32abc2320225f547539c2daa0c9832489cf49f9936027fbbf7d3ec9440a0f81"
+    },
+    {
+      "path": "eeg_tools/ssvep_denoise_v9.py",
+      "size": 1650,
+      "sha256": "34929b216de7b0547015faf99cb3fe40910585e39c3a20d26d02d73322d7f173"
+    },
+    {
+      "path": "eeg_tools/ssvep_internal_benchmark_v5.py",
+      "size": 37647,
+      "sha256": "3ee16b4c6ba88e51f50fa757ac8792c9a53eaaef437b120c718b37ec5740f05a"
+    },
+    {
+      "path": "eeg_tools/ssvep_reference_v5.py",
+      "size": 30760,
+      "sha256": "25cdd661870df17a0cb632923912a9bfb95eca923e2181036fcf360513169eea"
+    },
+    {
+      "path": "eeg_tools/ssvep_saved_audit_v5.py",
+      "size": 39310,
+      "sha256": "54d5f785929630b835ea37298ffb80667f9cad464b5f8884cbee20e258b353ac"
+    },
+    {
+      "path": "eeg_tools/ssvep_saved_audit_v6.py",
+      "size": 38969,
+      "sha256": "fa48f282077c0b43823f685321e0eab3b8e1a9c282846bf5df39ce8cdc94be69"
+    },
+    {
+      "path": "eeg_tools/ssvep_saved_audit_v7.py",
+      "size": 41386,
+      "sha256": "5f058d8e018d1e5e79b189f28ffee1b39e297e8db046bf0b6cb8ddf3bb05fe92"
+    },
+    {
+      "path": "eeg_tools/ssvep_saved_audit_v7_patch.py",
+      "size": 10271,
+      "sha256": "fa0a2019c7e745b64cd7f18f2babac65709e6faa9ae230c9d4c6c92bea6b64bd"
+    },
+    {
+      "path": "eeg_tools/ssvep_saved_audit_v8.py",
+      "size": 42345,
+      "sha256": "12fd4ed8ead5b3735c1459465dd626928c67c4c4b0e80aac07ef9cb23258a5f9"
+    },
+    {
+      "path": "eeg_tools/ssvep_task_eval_v5.py",
+      "size": 43742,
+      "sha256": "12b07b07f9bf838c9a7d314d51dd117a9bd659ccdb73ca41f440aa629eafabf4"
+    },
+    {
+      "path": "eeg_tools/ssvep_test_runtime.py",
+      "size": 14525,
+      "sha256": "d235cf231b9669d2e76ca3eb2e227906a751a808667d7180b40d8bdbfd5066ef"
+    },
+    {
+      "path": "eeg_tools/ssvep_v10_data.py",
+      "size": 8843,
+      "sha256": "ae2107e1030793130af107ce450a7bcfc4fb130c5e08237bc1331d622c0d9941"
+    },
+    {
+      "path": "eeg_tools/ssvep_v10_runtime.py",
+      "size": 5820,
+      "sha256": "2191fd1478c117f6f4234908449b47cc8b1690b04350b18d6d1eb123137c04fe"
+    },
+    {
+      "path": "eeg_tools/ssvep_v11_runtime.py",
+      "size": 5333,
+      "sha256": "351bdd412f23fb68878cc65dd13d045f436e4f162554a80dab821d5d46ff7de3"
+    },
+    {
+      "path": "eeg_tools/ssvep_v12_runtime.py",
+      "size": 11273,
+      "sha256": "9b09e32ff7d525e62b6665e2a44323f2b7bc571cb14d8a948467b4bdac17d305"
+    },
+    {
+      "path": "eeg_tools/ssvep_v13_runtime.py",
+      "size": 21756,
+      "sha256": "a34eb54e5fb2f68463298d99b38a9299c279e2743c42f7d65384921137246db7"
+    },
+    {
+      "path": "eeg_tools/ssvep_v14_runtime.py",
+      "size": 30181,
+      "sha256": "88b0be4310a7f9d9ecbd0d47f95129b08f5e12a293177c14d7e5aa41a5d58c0c"
+    },
+    {
+      "path": "eeg_tools/ssvep_v6_contract.py",
+      "size": 48625,
+      "sha256": "7907014e9f2ea559a6e88f0ea416d44834e0a2a71aa285f1b5cd75d8a67f9c3a"
+    },
+    {
+      "path": "eeg_tools/ssvep_v6_internal_eval.py",
+      "size": 27449,
+      "sha256": "bf18506f90f06abb3548e9e8f989f7d93494ef894546e33313375bab58bc8d23"
+    },
+    {
+      "path": "eeg_tools/ssvep_v7_experiment.py",
+      "size": 70438,
+      "sha256": "44ca201b235fac796743e9c6870c4dffe6a131303ad624140d72db2c60265605"
+    },
+    {
+      "path": "eeg_tools/ssvep_v7_internal_eval.py",
+      "size": 21645,
+      "sha256": "c10f63d7c9a7108a6d522929dde579d68ce2bd7c56be94cddaf255c675f08d13"
+    },
+    {
+      "path": "eeg_tools/ssvep_v7_internal_eval_patch.py",
+      "size": 9515,
+      "sha256": "ef485966877e56c1cdba91a7ee1751006df3fd38e3d57e245b041cdc55e01952"
+    },
+    {
+      "path": "eeg_tools/ssvep_v8_experiment.py",
+      "size": 76825,
+      "sha256": "b6089d893177368297787e30ecad9b4568c6bc3e3f3975ed1a1a43426bc49a82"
+    },
+    {
+      "path": "eeg_tools/ssvep_v8_internal_eval.py",
+      "size": 21969,
+      "sha256": "b661a70de9b3b1eee4d1e4c48b4e4d86f28b6e12d37b0fc63a6a29dc94b789a7"
+    },
+    {
+      "path": "eeg_tools/ssvep_v9_delivery.py",
+      "size": 8514,
+      "sha256": "a3a81a6eb862818fa621cf8e551c468fc716832f681b8218a025454e99b2ee05"
+    },
+    {
+      "path": "eeg_tools/workstation/personal_decoder_analysis.py",
+      "size": 12403,
+      "sha256": "4beb2143d1a4952972ee4bf9b5a486855c84a90fbd045043503f9881d4354cc1"
+    },
+    {
+      "path": "eeg_tools/workstation/v9_offline.py",
+      "size": 38486,
+      "sha256": "b9420adf6a5eef185aa7a0eca59b28589129499be919f6a1d444ee281428478b"
+    },
+    {
+      "path": "requirements-ml-gpu.txt",
+      "size": 342,
+      "sha256": "742dd0e93af4a346cd3f2bff4f6284f4437e17f6c358b03af92ac491a2a625bb"
+    },
+    {
+      "path": "scripts/analyze_ssvep_temporal_confirmation.py",
+      "size": 9200,
+      "sha256": "e24bdf7612475e6f3256dfccca84ceda0656bb2e0a2038f3b76717ed66f7a8ab"
+    },
+    {
+      "path": "scripts/apply_ssvep_denoiser_v5.py",
+      "size": 17652,
+      "sha256": "745068d692f6d7aade6ed6952841d72df638a66ec6ec9a017496337696c35d39"
+    },
+    {
+      "path": "scripts/audit_local_ssvep_v5.py",
+      "size": 39741,
+      "sha256": "8d7df220533e1b27d98f5acb1b54d8fcb17760ea994863af0ebc1ada5d4c59f9"
+    },
+    {
+      "path": "scripts/audit_personal_eeg_dataset.py",
+      "size": 17648,
+      "sha256": "9ecd30afea79625d155ad982e64cb85be71c447cc73ce3569e3c372a76a89363"
+    },
+    {
+      "path": "scripts/audit_ssvep_saved_internal_v6.py",
+      "size": 1845,
+      "sha256": "378143836a25440a5f03afcff18ddc85d7b0d69921f0a85aa225f8c34c658f6e"
+    },
+    {
+      "path": "scripts/audit_ssvep_saved_internal_v7.py",
+      "size": 1844,
+      "sha256": "c2cac1f8bc64089a58d432998a52a272e9725d10f5f3f56c6f3e02e297ad280b"
+    },
+    {
+      "path": "scripts/audit_ssvep_saved_internal_v7_patch.py",
+      "size": 317,
+      "sha256": "d97b5b0917390aea821ceb48fa2b01a463acd8b146b89727b3db2e39324b67a2"
+    },
+    {
+      "path": "scripts/audit_ssvep_saved_internal_v8.py",
+      "size": 1884,
+      "sha256": "9d268261d5ef0265c75ebc0891d0cbf5a4123832175b5094e543af44728053f1"
+    },
+    {
+      "path": "scripts/audit_ssvep_saved_predictions_v5.py",
+      "size": 1530,
+      "sha256": "1109d64efe6e2f5a93fe2305a930012bbf5fed5a1640f5add1026ce775ad4eec"
+    },
+    {
+      "path": "scripts/audit_ssvep_stimulus_integrity.py",
+      "size": 7330,
+      "sha256": "15dcada7252e11a260b506adb9c6607573b77e9097fdf92b061bec60a2a9f493"
+    },
+    {
+      "path": "scripts/audit_ssvep_v12_long_waveform.py",
+      "size": 30250,
+      "sha256": "dab31c280c2907c7026dcd29e62d5f62652d9eb2dbdb93135b113332e677d832"
+    },
+    {
+      "path": "scripts/benchmark_matched_public_ssvep.py",
+      "size": 40632,
+      "sha256": "a4304f58b3ed8b6e60192c81fa0825121b6ad106d563db0f04e0a357e90b068a"
+    },
+    {
+      "path": "scripts/benchmark_open_ssvep_commands.py",
+      "size": 19578,
+      "sha256": "8dc377d05577eefff3413aceb3ee8391acd0e04208f18b5f722e77dba93e8db4"
+    },
+    {
+      "path": "scripts/benchmark_ssvep_internal_v5.py",
+      "size": 2082,
+      "sha256": "8271f978e157b46a366cfcefb708c1831f968be709523104ada6c2db9722d7d5"
+    },
+    {
+      "path": "scripts/build_denoise_dataset_v2.py",
+      "size": 2489,
+      "sha256": "31cac63a3a550bef2753db02f50eec40fa9ca7957b489e12089e14d45fd639e0"
+    },
+    {
+      "path": "scripts/build_denoise_dataset_v4.py",
+      "size": 2082,
+      "sha256": "afadfb834e98683a5ed37ad919e9f906f72a4bcd62dd37987e6d0396818c1f02"
+    },
+    {
+      "path": "scripts/build_ssvep_test_model.py",
+      "size": 277,
+      "sha256": "250b014d48b7d4dc16b308baa3112f55a55ca5074e75b619172ff6207c679ef4"
+    },
+    {
+      "path": "scripts/check_gpu_training_environment.py",
+      "size": 12265,
+      "sha256": "a02dd3544a336680701b46e87ec84717510ff07143cd3d26acec652084a26f50"
+    },
+    {
+      "path": "scripts/convert_multifrequency_mu2024.py",
+      "size": 24302,
+      "sha256": "36263797c87b70d86a05b475b83b4cc74e355d903e124c96bfaf3f67a2460534"
+    },
+    {
+      "path": "scripts/create_ssvep_test_demo.py",
+      "size": 3152,
+      "sha256": "9b1e3834fa39dd8b3efe8c3d90c54bc5bffcc7419f652ce748a29716fd2fa34a"
+    },
+    {
+      "path": "scripts/diagnose_historical_ssvep_v3.py",
+      "size": 9741,
+      "sha256": "813f24ac48e4f2e24983573b9f0e53028eb708622fb6251d0e31938bf70c623e"
+    },
+    {
+      "path": "scripts/diagnose_neurostation_v9_output.py",
+      "size": 14688,
+      "sha256": "09aab6878485de47320ccc02c708f960bff19d4bdc5931cd43d552ff282293fa"
+    },
+    {
+      "path": "scripts/diagnose_personal_ssvep_presence.py",
+      "size": 7066,
+      "sha256": "59a10861f7959c8655b1099486aaa1addb138330144d33d55f14a8b84307df67"
+    },
+    {
+      "path": "scripts/diagnose_ssvep_v13_loss_conflict.py",
+      "size": 27686,
+      "sha256": "182a247190fbcf72caa6a5e8842481c60f4061ce476a89a7244e572e4ecd2c3d"
+    },
+    {
+      "path": "scripts/diagnose_ssvep_v13_slow_drift.py",
+      "size": 20900,
+      "sha256": "67c9473b95abc67db1d3d601b7ba2d61f8c4270f1c3d88334f15532c7ab57f5b"
+    },
+    {
+      "path": "scripts/diagnose_ssvep_v14_event_window_sensitivity.py",
+      "size": 9317,
+      "sha256": "38746aa844dbd14ae6370e6bdd7dcade5f107e40b6245607656ca8f13e13ce33"
+    },
+    {
+      "path": "scripts/evaluate_denoiser_v2.py",
+      "size": 30550,
+      "sha256": "ea39a75d5497fd3edc6312cec4fed6ec9f4131adafc8831258dac2208d3e9b7c"
+    },
+    {
+      "path": "scripts/evaluate_denoiser_v2_transfer.py",
+      "size": 45240,
+      "sha256": "e041633a642fe5e98a2a489f66fafd85332b9ee2ed0b1c1d341c8a5085ae757a"
+    },
+    {
+      "path": "scripts/evaluate_denoiser_v4.py",
+      "size": 38125,
+      "sha256": "07131c4590b7a4a9085a914df87e531acc2750ea448633449d377c33a7b4cbe5"
+    },
+    {
+      "path": "scripts/evaluate_domain_gate_v3.py",
+      "size": 31469,
+      "sha256": "6b6eb7d160e52fb1a0033d5908879dd282c317c77423dad9cd6ecd32240c94d6"
+    },
+    {
+      "path": "scripts/evaluate_personal_cca_outputs.py",
+      "size": 8291,
+      "sha256": "38dbfd3ee857383ce5404b81a35077cac2e54d402667821602b023c78e4fab62"
+    },
+    {
+      "path": "scripts/evaluate_personal_ssvep_calibration_v1.py",
+      "size": 10862,
+      "sha256": "1399ff9065262381324c00d998017c67a297a3181cadc9f816bbd378d2d5c010"
+    },
+    {
+      "path": "scripts/evaluate_personal_ssvep_decoder_v2.py",
+      "size": 9393,
+      "sha256": "6408ecbc089772590d4334e964f38bb89e524d344582b0e4466ae10b1ea8fadd"
+    },
+    {
+      "path": "scripts/evaluate_personal_ssvep_decoder_v3.py",
+      "size": 9846,
+      "sha256": "59087684683e87405bfbd930dbf48065c4917629373843285643a235c90d4295"
+    },
+    {
+      "path": "scripts/evaluate_personal_ssvep_decoder_v4.py",
+      "size": 8261,
+      "sha256": "91d2fd7496a1c9d1e562843cb684d48fae02f8d0782b864db245b235c7f2280f"
+    },
+    {
+      "path": "scripts/evaluate_personal_ssvep_decoder_v4_sessions.py",
+      "size": 12393,
+      "sha256": "8435df0fbb650be3e1b88defdf7d2624647b25880a038970bbcfa9a933513997"
+    },
+    {
+      "path": "scripts/evaluate_ssvep_denoiser_v10.py",
+      "size": 29785,
+      "sha256": "03c41af68f7b597c37935b0be3532be54f346160abbe87017dac43b16e20c821"
+    },
+    {
+      "path": "scripts/evaluate_ssvep_denoiser_v11.py",
+      "size": 9305,
+      "sha256": "1f8e945cffe431009c56115c586e3ebb250ba05adb582f103768da5cdd04adc7"
+    },
+    {
+      "path": "scripts/evaluate_ssvep_denoiser_v12.py",
+      "size": 14790,
+      "sha256": "6b9ded01e7b941d2f74898a466b12479ed550d3e62aafea9367f8f4e08fadd21"
+    },
+    {
+      "path": "scripts/evaluate_ssvep_denoiser_v13.py",
+      "size": 45579,
+      "sha256": "4529ce68afd9d27897d312ee297a2d949176fdb38b81387524b9292c5a3879f8"
+    },
+    {
+      "path": "scripts/evaluate_ssvep_denoiser_v14.py",
+      "size": 11122,
+      "sha256": "d342bdafbe964070a6708ad731864e76284ff3a912c5f78e2fa79758ff1a0e1e"
+    },
+    {
+      "path": "scripts/evaluate_ssvep_denoiser_v6_internal.py",
+      "size": 375,
+      "sha256": "5dde8ad7a283e76e7510c0b0f9b1e122f1490e2696f1c80b1922fd9346c1d511"
+    },
+    {
+      "path": "scripts/evaluate_ssvep_denoiser_v7_internal.py",
+      "size": 289,
+      "sha256": "18a26b9b24d80e503514940b7bd14a8d3aba4f32cf303950f0c081f3bbd357a7"
+    },
+    {
+      "path": "scripts/evaluate_ssvep_denoiser_v7_internal_patch.py",
+      "size": 314,
+      "sha256": "ddb440a1df92cb8e39385c678f8903b0522f13f6aca44627b168310a92821249"
+    },
+    {
+      "path": "scripts/evaluate_ssvep_denoiser_v8_internal.py",
+      "size": 298,
+      "sha256": "94ca72bf2b4979019d5d52b4e8f80fe0662025cda275d028e10e0a02165c299c"
+    },
+    {
+      "path": "scripts/evaluate_ssvep_task_v5.py",
+      "size": 2243,
+      "sha256": "5bff24be4c095d76505a733a5c2672003913a97ca93c3b852e2219ef9215ff61"
+    },
+    {
+      "path": "scripts/experiment_personal_ssvep_filterbank_20261014.py",
+      "size": 31464,
+      "sha256": "6ee4737fec9ab37c0e615d18cd32a68f157c757e147e797af3962cba8137f4a2"
+    },
+    {
+      "path": "scripts/explore_multifrequency_mu2024.py",
+      "size": 14251,
+      "sha256": "5d7cfc269767500064c310c8c0e3190907b3f1c338942be7baf8185a301f876e"
+    },
+    {
+      "path": "scripts/inventory_historical_ssvep.py",
+      "size": 17608,
+      "sha256": "36f5888d8b438e92ba55bbaa0e277f8f745f33fbc79bfd6492228ccd579749a8"
+    },
+    {
+      "path": "scripts/plot_ssvep_v14_diagnostic.py",
+      "size": 10983,
+      "sha256": "bf32cd4fee7f96576f988fb5285425fd60c04ebf573779af5cd329190bb20741"
+    },
+    {
+      "path": "scripts/prepare_matched_ssvep_training.py",
+      "size": 20096,
+      "sha256": "d9bcce9ffd0f9aeb5e34b6267fc966a9c727fe47b7cf0b74482d2df8f8eca7d9"
+    },
+    {
+      "path": "scripts/prepare_ssvep_reference_v5.py",
+      "size": 2557,
+      "sha256": "ee80bd1c4693769f1903370159b46e82444225fab67f0fce53254631d4847cb8"
+    },
+    {
+      "path": "scripts/run_learned_denoise_v2.py",
+      "size": 14489,
+      "sha256": "4f18d5b464fb3c2f552ac5acefc3d5c666f6e0cb7b643f23415f3f8abe85ad2d"
+    },
+    {
+      "path": "scripts/run_learned_denoise_v3.py",
+      "size": 13702,
+      "sha256": "42352b1f3142980921927e458876c14def807ba851b8733bb2f3cd489acfcbfb"
+    },
+    {
+      "path": "scripts/run_learned_denoise_v4.py",
+      "size": 13826,
+      "sha256": "452d835ca8ef9a71267b8b02d3a11283c761886feb3d6e2b9eaf2d4479165ee2"
+    },
+    {
+      "path": "scripts/run_realtime_capture.py",
+      "size": 274,
+      "sha256": "a416d260bcd90ec44967f1f0d59da25bdb4a0193f174ca896701c3bb001c2529"
+    },
+    {
+      "path": "scripts/run_realtime_command_inference.py",
+      "size": 7118,
+      "sha256": "b149c7549bc00f9ab1d18678b2538aef04d020053c0cdd4ad6e828b3d388b5d7"
+    },
+    {
+      "path": "scripts/run_realtime_commands.py",
+      "size": 1189,
+      "sha256": "ec5b2d83889aca7fb630329032d4728bc1c7822d47eec40f06307a7ef1dffb1f"
+    },
+    {
+      "path": "scripts/run_ssvep_test_model.py",
+      "size": 6904,
+      "sha256": "3811126f1b1db5cc5654edea401565345410f7f8e42deb527b90ccfa6ace6536"
+    },
+    {
+      "path": "scripts/run_ssvep_v12_offline_analysis.py",
+      "size": 10564,
+      "sha256": "c91f827336c88da25510e63f0ed82959c41d1933ffdf049e8eee42de62d14d7b"
+    },
+    {
+      "path": "scripts/run_v9_offline_analysis.py",
+      "size": 1315,
+      "sha256": "bf0e024f401604060384969f343bce02560900be810b7221eef096cdecf72ee7"
+    },
+    {
+      "path": "scripts/start_denoiser_v2_diagnostics.ps1",
+      "size": 12605,
+      "sha256": "0dcd31fbc3b8119c2d1e8b774fedd9f299b279e93fd7a68d8a07b9bb5e4f59fb"
+    },
+    {
+      "path": "scripts/start_denoiser_v3_diagnostics.ps1",
+      "size": 10805,
+      "sha256": "8ae48676ad5221a6c9561ebe5edbc281b8caad79b3a1fbd56c3f2a79661b5c4c"
+    },
+    {
+      "path": "scripts/start_denoiser_v4_diagnostics.ps1",
+      "size": 4231,
+      "sha256": "c792e18578cf53d76cdd724dd6386e30536fde67416d6df6cf4193669e919707"
+    },
+    {
+      "path": "scripts/start_realtime_commands.ps1",
+      "size": 1927,
+      "sha256": "ed59ac4a1bc2eee21454fd3cc7396477b94a7a2ca608401ac337a8c5e101ae32"
+    },
+    {
+      "path": "scripts/start_ssvep_test_model.ps1",
+      "size": 1557,
+      "sha256": "11ee91eeb2aebf5ece461cb72b2a561f3b26f8edfb345d89ea5ccee83355f352"
+    },
+    {
+      "path": "scripts/start_v9_offline_workstation.ps1",
+      "size": 4567,
+      "sha256": "d0095fe85e9fd7c503a34c23444710f4ad9aa3dbdde0522ae493b72af8d8ca03"
+    },
+    {
+      "path": "scripts/test_multifrequency_mu2024_ssvep_decode.py",
+      "size": 15709,
+      "sha256": "46e1badec36a78e5200f9257fe2231f6b86b0bc082adfad55ce56d1bd45eb9ee"
+    },
+    {
+      "path": "scripts/test_ssvep_model_demo.ps1",
+      "size": 1349,
+      "sha256": "609bd802cf17528a1f3c384c4809e7ab41e81fef500dabf5ae3bccc7f7a8da60"
+    },
+    {
+      "path": "scripts/train_denoiser_v2.py",
+      "size": 25653,
+      "sha256": "efe82e1194fe9a08c344c57e94d557dc663d61cd4aa0c8bc6ef7171507149180"
+    },
+    {
+      "path": "scripts/train_denoiser_v4.py",
+      "size": 24204,
+      "sha256": "3825123b3948e5c4c42a8ea05da41569bb1a5c1fe2f8a69544828e4158c7a3df"
+    },
+    {
+      "path": "scripts/train_domain_gate_v3.py",
+      "size": 22736,
+      "sha256": "cb2cdc450c9c19f2c9087d8de990f251505bd3a800afbeabcff6cf3095d9828b"
+    },
+    {
+      "path": "scripts/train_matched_ssvep_decoder.py",
+      "size": 21384,
+      "sha256": "045ea3719b66231d5c1983a47d43dd550f88fab41ad2fa57153ed857e33b22b3"
+    },
+    {
+      "path": "scripts/train_matched_ssvep_decoder_live_v2.py",
+      "size": 21166,
+      "sha256": "669e55a3396245ce27011cac938c3e021e997215d58f4b7ea16a1579df703463"
+    },
+    {
+      "path": "scripts/train_ssvep_denoiser_v10.py",
+      "size": 22988,
+      "sha256": "cb4ea42f89d85394dd5092d1e9140c5ade8ca8f59dc24ac08df49739f5107767"
+    },
+    {
+      "path": "scripts/train_ssvep_denoiser_v11.py",
+      "size": 13369,
+      "sha256": "dd9b54f7ab1c2a7cada1365a4004d2de7f5d72860449ba6333ac6a383efac736"
+    },
+    {
+      "path": "scripts/train_ssvep_denoiser_v12.py",
+      "size": 23786,
+      "sha256": "724ac728410231ee9e14098161c91e59d0e0297acb796a9053c0be9a06bbba00"
+    },
+    {
+      "path": "scripts/train_ssvep_denoiser_v13.py",
+      "size": 21779,
+      "sha256": "bf8016b727a451976ea41a587ff59e4f21c9a143390eca860a52f4efce1eec4e"
+    },
+    {
+      "path": "scripts/train_ssvep_denoiser_v14.py",
+      "size": 21774,
+      "sha256": "2b7da85499a411f8e44df933f03f80c9cbd36566eec0bb7446b9247d873d40a9"
+    },
+    {
+      "path": "scripts/train_ssvep_denoiser_v5.py",
+      "size": 7158,
+      "sha256": "74d0a9617592aadb89dd490279c3a2d55106dd495632df96d43b12698152282d"
+    },
+    {
+      "path": "scripts/train_ssvep_denoiser_v6.py",
+      "size": 15163,
+      "sha256": "4d8d5bba56a63c932fa482da547b075cd6255448bc1c50bbca87f24fbd2ee846"
+    },
+    {
+      "path": "scripts/train_ssvep_denoiser_v7.py",
+      "size": 2135,
+      "sha256": "1a05f477a572ff4537ae88bec4b4ee819fd678cbebd3d75b4717c0061e4a836d"
+    },
+    {
+      "path": "scripts/train_ssvep_denoiser_v8.py",
+      "size": 2135,
+      "sha256": "c48634954edd5b93db17f58160ba23862ebb6f1512ba57a66f62ac071e9ffd72"
+    },
+    {
+      "path": "scripts/validate_personal_ssvep_session_contract.py",
+      "size": 3312,
+      "sha256": "41a479e75b31e8a5353ab3d5052395280bb8e0626e04cc56e00d86a4cfab792b"
+    },
+    {
+      "path": "scripts/verify_denoiser_v4_artifacts.py",
+      "size": 7852,
+      "sha256": "0fc93d4143334d6bdcf032056e129dfbd88c6c234f0d98723d109664b7767736"
+    },
+    {
+      "path": "scripts/verify_ssvep_test_delivery.py",
+      "size": 6265,
+      "sha256": "99292a30bebb71f93395eceb02089d54c3c04dc517ffba96a6ff3ae37e0f0609"
+    },
+    {
+      "path": "scripts/verify_ssvep_v14_final.py",
+      "size": 7657,
+      "sha256": "554e3fafcf868e361064f14317a42e0fd508f101db7bf0df28072c7c153b9d10"
+    },
+    {
+      "path": "tests/test_analyze_ssvep_temporal_confirmation.py",
+      "size": 2313,
+      "sha256": "9ed57541cd8c0b16083dc7a8290c3f4d9df978833392af0ae2baa611f5c992b8"
+    },
+    {
+      "path": "tests/test_apply_ssvep_denoiser_v5.py",
+      "size": 10854,
+      "sha256": "a10927b8b8afa8b94e17d6bb0c70d5bed8f37fc2448a81e97a1b2f6d7aa4efad"
+    },
+    {
+      "path": "tests/test_audit_local_ssvep_v5.py",
+      "size": 24245,
+      "sha256": "26a866a4861cd96ea91d8d033690596923e5155485599d8c1500c89c1de0404d"
+    },
+    {
+      "path": "tests/test_audit_ssvep_v12_long_waveform.py",
+      "size": 19716,
+      "sha256": "388366fa559fe1683da7906cc39cee5e4d2513cc3f0e429b8bf077f0c0d10793"
+    },
+    {
+      "path": "tests/test_benchmark_matched_public_ssvep.py",
+      "size": 17100,
+      "sha256": "e3bb9004531096cd8c138c05902ef4ed6a18d6bbedb30e8012f76adceaf58d0f"
+    },
+    {
+      "path": "tests/test_benchmark_open_ssvep_commands.py",
+      "size": 3898,
+      "sha256": "264b0999ac79aa44c7ac10d754193bce0c026f460769d97aa4dbe5449c2deea8"
+    },
+    {
+      "path": "tests/test_convert_multifrequency_mu2024.py",
+      "size": 8583,
+      "sha256": "7538bce616d30e55d71236ef036c9f11a2587a95ad81d719dc4cc88cb0430fc5"
+    },
+    {
+      "path": "tests/test_denoiser_v2_launcher.py",
+      "size": 16640,
+      "sha256": "833d9724b4989c43db5b59eadcb7d0d879a3f5e742565e451478880cca7bd135"
+    },
+    {
+      "path": "tests/test_denoiser_v3_launcher.py",
+      "size": 12539,
+      "sha256": "60ad94c0b586b13c843c74bba8c22f13d89fc03083402420e6ba7da9a61f43c1"
+    },
+    {
+      "path": "tests/test_diagnose_personal_ssvep_presence.py",
+      "size": 1164,
+      "sha256": "9622aee5a4d5240095fc5e3125463be569539cbcb7d0083ff59aef6b0a3ffe83"
+    },
+    {
+      "path": "tests/test_diagnose_ssvep_v13_loss_conflict.py",
+      "size": 17339,
+      "sha256": "387d1ca973af30ecb83e16978903355193ced5edc520ae2a11d389839c7ee3be"
+    },
+    {
+      "path": "tests/test_diagnose_ssvep_v13_slow_drift.py",
+      "size": 8188,
+      "sha256": "6312d3f91bb48c914fb774aaa24a1d6a0f5c950846d00b82b74ae0fce7234ccd"
+    },
+    {
+      "path": "tests/test_diagnose_ssvep_v14_event_window_sensitivity.py",
+      "size": 1767,
+      "sha256": "fd99357677aa5a6f14a750988cd81405d4a4682d81509b2de7c3a5be9c6c72cd"
+    },
+    {
+      "path": "tests/test_domain_gate_v3_evaluation.py",
+      "size": 19453,
+      "sha256": "5b777775557c10bfdf846530271830cc28ec70919cfedaed278e62a34fe00969"
+    },
+    {
+      "path": "tests/test_evaluate_denoiser_v4.py",
+      "size": 17968,
+      "sha256": "1808093a0b272d1f048a3a6893df1cfdac2bd13b5d5ee742d1998e715581cad4"
+    },
+    {
+      "path": "tests/test_evaluate_personal_ssvep_calibration_v1.py",
+      "size": 1827,
+      "sha256": "959d378ffc56a7511adf07bc22c6e9e72ca04d0ff53cc2398cb760e66763221e"
+    },
+    {
+      "path": "tests/test_evaluate_personal_ssvep_decoder_v2.py",
+      "size": 1501,
+      "sha256": "afa09362d7438c74f95e76ff1c7c7577e491a8022ff36d9bf77e89d257654a59"
+    },
+    {
+      "path": "tests/test_evaluate_personal_ssvep_decoder_v3.py",
+      "size": 1805,
+      "sha256": "99b1fe6bffddd1346491337fb3e8e59f56ff86cf6c47f7ca20f7761467f35a0e"
+    },
+    {
+      "path": "tests/test_evaluate_personal_ssvep_decoder_v4_sessions.py",
+      "size": 4353,
+      "sha256": "7112d7f758abfe34ca1785ca9633bb09977ae7d379dfb2674279795e428e81ee"
+    },
+    {
+      "path": "tests/test_evaluate_ssvep_denoiser_v10.py",
+      "size": 15289,
+      "sha256": "eeefc4339353043a83b8a0175dbce4a5556fdc0a4faa83ca1eb5573d9c55ffd2"
+    },
+    {
+      "path": "tests/test_evaluate_ssvep_denoiser_v11.py",
+      "size": 1313,
+      "sha256": "372a1d91cfa063f6c9d143b014c4c972a4da09e83dd2e854fca01f599aedc7d6"
+    },
+    {
+      "path": "tests/test_evaluate_ssvep_denoiser_v12.py",
+      "size": 1199,
+      "sha256": "937e9def799961a9267d8669b53c823a66770e68a2051b4f5c42ce0fe9d4039a"
+    },
+    {
+      "path": "tests/test_evaluate_ssvep_denoiser_v13.py",
+      "size": 15403,
+      "sha256": "89eedf1391bbf1c568cce762ad2efefd77f04b9c984aaed87364b566a3b2ee09"
+    },
+    {
+      "path": "tests/test_evaluate_ssvep_denoiser_v14.py",
+      "size": 4066,
+      "sha256": "76ff2e880ec6bd26966fdca4d71513305c6ad7b778e4bab9bf94fc1e52a341b5"
+    },
+    {
+      "path": "tests/test_experiment_personal_ssvep_filterbank_20261014.py",
+      "size": 1912,
+      "sha256": "67c488a9737b01dbaa10200c5374b6f919b347603bee8cc07ba6c06c1f49ff44"
+    },
+    {
+      "path": "tests/test_formal_ssvep_protocol.py",
+      "size": 887,
+      "sha256": "dcee20e36acfa9abaade3060fba768a48c488f5d6fa943deebf07e1b45c6daec"
+    },
+    {
+      "path": "tests/test_gpu_training_environment.py",
+      "size": 22540,
+      "sha256": "4aca0e845be9c11f939d88b02d91580ec5641ac1a60e8c15b2cb99c0e1dceec4"
+    },
+    {
+      "path": "tests/test_learned_dataset_v2.py",
+      "size": 18386,
+      "sha256": "286c949bd99fffdd4b4c193b9eb8c13f63e3fe4889764829d6873368fc8a61e5"
+    },
+    {
+      "path": "tests/test_learned_dataset_v4.py",
+      "size": 8595,
+      "sha256": "9ac3b5ef59aa11b86ded8cfec805a7bee33375e7e337737209e32ffa7f743ac4"
+    },
+    {
+      "path": "tests/test_learned_denoise_evaluation.py",
+      "size": 28253,
+      "sha256": "35193f339fe2a453ae84d8b83f9e7c77f2625855303b07f1082a7806c78ece7a"
+    },
+    {
+      "path": "tests/test_learned_denoise_v2.py",
+      "size": 32473,
+      "sha256": "96fbde24ab9292b42c61c168810927da25f2f98b539344bc65473d8cac0a110e"
+    },
+    {
+      "path": "tests/test_learned_denoise_v2_evaluation.py",
+      "size": 21177,
+      "sha256": "f553adf0a34e04bcb849e7b4da8bfb94a6670bfbb4023e89c804ea2826ba711b"
+    },
+    {
+      "path": "tests/test_learned_denoise_v2_transfer.py",
+      "size": 28874,
+      "sha256": "58fe95ff634945e9eb2370f90f391dd2a6f49336deedfe2c7c511f53aea884a9"
+    },
+    {
+      "path": "tests/test_learned_denoise_v3.py",
+      "size": 30234,
+      "sha256": "86b8cb0a0e92bfda316e4f01c5ebbba09e640cf3dca9c8ab6345421a963aa6d3"
+    },
+    {
+      "path": "tests/test_learned_denoise_v4.py",
+      "size": 36111,
+      "sha256": "6a2cd815f8359054209288b28d0f2309446721591fecbd568b05ac9ea293b6c0"
+    },
+    {
+      "path": "tests/test_learned_domain_dataset_v3.py",
+      "size": 11024,
+      "sha256": "fff16684eac736dececdd28659221b15fbff346413cb101dae426c16669a8489"
+    },
+    {
+      "path": "tests/test_multifrequency_mu2024_ssvep_decode.py",
+      "size": 3410,
+      "sha256": "43509792f92f9a3392499d67f17b768777c0c7fd2e2bec827f2ab5765301f9cc"
+    },
+    {
+      "path": "tests/test_neurostation_v9_output_adapter.py",
+      "size": 17712,
+      "sha256": "6a6891a7e5b21006b1e13c6d63dd4d5878853dc5046fd79db9ba46f54f774ee6"
+    },
+    {
+      "path": "tests/test_personal_decoder_analysis.py",
+      "size": 6158,
+      "sha256": "9a7501f489a8e2666aaef2b6f9d2ebd7cef09a53d80d41882829017e6ded1004"
+    },
+    {
+      "path": "tests/test_personal_eeg_dataset_audit.py",
+      "size": 4007,
+      "sha256": "4e429214dab59f605b5f9cb27dda79b2295444a7ab08b9c84640fc5ab46d5f3a"
+    },
+    {
+      "path": "tests/test_personal_ssvep_calibration_v1.py",
+      "size": 4272,
+      "sha256": "0c30ac4798656cdb5dede1f006245ac83b379b5bbe96139d29c955a62f6a362a"
+    },
+    {
+      "path": "tests/test_personal_ssvep_decoder.py",
+      "size": 14604,
+      "sha256": "109ac87637fcde6358bccb088b463cd04116f19b32b81f778b2499831b4fafac"
+    },
+    {
+      "path": "tests/test_personal_ssvep_decoder_v2.py",
+      "size": 2464,
+      "sha256": "f0c01485638ee4acf91c22941518cf1b7719526d122a357de58bfb64bfe5c206"
+    },
+    {
+      "path": "tests/test_personal_ssvep_decoder_v3.py",
+      "size": 4725,
+      "sha256": "fbb41becfa9040be227790cb3193f27cd12f9d9e78190040c7c95e6864b94648"
+    },
+    {
+      "path": "tests/test_personal_ssvep_decoder_v4.py",
+      "size": 7958,
+      "sha256": "e722535538bb9e26cf53515690e46c7327e73563a98a72c72da1822c76e32f3a"
+    },
+    {
+      "path": "tests/test_personal_ssvep_session_contract.py",
+      "size": 13303,
+      "sha256": "b1a9a20d70234069ac61598f14a44de97ad467a9891be526a28e7a558b98a496"
+    },
+    {
+      "path": "tests/test_plot_ssvep_v14_diagnostic.py",
+      "size": 2696,
+      "sha256": "0018ac35626c82caa736348673688f88a59ffbfeade4e14ccb45d40fb91b5eed"
+    },
+    {
+      "path": "tests/test_prepare_matched_ssvep_training.py",
+      "size": 28143,
+      "sha256": "a38a31fe061bfb72ae806d290070ac030be5f8ba6190e38d8adf7b6c39a5f25a"
+    },
+    {
+      "path": "tests/test_realtime_capture.py",
+      "size": 31262,
+      "sha256": "e485efdde46d1fbef7ddb83638424fc89994ad3546be53ae01de80550a7be8df"
+    },
+    {
+      "path": "tests/test_realtime_command_display.py",
+      "size": 28406,
+      "sha256": "11d7489ad893abfb600471527e7dd8f08bb4ee9b7e283d6268936b17105f8725"
+    },
+    {
+      "path": "tests/test_realtime_command_inference.py",
+      "size": 26970,
+      "sha256": "618181a797ca4a6445e71983433e61891dfd5ed7801ad0c30bf90d06aee1aa44"
+    },
+    {
+      "path": "tests/test_realtime_command_transport.py",
+      "size": 25214,
+      "sha256": "49b095245de1170f17f600723d2483c0d1e9875284a9ba96d8d16fa199b99503"
+    },
+    {
+      "path": "tests/test_realtime_commands.py",
+      "size": 24625,
+      "sha256": "573cc973ec2bb44c19074ad6373226b062b74bfe3f8b08f0eab46eab6e2dbca8"
+    },
+    {
+      "path": "tests/test_realtime_commands_ui.py",
+      "size": 17834,
+      "sha256": "6ac6c1df1acfbcca6d288332e983341dc213aedf56057e23be4c43a6e1a6bb90"
+    },
+    {
+      "path": "tests/test_run_learned_denoise_v4.py",
+      "size": 15724,
+      "sha256": "5d5f827cfe68f70359cd9c9cfc17b07b12b742ffcd424fddde5bba17d5de55cd"
+    },
+    {
+      "path": "tests/test_run_ssvep_v12_offline_analysis.py",
+      "size": 16129,
+      "sha256": "be057aa5c3652cc006032018102a43a8a1fb400e3e30f03913e3f3f4d0ef09dc"
+    },
+    {
+      "path": "tests/test_ssvep_denoise_v10.py",
+      "size": 15122,
+      "sha256": "435bd65e80889a5f0fd9c4c8aa78256318af8c7bf3075a616b185962f615c17e"
+    },
+    {
+      "path": "tests/test_ssvep_denoise_v5.py",
+      "size": 4107,
+      "sha256": "73d82b6fecf0cd164f4c03866ae3055c395c86d3d0eeb9b3bc520cdc2eb687c3"
+    },
+    {
+      "path": "tests/test_ssvep_denoise_v5_ola.py",
+      "size": 846,
+      "sha256": "08edd3af43a2eb5cfdd7ad18d11f1d7bb299973ef4a7af4fca4d6d33d983cfbd"
+    },
+    {
+      "path": "tests/test_ssvep_denoise_v6.py",
+      "size": 36517,
+      "sha256": "301f3a0b6a0159f160aa5e7ca4e2d55d55feb44273c87f38d72973d3df11c956"
+    },
+    {
+      "path": "tests/test_ssvep_denoise_v7.py",
+      "size": 41399,
+      "sha256": "febe88f1eb9e745233fb769b386cbda800a79718c241a4408e4b41913e330886"
+    },
+    {
+      "path": "tests/test_ssvep_denoise_v8.py",
+      "size": 42786,
+      "sha256": "82ea2b590ab969b3e8adbbdd0cf4c61a1de7e08a736f83ef6a4aacad6510264c"
+    },
+    {
+      "path": "tests/test_ssvep_internal_benchmark_v5.py",
+      "size": 38966,
+      "sha256": "0ffff2fe4bd6ed6c379c8f479b7b5e3801ae4de58b414799f31f3e8e2ea42add"
+    },
+    {
+      "path": "tests/test_ssvep_reference_v5.py",
+      "size": 22875,
+      "sha256": "9aeeaf616e75375fe2807f775a206a330bd3da32c72635c2549e29289ae39053"
+    },
+    {
+      "path": "tests/test_ssvep_saved_audit_v5.py",
+      "size": 37137,
+      "sha256": "970a27186ebd0d6f7e35fe37ab1ed8edb7c2d5e3ccde4e608ef8231671e95a44"
+    },
+    {
+      "path": "tests/test_ssvep_saved_audit_v6.py",
+      "size": 35008,
+      "sha256": "f819538e3ed77a946f72d4736e1d29af5c589b059b35b33a8240a57b1b1c117f"
+    },
+    {
+      "path": "tests/test_ssvep_saved_audit_v7.py",
+      "size": 40087,
+      "sha256": "39fb7290301bbb4c41ee2757d77d2be1b6f91525217f91ade002f45bd4877b2b"
+    },
+    {
+      "path": "tests/test_ssvep_saved_audit_v7_patch.py",
+      "size": 1173,
+      "sha256": "a239d4ad10749ee6c02c32c08f8a35567c0ed29de3b0140bced022d92cb0f2e8"
+    },
+    {
+      "path": "tests/test_ssvep_saved_audit_v8.py",
+      "size": 40763,
+      "sha256": "5dba1184a2d3c9fa70eff9ffecc31ef99ef6e68f2d031c5529e1b6d15a2b8910"
+    },
+    {
+      "path": "tests/test_ssvep_task_eval_v5.py",
+      "size": 34309,
+      "sha256": "2319020db883bf11ea352c6cf672fec678a462ca17c1f4a19bd8144530d7f4bc"
+    },
+    {
+      "path": "tests/test_ssvep_test_model.py",
+      "size": 10965,
+      "sha256": "2127a81316991d7002dfc40c6b8f23e757ee49f860fe57dde7eb949b78e89c6b"
+    },
+    {
+      "path": "tests/test_ssvep_v10_data.py",
+      "size": 2310,
+      "sha256": "ec2bd5ea0e6067ae1e533a81b601506fb8af4a8e373c1b0ecb4eba87fbf22806"
+    },
+    {
+      "path": "tests/test_ssvep_v10_runtime.py",
+      "size": 1749,
+      "sha256": "153176413d5f14bba5decc22972f9c6db1e02254ad5db559ef0ee789ddcff76b"
+    },
+    {
+      "path": "tests/test_ssvep_v11_runtime.py",
+      "size": 1156,
+      "sha256": "28dccd6f6edea5c3ccecf5ad820c00d49400fc463bc3677985d6e36e8cb96eb9"
+    },
+    {
+      "path": "tests/test_ssvep_v12_runtime.py",
+      "size": 1495,
+      "sha256": "71da9503b6c309fe9565c541dba10c19c5c7b5a2fc1fd33ae1d6ea4953e73839"
+    },
+    {
+      "path": "tests/test_ssvep_v13.py",
+      "size": 19813,
+      "sha256": "f4fc9ae273f92657a37149bc2f40ae0bed3d1da50e3c9b1836e1953d3bd79859"
+    },
+    {
+      "path": "tests/test_ssvep_v14.py",
+      "size": 9776,
+      "sha256": "8fcb741e885c711a445e9b107f1aeecd2bc37a942242e25eac5c83edf75ca65a"
+    },
+    {
+      "path": "tests/test_ssvep_v6_contract.py",
+      "size": 43905,
+      "sha256": "9a8152c2d10eeb3f6965da64445a500bd4ceeefc9d99b98da0fabf3262a7aaee"
+    },
+    {
+      "path": "tests/test_ssvep_v6_internal_eval.py",
+      "size": 51238,
+      "sha256": "2358872379f0a46c1bb10389719b732bbdb7a791c39a8a37338cc095fc458efe"
+    },
+    {
+      "path": "tests/test_ssvep_v7_experiment.py",
+      "size": 56587,
+      "sha256": "5250f2dbd9464a5739122e660eaaa5f76c9475c6388a95988ccf6c42a30af3a1"
+    },
+    {
+      "path": "tests/test_ssvep_v7_internal_eval.py",
+      "size": 19628,
+      "sha256": "4e2189a8af3f5e3daaeb8a3eec2683890b6e72e8b7a437f2f828e61ad9f36f2d"
+    },
+    {
+      "path": "tests/test_ssvep_v7_internal_eval_patch.py",
+      "size": 2258,
+      "sha256": "82f3a835307dd08463a2d4d2c6b07412459c03dc04f11ea100668f172d7569d2"
+    },
+    {
+      "path": "tests/test_ssvep_v8_experiment.py",
+      "size": 57588,
+      "sha256": "9280d0dc8dd3298a51ed59232c2979d3175a4ff729cf4f1829025fd70d8e871b"
+    },
+    {
+      "path": "tests/test_ssvep_v8_internal_eval.py",
+      "size": 19955,
+      "sha256": "83b4f45c96e63fdb60083ab725c80477a6fcddbff328cc6fd3a13463ca9c8981"
+    },
+    {
+      "path": "tests/test_ssvep_v9_delivery.py",
+      "size": 3020,
+      "sha256": "c628f715f3f74b04ccafbe397e4fb70fa501e61f9b2c7a2097c0389878f2781b"
+    },
+    {
+      "path": "tests/test_train_denoiser_v4.py",
+      "size": 16568,
+      "sha256": "2fec7782c5e92231d9acd28554694f1a911f736fdf1c634d128c8875b2af4187"
+    },
+    {
+      "path": "tests/test_train_domain_gate_v3.py",
+      "size": 15337,
+      "sha256": "16d183de6bd6a86c75a3b4fb7f4ab1f8dbc182216bab032249d43de18519254c"
+    },
+    {
+      "path": "tests/test_train_matched_ssvep_decoder.py",
+      "size": 4800,
+      "sha256": "6ce3d04851c38631d2067363551cc52791fe23e981be595fa76ddcae84bdbf8f"
+    },
+    {
+      "path": "tests/test_train_matched_ssvep_decoder_live_v2.py",
+      "size": 3109,
+      "sha256": "b0f7350cb4ec35b4adc4e1ec254a95546d03b926d919e27a08317ed364d14ebe"
+    },
+    {
+      "path": "tests/test_train_ssvep_denoiser_v10.py",
+      "size": 26367,
+      "sha256": "d4f6efa0c8a6db7e6c207a37a826bf5a842a570d6dd6502634e5f4576963998c"
+    },
+    {
+      "path": "tests/test_train_ssvep_denoiser_v11.py",
+      "size": 27790,
+      "sha256": "277b62673bee569e7dbc1264cce8b897e2ca42ffce452cb01ab34643d04dc7f3"
+    },
+    {
+      "path": "tests/test_train_ssvep_denoiser_v12.py",
+      "size": 9676,
+      "sha256": "23c50347155dbf20ac9314213b0092b02b9fd7405c9fe1df9e69e74e2555bd6f"
+    },
+    {
+      "path": "tests/test_v9_offline_analysis.py",
+      "size": 24474,
+      "sha256": "bb5b976788958222842b3ef15e3f78cf89c23780cc93307b13bf4d76179e4c4e"
+    },
+    {
+      "path": "tests/test_verify_denoiser_v4_artifacts.py",
+      "size": 2039,
+      "sha256": "da702828188be7914b34119ae96afabcff0efb4faf2ff3fe016062f036ccb616"
+    },
+    {
+      "path": "tests/test_verify_ssvep_v14_final.py",
+      "size": 2264,
+      "sha256": "9d316c8886fb5cdb5756f0d420dd92cbf9705ec07931df201c89045634cd0421"
+    },
+    {
+      "path": "启动实时脑电指令.cmd",
+      "size": 169,
+      "sha256": "f55e8901024c80fafaaf3e84042efd9ce60ae9299251f323d22d5156fe8bfa0e"
+    }
+  ],
+  "external_resources_policy": "read-only; data, environments, and untracked model artifacts are not baseline source"
+}

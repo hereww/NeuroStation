@@ -74,10 +74,34 @@ def _write_segments(path: Path, artifact: np.ndarray, confidence: np.ndarray, sa
                 )
 
 
+def _diagnostic_audit_metadata(config: dict) -> dict:
+    """Describe an explicitly requested offline run, not an efficacy approval."""
+    runtime = config.get("runtime", {})
+    validation_status = runtime.get("validation_status", "not_validated")
+    warning = (
+        f"Explicit offline diagnostic only; model validation status={validation_status}. "
+        "status=completed means the diagnostic pipeline finished, NOT that model efficacy "
+        "or the release gate passed. Automatic processing of formal sessions is disabled."
+    )
+    if str(validation_status).startswith("failed"):
+        warning += " Model failed validation: " + str(runtime.get("validation_reason", "see validation reports"))
+    return {
+        "model_validation_status": validation_status,
+        "automatic_processing_enabled": False,
+        "diagnostic_only": True,
+        "release_gate_passed": False,
+        "warning": warning,
+        "validation_reason": runtime.get("validation_reason"),
+        "validation_reports": runtime.get("validation_reports", {}),
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         config = load_config(args.config)
+        # runtime.enabled disables automatic workers, not this explicit diagnostic CLI.
+        audit_metadata = _diagnostic_audit_metadata(config)
         eeg, sample_rate, valid = read_session_eeg(args.session_dir, int(config["channel_count"]))
         if abs(sample_rate - float(config["sample_rate_hz"])) > 1e-6:
             raise LearnedDenoiseError(f"session sample rate {sample_rate} does not match model config {config['sample_rate_hz']}")
@@ -97,6 +121,7 @@ def main(argv: list[str] | None = None) -> int:
         metrics = {
             "schema_version": 1,
             "status": "completed",
+            **audit_metadata,
             "model_version": config["model_version"],
             "model_sha256": _sha256(args.model),
             "session_id": args.session_dir.name,
@@ -114,6 +139,7 @@ def main(argv: list[str] | None = None) -> int:
         (output_dir / "quality_metrics.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
         manifest = {
             "schema_version": 1,
+            **audit_metadata,
             "model_version": config["model_version"],
             "raw_is_immutable": True,
             "source_session_dir": str(args.session_dir.resolve()),

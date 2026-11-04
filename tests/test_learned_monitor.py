@@ -40,6 +40,12 @@ class ShadowMonitorTests(unittest.TestCase):
         (self.session / 'quality.json').write_text('{"status":"warning","reason":"original"}', encoding='utf-8')
         (self.session / 'session.json').write_text('{"sampling_rate_hz":250,"status":"completed"}', encoding='utf-8')
         self.original = {p.name: p.read_bytes() for p in self.session.iterdir() if p.is_file()}
+        # Success-path fixture only: never modify the formal product config or
+        # reinterpret the actual checkpoint's failed validation as a pass.
+        fixture = json.loads(CONFIG.read_text(encoding='utf-8'))
+        fixture['runtime'].update(enabled=True, validation_status='not_validated')
+        self.config_path = self.root / 'worker_test_only_config.json'
+        self.config_path.write_text(json.dumps(fixture), encoding='utf-8')
 
     @staticmethod
     def prediction(_model, _config, signal):
@@ -57,7 +63,7 @@ class ShadowMonitorTests(unittest.TestCase):
 
     def test_process_session_success_writes_derived_without_changing_original(self):
         with patch.object(learned_monitor, '_infer_signal', side_effect=self.prediction):
-            state = learned_monitor.process_session(self.session, CONFIG, self.model, self.output)
+            state = learned_monitor.process_session(self.session, self.config_path, self.model, self.output)
         self.assertEqual('completed', state['status'])
         self.assertEqual(32, state['summary']['sample_count'])
         self.assert_original_unchanged()
@@ -78,7 +84,7 @@ class ShadowMonitorTests(unittest.TestCase):
     def test_real_local_model_process_session_success_preserves_raw_and_quality(self):
         import torch
         torch.set_num_threads(1)
-        state = learned_monitor.process_session(self.session, CONFIG, ROOT / 'models' / 'denoiser_v1.pt', self.output)
+        state = learned_monitor.process_session(self.session, self.config_path, ROOT / 'models' / 'denoiser_v1.pt', self.output)
         self.assertEqual('completed', state['status'], state.get('reason'))
         self.assert_original_unchanged()
         with np.load(self.output / 'denoised_signal.npz', allow_pickle=False) as archive:
@@ -87,10 +93,10 @@ class ShadowMonitorTests(unittest.TestCase):
             self.assertFalse(archive['replacement_mask'][0, 7])
 
     def test_missing_model_and_inference_failure_preserve_original(self):
-        state = learned_monitor.process_session(self.session, CONFIG, self.root / 'missing.pt', self.output)
+        state = learned_monitor.process_session(self.session, self.config_path, self.root / 'missing.pt', self.output)
         self.assertEqual('model_missing', state['reason'])
         with patch.object(learned_monitor, '_infer_signal', side_effect=RuntimeError('inference failed')):
-            state = learned_monitor.process_session(self.session, CONFIG, self.model, self.output)
+            state = learned_monitor.process_session(self.session, self.config_path, self.model, self.output)
         self.assertEqual('fallback', state['status'])
         self.assertIn('inference failed', state['reason'])
         self.assert_original_unchanged()
@@ -102,7 +108,7 @@ class ShadowMonitorTests(unittest.TestCase):
             result['confidence'][:] = 0
             return result
         with patch.object(learned_monitor, '_infer_signal', side_effect=rejected_prediction):
-            state = learned_monitor.process_session(self.session, CONFIG, self.model, self.output)
+            state = learned_monitor.process_session(self.session, self.config_path, self.model, self.output)
         summary = state['summary']
         self.assertTrue(summary['unknown_or_invalid'])
         self.assertEqual(1.0, summary['inference_rejected_fraction'])
@@ -118,7 +124,7 @@ class ShadowMonitorTests(unittest.TestCase):
                 metadata_path.write_text(json.dumps({'sampling_rate_hz': rate}), encoding='utf-8')
                 original = metadata_path.read_bytes()
                 with patch.object(learned_monitor, '_infer_signal') as inference:
-                    state = learned_monitor.process_session(self.session, CONFIG, self.model, self.output)
+                    state = learned_monitor.process_session(self.session, self.config_path, self.model, self.output)
                 self.assertEqual(reason, state['reason'])
                 inference.assert_not_called()
                 self.assertEqual(original, metadata_path.read_bytes())
@@ -139,7 +145,7 @@ class ShadowMonitorTests(unittest.TestCase):
             with self.subTest(packets=packets, timestamps=timestamps):
                 self.write_packets(packets, timestamps)
                 with patch.object(learned_monitor, '_infer_signal') as inference:
-                    state = learned_monitor.process_session(self.session, CONFIG, self.model, self.output)
+                    state = learned_monitor.process_session(self.session, self.config_path, self.model, self.output)
                 self.assertEqual('fallback', state['status'])
                 self.assertEqual('suspected_discontinuity', state['data_integrity_assessment']['status'])
                 self.assertFalse(state['data_integrity_assessment']['missing_data_repaired'])
@@ -149,7 +155,7 @@ class ShadowMonitorTests(unittest.TestCase):
     def test_packet_rollover_and_batch_timestamps_are_not_called_loss(self):
         self.write_packets([254, 255, 0, 1], [100, 100, 100, 100])
         with patch.object(learned_monitor, '_infer_signal', side_effect=self.prediction):
-            state = learned_monitor.process_session(self.session, CONFIG, self.model, self.output)
+            state = learned_monitor.process_session(self.session, self.config_path, self.model, self.output)
         self.assertEqual('completed', state['status'])
         integrity = state['summary']['data_integrity_assessment']
         self.assertEqual('no_discontinuity_detected', integrity['status'])
@@ -158,7 +164,7 @@ class ShadowMonitorTests(unittest.TestCase):
 
     def test_missing_packet_evidence_is_not_assessed_not_loss_free(self):
         with patch.object(learned_monitor, '_infer_signal', side_effect=self.prediction):
-            state = learned_monitor.process_session(self.session, CONFIG, self.model, self.output)
+            state = learned_monitor.process_session(self.session, self.config_path, self.model, self.output)
         self.assertEqual('not_assessed', state['summary']['data_integrity_assessment']['status'])
         self.assert_original_unchanged()
 
@@ -168,13 +174,13 @@ class ShadowMonitorTests(unittest.TestCase):
                         '\n0\t' + '\t'.join(['nan'] * 8) + '\n', encoding='utf-8')
         self.original[path.name] = path.read_bytes()
         with patch.object(learned_monitor, '_infer_signal') as inference:
-            state = learned_monitor.process_session(self.session, CONFIG, self.model, self.output)
+            state = learned_monitor.process_session(self.session, self.config_path, self.model, self.output)
         self.assertEqual('excessive_invalid_samples', state['reason'])
         inference.assert_not_called()
         self.assert_original_unchanged()
 
     def test_disabled_config_skips_inference(self):
-        config = json.loads(CONFIG.read_text(encoding='utf-8'))
+        config = json.loads(self.config_path.read_text(encoding='utf-8'))
         config['runtime']['enabled'] = False
         path = self.root / 'disabled.json'
         path.write_text(json.dumps(config), encoding='utf-8')
@@ -184,9 +190,44 @@ class ShadowMonitorTests(unittest.TestCase):
         inference.assert_not_called()
         self.assert_original_unchanged()
 
+    def test_known_failed_model_never_starts_gateway_or_worker_even_if_enabled(self):
+        formal_before = CONFIG.read_bytes()
+        config_path = self.root / 'configs' / 'learned_denoiser_v1.json'
+        config_path.parent.mkdir()
+        gateway = self.gateway()
+        gateway._runtime_dir = self.root
+        gateway._status_file = self.root / 'acquisition_status.json'
+        capture = CaptureConfig(save_directory=self.root)
+        for enabled in (False, True):
+            for status in ('failed_holdout', 'failed_ssvep'):
+                with self.subTest(enabled=enabled, validation_status=status):
+                    config = json.loads(formal_before.decode('utf-8'))
+                    config['runtime'].update(enabled=enabled, validation_status=status,
+                                             model_path=str(self.model))
+                    config_path.write_text(json.dumps(config), encoding='utf-8')
+                    with patch('eeg_tools.workstation.process_gateway.ROOT', self.root), \
+                         patch('eeg_tools.workstation.process_gateway.subprocess.Popen') as launch:
+                        self.assertIsNone(gateway._learned_monitor_command(capture))
+                        gateway._start_learned_monitor(capture)
+                    launch.assert_not_called()
+                    self.assertFalse(gateway._learned_monitor_started)
+                    output = self.root / ('rejected_' + status + '_' + str(enabled))
+                    with patch.object(learned_monitor, '_infer_signal') as inference, \
+                         patch.object(learned_monitor, '_load_raw') as load_raw:
+                        state = learned_monitor.process_session(self.session, config_path, self.model, output)
+                    self.assertEqual('disabled', state['status'])
+                    self.assertEqual('failed_model_validation', state['reason'])
+                    self.assertEqual(status, state['model_validation_status'])
+                    self.assertIs(False, state['automatic_processing_enabled'])
+                    inference.assert_not_called()
+                    load_raw.assert_not_called()
+                    self.assertFalse((output / 'denoised_signal.npz').exists())
+                    self.assert_original_unchanged()
+        self.assertEqual(formal_before, CONFIG.read_bytes())
+
     def arguments(self, status_file, timeout=1):
         return argparse.Namespace(output_root=str(self.root), status_file=str(status_file),
-                                  config=str(CONFIG), model=str(self.model),
+                                  config=str(self.config_path), model=str(self.model),
                                   poll_interval=0.001, timeout_seconds=timeout)
 
     def test_empty_outside_and_root_session_paths_are_refused(self):
@@ -210,7 +251,7 @@ class ShadowMonitorTests(unittest.TestCase):
         status.write_text(json.dumps({'phase': 'aborted', 'result': {'output_dir': str(self.session)}}))
         with patch.object(learned_monitor, 'process_session') as process:
             self.assertEqual(0, learned_monitor.run(self.arguments(status)))
-        process.assert_called_once_with(self.session, CONFIG, self.model, self.output)
+        process.assert_called_once_with(self.session, self.config_path, self.model, self.output)
         self.assert_original_unchanged()
 
     def test_timeout_status_is_isolated_to_each_runtime(self):

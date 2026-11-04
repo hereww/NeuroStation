@@ -1,0 +1,7 @@
+# Isolated offline ML GPU environment ONLY; never install into the acquisition .venv.
+# User-requested frozen pins. Actual readiness is recorded in the GPU preflight JSON.
+# CUDA-tagged torch uses the official PyTorch cu130 wheel index.
+--extra-index-url https://download.pytorch.org/whl/cu130
+torch==2.14.1+cu130
+numpy==2.5.3
+scipy==1.18.1

@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "status": "formal",
+  "model_version": "personal_ssvep_cca_v4_adaptive_candidate",
+  "type": "transparent_calibration_adaptive_evidence_gated_decoder",
+  "method": "transparent_cca_with_calibration_session_target_centroids_and_robust_normalization",
+  "source_domain": "personal_Cyton",
+  "source_domain_validated": false,
+  "production_validated": false,
+  "detection_validated": false,
+  "confidence_is_probability": false,
+  "confidence_definition": "(second_centroid_distance-best_centroid_distance)/max(second_centroid_distance,epsilon); not a probability",
+  "target_selection": "calibration_centroid_evidence_gated_unknown_allowed",
+  "available_definition": "computation_succeeded_only; accepted is true only when calibration integrity and every declared evidence gate passes",
+  "sample_rate_hz": 250.0,
+  "channel_count": 8,
+  "selected_channel_indices": [4, 5, 6, 7],
+  "selected_channel_names": ["CH5", "CH6", "CH7", "CH8"],
+  "selected_electrode_positions_from_preset": ["P7", "P8", "O1", "O2"],
+  "channel_selection_reason": "a_priori posterior visual-channel subset for offline personal SSVEP diagnostics; physical layout still requires verification",
+  "minimum_samples": 250,
+  "minimum_rest_samples": 250,
+  "input_orientation": "channels_by_samples",
+  "reference_harmonics": 1,
+  "preprocessing": {
+    "notch_frequency_hz": 50.0,
+    "notch_q": 30.0,
+    "bandpass_hz": [1.0, 45.0],
+    "bandpass_order": 4,
+    "phase": "offline_zero_phase"
+  },
+  "covariance_regularization": 0.0001,
+  "robust_normalization": {
+    "location": "median",
+    "scale": "1.4826_median_absolute_deviation",
+    "minimum_scale": 1e-06,
+    "feature_definition": "concatenated_CCA_stimulus_scores_and_log1p_stimulus_to_rest_ratios"
+  },
+  "calibration": {
+    "minimum_repetitions_per_target": 2,
+    "centroid_definition": "mean_of_robustly_normalized_calibration_feature_vectors_by_target",
+    "label_source": "recorded_presentation_labels_proxy_only_not_independent_gaze_truth",
+    "forward_uses_calibration_labels": false,
+    "holdout_required": false
+  },
+  "evidence_gates": {
+    "minimum_stimulus_canonical_score": 0.12,
+    "minimum_stimulus_to_rest_ratio": 1.25,
+    "minimum_calibrated_evidence": 0.45,
+    "minimum_centroid_margin": 0.15
+  },
+  "forward_uses_recorded_labels": false,
+  "recorded_presentation_labels_are_proxy": true,
+  "presented_matches_are_gaze_accuracy": false,
+  "gaze_accuracy_claim": false,
+  "intended_scope": "explicit_offline_candidate_personal_signal_diagnostic_only",
+  "runtime_enabled": false,
+  "default_deployment_authorized": false
+}

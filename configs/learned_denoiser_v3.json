@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "status": "formal",
+  "model_version": "learned_denoise_v3",
+  "model_type": "normalized_single_channel_domain_cnn",
+  "sample_rate_hz": 250,
+  "input_channels": 1,
+  "window_samples": 500,
+  "hop_samples": 500,
+  "normalization": "per_channel_window_noisy_mean_ac_rms",
+  "model": {
+    "channels": [
+      16,
+      32,
+      32
+    ],
+    "kernel_sizes": [
+      9,
+      7,
+      5
+    ],
+    "strides": [
+      2,
+      2,
+      2
+    ],
+    "hidden_features": 32,
+    "dropout": 0.0
+  },
+  "denoiser": {
+    "model_version": "learned_denoise_v2",
+    "frozen": true,
+    "device": "cpu"
+  },
+  "inference": {
+    "mode": "shadow",
+    "max_invalid_fraction": 0.0,
+    "min_ac_rms": 1e-08,
+    "threshold_comparison": ">",
+    "support_threshold_floor": 0.5,
+    "max_unsupported_false_acceptance_fraction": 0.01,
+    "support_interpretation": "uncalibrated_supported_domain_not_efficacy",
+    "confidence_interpretation": "one_minus_v2_artifact_probability_not_calibrated"
+  },
+  "runtime": {
+    "enabled": false,
+    "validation_status": "not_assessed",
+    "deployment_scope": "explicit_offline_diagnostics_only",
+    "production_validated": false
+  }
+}

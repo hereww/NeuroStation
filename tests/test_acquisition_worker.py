@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -111,8 +112,16 @@ class AcquisitionWorkerTests(unittest.TestCase):
             save_directory=ROOT / ".tmp-test-dataset",
             acknowledge_flicker_risk=True,
         )
-        with patch("pathlib.Path.is_file", return_value=True):
+        config_path = ROOT / "configs" / "learned_denoiser_v1.json"
+        formal_config_before = config_path.read_bytes()
+        fixture = json.loads(formal_config_before.decode("utf-8"))
+        # Test the launch mechanism, not approval of the known-failed product model.
+        # Override only the in-memory test fixture; keep the formal file unchanged.
+        fixture["runtime"].update(enabled=True, validation_status="not_validated")
+        with patch("pathlib.Path.is_file", return_value=True), \
+             patch("pathlib.Path.read_text", return_value=json.dumps(fixture)):
             command = gateway._learned_monitor_command(config)
+        self.assertEqual(formal_config_before, config_path.read_bytes())
         self.assertIsNotNone(command)
         assert command is not None
         self.assertIn("eeg_tools.workstation.learned_monitor", " ".join(command))

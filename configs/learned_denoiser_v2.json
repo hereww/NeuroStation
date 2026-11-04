@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "status": "formal",
+  "model_version": "learned_denoise_v2",
+  "model_type": "single_channel_shared_residual_tcn",
+  "sample_rate_hz": 250,
+  "input_channels": 1,
+  "window_samples": 500,
+  "hop_samples": 500,
+  "normalization": "per_channel_window_noisy_mean_ac_rms",
+  "model": {
+    "hidden_channels": 24,
+    "dilations": [
+      1,
+      2,
+      4,
+      8,
+      16
+    ],
+    "kernel_size": 5,
+    "residual_bound": 2.0,
+    "dropout": 0.0
+  },
+  "inference": {
+    "mode": "shadow",
+    "max_invalid_fraction": 0.0,
+    "min_ac_rms": 1e-08,
+    "artifact_score_reduction": "per_channel_window_mean",
+    "threshold_comparison": ">",
+    "confidence_interpretation": "one_minus_probability_not_calibrated"
+  },
+  "loss": {
+    "time_weight": 1.0,
+    "spectral_weight": 0.25,
+    "identity_weight": 5.0,
+    "clean_window_identity_multiplier": 4.0,
+    "artifact_weight": 0.5
+  },
+  "runtime": {
+    "enabled": false,
+    "validation_status": "failed_known_session_regression",
+    "deployment_scope": "explicit_offline_diagnostics_only",
+    "production_validated": false,
+    "validation_date": "2026-10-05",
+    "validation_reason": "Known-v1 stress regression failed: gated RMSE 989.338 versus noisy RMSE 1.06184 on 26 old known session windows. This is a non-independent known-session stress check, not a new independent holdout failure; the public epoch-holdout research gate passed. Dong target mapping remains unknown; prediction agreement is not accuracy. Production and automatic processing remain disabled.",
+    "research_validation_status": "passed_epoch_holdout",
+    "transfer_validation_status": "not_assessed_target_mapping",
+    "validation_reports": {
+      "public_epoch_holdout": "analysis_outputs/learned_denoiser_v2_test.json",
+      "transfer_and_known_v1_regression": "analysis_outputs/learned_denoiser_v2_transfer_and_known_v1_regression.json"
+    }
+  }
+}

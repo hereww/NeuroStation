@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "status": "formal",
+  "model_version": "personal_ball_decoder_candidate_v1",
+  "type": "transparent_personal_ssvep_three_command_candidate",
+  "method": "calibration_session_only_robust_centroid_with_command_evidence_and_fail_closed_hold",
+  "source_domain": "personal_Cyton",
+  "source_domain_validated": false,
+  "independent_personal_validation": false,
+  "production_validated": false,
+  "runtime_enabled": false,
+  "default_deployment_authorized": false,
+  "gaze_accuracy_claim": false,
+  "presented_matches_are_gaze_accuracy": false,
+  "confidence_is_probability": false,
+  "sample_rate_hz": 250.0,
+  "channel_count": 8,
+  "selected_channel_indices": [4, 5, 6, 7],
+  "selected_channel_names": ["CH5", "CH6", "CH7", "CH8"],
+  "selected_electrode_positions_from_preset": ["P7", "P8", "O1", "O2"],
+  "channel_selection_reason": "pre-registered posterior subset retained from the v4 personal diagnostic; physical positions require independent hardware verification",
+  "minimum_samples": 500,
+  "minimum_rest_samples": 250,
+  "input_orientation": "channels_by_samples",
+  "target_frequencies_hz": {
+    "MOVE_LEFT": 10.0,
+    "MOVE_RIGHT": 12.0,
+    "HOLD_PROXY_15HZ": 15.0,
+    "HOLD_PROXY_20HZ": 20.0
+  },
+  "hold_policy": "HOLD is a no-action safety decision; 15/20 Hz labels are presentation proxies only and are not independent behavioral truth",
+  "preprocessing": {
+    "notch_frequency_hz": 50.0,
+    "notch_q": 30.0,
+    "bandpass_hz": [5.0, 45.0],
+    "bandpass_order": 4,
+    "phase": "offline_zero_phase_candidate"
+  },
+  "feature_definition": "per-frequency first-harmonic CCA score, stimulus-to-rest ratio, three-subwindow median and stability summary",
+  "calibration": {
+    "minimum_repetitions_per_target": 2,
+    "label_source": "recorded_presentation_labels_proxy_only_not_independent_gaze_truth",
+    "forward_uses_recorded_labels": false,
+    "fit_scope": "calibration_session_only",
+    "hold_class_definition": "bottom_left_and_bottom_right_presentation_proxies_for_offline_diagnostic_only"
+  },
+  "safety_gates": {
+    "minimum_command_score_floor": 0.18,
+    "minimum_command_ratio_floor": 1.10,
+    "minimum_command_margin_floor": 0.08,
+    "minimum_class_margin": 0.10,
+    "minimum_subwindow_consistency": 0.34,
+    "robust_scale_floor": 0.05,
+    "low_evidence_decision": "HOLD"
+  },
+  "intended_scope": "explicit_offline_personal_game_candidate_evaluation_only",
+  "training_performed": false,
+  "exploratory_only": true
+}

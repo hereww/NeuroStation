@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "status": "formal",
+  "model_version": "learned_denoise_v9_ssvep",
+  "model_type": "frozen_v8_core_with_fixed_normalized_residual_trust_region",
+  "input_channels": 8,
+  "window_samples": 256,
+  "hop_samples": 256,
+  "sample_rates_hz": {
+    "Nakanishi2015": 256,
+    "Wearable": 250
+  },
+  "change_budget_normalized_mse": 0.00045,
+  "rounding_margin": 1e-05,
+  "protected_band_hz": [
+    8.0,
+    40.0
+  ],
+  "base_checkpoint_sha256": "08170e1f9eb139233acdbf16dfb4f27e3405ecb81dcaf9ae4bb1e833c4ca92f8",
+  "training": "none_this_version; unchanged pretrained v8 weights",
+  "normalization": "noisy_per_channel_mean_rms_eps1e-8; float32_forward_float64_residual_restore",
+  "window_policy": "fixed_nonoverlap; incomplete_or_invalid_or_flat_window_preserved",
+  "channel_order": "source indices only; anatomical correspondence unavailable in frozen manifests",
+  "native_units": "unknown; output retains input numeric units without unit conversion",
+  "runtime": {
+    "enabled": false,
+    "production_validated": false,
+    "deployment_scope": "explicit_offline_test_only"
+  },
+  "clean_ground_truth_used": false
+}

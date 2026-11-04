@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "status": "formal",
+  "model_version": "learned_denoise_v14_personal",
+  "model_type": "full_record_normalized_protected_spectral_shrinkage",
+  "sample_rate_hz": 250,
+  "channel_count": 8,
+  "window_samples": 4096,
+  "supported_window_samples": [512, 4096],
+  "hop_samples": 1024,
+  "preprocessing": {
+    "notch_hz": 50,
+    "notch_q": 30,
+    "phase": "offline_zero_phase",
+    "resample": false,
+    "unit_conversion": false
+  },
+  "model": {
+    "channels": [4, 24, 24, 1],
+    "kernels": [7, 5, 1],
+    "initial_gate_bias": -6,
+    "protected_band_hz": [8, 40],
+    "dc_preserved": true,
+    "gain_bounds": [0, 1],
+    "frequency_features": "rfftfreq(actual_N, d=1/250); frequency/Nyquist",
+    "forward_inputs": ["signal"]
+  },
+  "normalization": {
+    "normalization_scope": {
+      "window_512": "per_window_noisy_float64_channel_mean_rms",
+      "record_4096": "full_record_noisy_float64_channel_mean_rms_reused_for_all_subwindows",
+      "process_windows_scope_required": true
+    },
+    "statistics_dtype": "float64",
+    "forward_dtype": "float32",
+    "restore_dtype": "float64",
+    "record_restore": "global_record_mean_plus_prediction_times_global_record_rms_then_whole_window_OLA; identity_prediction_copies_original_window_exactly",
+    "rms_floor": 1e-8,
+    "loss": "float64 restored output minus float64 reference; same reference units MSE",
+    "contract": "512 public windows compute their own noisy channel mean/RMS; 4096 continuous records compute one noisy full-record channel mean/RMS and restore each window as global_record_mean + prediction*global_record_rms before whole-window OLA; local window means are not reinserted and learned residual-only OLA is not used for the record path"
+  },
+  "data": {
+    "reference_directory": "datasets/processed/ssvep_reference_v5_20261007/Wearable",
+    "fit_subjects": [1, 2, 3, 4],
+    "selection_subjects": [5, 6],
+    "evaluation_subjects": [7, 8],
+    "window_start_sample": 125,
+    "window_end_sample_exclusive": 637,
+    "public_reference": "notch-conditioned recorded proxy, normalized once to reference RMS units; not physiological clean truth",
+    "public_evaluation_is_pristine": false,
+    "personal_sessions_used": false,
+    "personal_data_used_for_fit_or_selection": false,
+    "public_evaluation_used_for_selection": false
+  },
+  "synthetic": {
+    "fit_count": 96,
+    "selection_count": 32,
+    "fit_seed": 2026101701,
+    "selection_seed": 2026101702,
+    "record_samples": 4096,
+    "fundamental_hz": [8, 20],
+    "second_harmonic_max_hz": 40,
+    "background_hz": 7,
+    "background_1_over_f": true,
+    "dc": true,
+    "continuous": true,
+    "normalization_scope": "full_record"
+  },
+  "augmentation": {
+    "conditions": ["identity", "drift", "high_burst", "gaussian", "combined"],
+    "drift_hz": [0.1, 0.8],
+    "drift_rms": [0.2, 1.5],
+    "trend_rms": [0.1, 0.8],
+    "burst_hz": [45, 110],
+    "burst_rms": [0.2, 1.5],
+    "burst_duration_fraction": [0.05, 0.3],
+    "gaussian_rms": [0.2, 0.8]
+  },
+  "training": {
+    "seed": 20261017,
+    "epochs": 16,
+    "batch_size": 32,
+    "device": "cuda:0",
+    "require_cuda": true,
+    "deterministic": true,
+    "amp": false,
+    "allow_tf32": false,
+    "learning_rate": 0.0003,
+    "weight_decay": 0.0001,
+    "gradient_clip": 1,
+    "identity_loss_weight": 100,
+    "cpu_threads": 4,
+    "domain_balance": "equal public-record and long-continuous batches; no personal data"
+  },
+  "selection": {
+    "identity_normalized_change_max": 0.002,
+    "objective": "balanced corrupted MSE across public proxy and long synthetic continuous domains",
+    "require_both_domain_identity_gates": true,
+    "tie_break": "earliest epoch",
+    "no_eligible_epoch": "diagnostic_last_epoch_no_eligible_checkpoint"
+  },
+  "runtime": {
+    "enabled": false,
+    "production_validated": false,
+    "scope": "explicit_offline_research_only"
+  },
+  "artifacts": {
+    "lock": "analysis_outputs/ssvep_v14_training_lock_20261014.json",
+    "checkpoint": "models/denoiser_v14_personal.pt",
+    "manifest": "models/denoiser_v14_personal.manifest.json",
+    "report": "analysis_outputs/ssvep_v14_training_20261014.json"
+  },
+  "research_plan_path": "analysis_outputs/ssvep_v14_experiment_plan_20261014.json",
+  "research_plan": {
+    "schema_version": 1,
+    "status": "formal",
+    "objective": "test full-record noisy normalization as a slow-drift correction hypothesis while retaining v13 protected spectral behavior; no deployment or efficacy claim",
+    "training_design": {
+      "public_fit_subjects": [1, 2, 3, 4],
+      "public_selection_subjects": [5, 6],
+      "public_evaluation_subjects": [7, 8],
+      "personal_sessions_for_fit_or_selection": false,
+      "long_synthetic_fit_count": 96,
+      "long_synthetic_selection_count": 32,
+      "long_synthetic_normalization": "one full-record noisy float64 channel mean/RMS per 4096 record; restore global_record_mean + prediction*global_record_rms and OLA complete restored windows",
+      "short_public_normalization": "per-window noisy float64 channel mean/RMS for 512 windows",
+      "labels_enter_model_forward": false,
+      "epochs": 16,
+      "checkpoint_selection": "balanced corrupted MSE only among epochs with both domain identity gates <= 0.002"
+    },
+    "fixed_research_checks": {
+      "public_identity_normalized_change_max": 0.002,
+      "long_synthetic_identity_normalized_change_max": 0.002,
+      "normalization_contract_max_absolute_difference": 1e-10,
+      "research_checks_authorize_default_deployment": false
+    },
+    "runtime_enabled": false,
+    "production_validated": false,
+    "source_lock_required": true,
+    "no_personal_data_in_fit_or_selection": true
+  },
+  "design": [
+    "V14 keeps v13 50 Hz Q30 notch, 8-40 Hz plus DC protected spectral shrinkage, 512/4096 support, and signal-only forward.",
+    "The hypothesis is full-record statistics for continuous 4096 records; window-local statistics remain explicit for public 512 offline data.",
+    "process_recording computes record statistics once after notch, reuses them for all 4096/hop1024 subwindows, and overlap-adds only learned residuals.",
+    "Personal sessions, public subjects 7/8, and any real evaluation are excluded from fit and selection; formal status does not imply hardware, session, clinical, or production validation.",
+    "No checkpoint, report, manifest, lock, evaluation output, or desktop integration is produced by this implementation pass."
+  ]
+}

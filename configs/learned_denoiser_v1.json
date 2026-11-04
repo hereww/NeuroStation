@@ -9,8 +9,17 @@
   "hop_samples": 250,
   "normalization": "per_channel_robust",
   "runtime": {
-    "enabled": true,
-    "model_path": "models/denoiser_v1.pt"
+    "enabled": false,
+    "model_path": "models/denoiser_v1.pt",
+    "validation_status": "failed_holdout",
+    "validation_date": "2026-10-05",
+    "validation_reason": "Fixed 26-window heldout_test failed: noisy RMSE 1.0618389182334327 vs denoised RMSE 698.3744623523525; artifact F1 0.024247126715484218. Dong2023 two-subject target-amplitude ratios 0.8848404676661809 and 0.8447868992755526 do not establish efficacy. Automatic processing of formal sessions is disabled.",
+    "validation_reports": {
+      "heldout": "analysis_outputs/learned_denoiser_v1_heldout.json",
+      "ssvep_preservation": "analysis_outputs/ssvep_preservation_v1_session_split.json"
+    },
+    "deployment_scope": "explicit_offline_diagnostics_only",
+    "production_validated": false
   },
   "inference": {
     "mode": "shadow",

@@ -1,0 +1,180 @@
+{
+  "schema_version": 1,
+  "status": "formal",
+  "model_version": "learned_denoise_v6_ssvep",
+  "model_type": "zero_initialized_band_projected_residual_tcn",
+  "reference_version": "ssvep_reference_v5",
+  "input_channels": 8,
+  "window_samples": 256,
+  "start_samples": {
+    "Nakanishi2015": 38,
+    "Wearable": 125
+  },
+  "sample_rates_hz": {
+    "Nakanishi2015": 256,
+    "Wearable": 250
+  },
+  "normalization": "per_channel_noisy_window_mean_rms_eps1e-8_float32_forward_float64_residual_restore",
+  "model": {
+    "hidden_channels": 32,
+    "kernel_size": 7,
+    "dilations": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32
+    ],
+    "group_norm_groups": 8,
+    "dropout": 0.0,
+    "pre_projection_residual_limit_normalized": 0.5,
+    "zero_initialize_output": true,
+    "protected_band_hz": [
+      8.0,
+      40.0
+    ],
+    "projection": "rfft_remove_inclusive_protected_band_then_irfft_n256",
+    "post_projection_clip": false
+  },
+  "corruption": {
+    "seed": 20261007,
+    "identity_probability": 0.2,
+    "combine_probability": 0.2,
+    "families": [
+      "transient",
+      "low_frequency_drift",
+      "high_frequency_burst",
+      "common_mode"
+    ],
+    "transient": {
+      "amplitude_rms_range": [
+        0.5,
+        3.0
+      ],
+      "width_samples_range": [
+        3,
+        25
+      ],
+      "channel_count_range": [
+        1,
+        3
+      ]
+    },
+    "low_frequency_drift": {
+      "frequency_hz_range": [
+        0.25,
+        4.0
+      ],
+      "amplitude_rms_range": [
+        0.2,
+        1.5
+      ],
+      "channel_count_range": [
+        1,
+        8
+      ]
+    },
+    "high_frequency_burst": {
+      "frequency_hz_range": [
+        45.0,
+        100.0
+      ],
+      "amplitude_rms_range": [
+        0.2,
+        1.5
+      ],
+      "duration_samples_range": [
+        20,
+        120
+      ],
+      "channel_count_range": [
+        1,
+        4
+      ]
+    },
+    "common_mode": {
+      "amplitude_rms_range": [
+        0.2,
+        1.0
+      ],
+      "width_samples_range": [
+        10,
+        80
+      ]
+    },
+    "target_definition": "recorded_reference_reconstruction; reference is not clean ground truth"
+  },
+  "conditions": [
+    "identity",
+    "transient",
+    "low_frequency_drift",
+    "high_frequency_burst",
+    "common_mode"
+  ],
+  "sampling": "one_fixed_window_per_trial_all_five_conditions_balanced_no_combinations",
+  "seeds": {
+    "training": 2026107601,
+    "internal_selection": 2026107602,
+    "diagnostic": 2026107603,
+    "formula": "base + dataset_index*10000000 + subject_id*100000 + trial_index*10 + condition_index + epoch*100000000"
+  },
+  "loss": {
+    "corrupted_case_relative_mse_weight": 1.0,
+    "relative_mse_input_floor": 0.01,
+    "identity_normalized_mse_weight": 20.0,
+    "normalized_change_penalty_weight": 0.001,
+    "target_channel_variance_epsilon": 1e-08,
+    "case_definition": "mean((pred-target)^2/(demeaned_target_channel_variance+1e-8)) in noisy-normalized coordinates; same for input baseline; identity has no input-ratio division"
+  },
+  "training": {
+    "fit_subjects": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "internal_validation_subjects": [
+      5,
+      6
+    ],
+    "epochs": 18,
+    "batch_size": 64,
+    "learning_rate": 0.0005,
+    "weight_decay": 0.0001,
+    "optimizer": "AdamW",
+    "seed": 2026100706,
+    "workers": 0,
+    "amp": false,
+    "device": "cuda:0",
+    "require_cuda": true,
+    "deterministic_algorithms": true,
+    "cublas_workspace_config": ":4096:8",
+    "allow_tf32": false,
+    "cpu_threads": 4,
+    "gradient_clip_norm": 1.0,
+    "selection": "per_domain: eligible-first, min_worst_condition_ratio_of_mean_error, min_identity_error, min_internal_total_loss, earliest_epoch; if none eligible still save best with gates_failed"
+  },
+  "internal_research_gates": {
+    "high_frequency_burst_mean_error_reduction_min": 0.05,
+    "other_corrupted_condition_mean_error_reduction_min": 0.0,
+    "identity_mean_normalized_change_max": 0.0005,
+    "identity_protected_band_complex_energy_ratio_max": 1e-06,
+    "identity_protected_band_weighted_abs_phase_radians_max": 0.02,
+    "all_gates_required_per_dataset": true,
+    "interpretation": "internal engineering screen only, not independent task preservation or production acceptance"
+  },
+  "runtime": {
+    "enabled": false,
+    "production_validated": false,
+    "deployment_scope": "offline_train_internal_research_only"
+  },
+  "safety": {
+    "clean_ground_truth_used": false,
+    "holdout_waveforms_loaded": false,
+    "outer_validation_waveforms_loaded": false,
+    "outer_validation_used_for_training_or_selection": false,
+    "native_units_assumed": false,
+    "cross_dataset_participant_identity_known": false
+  }
+}

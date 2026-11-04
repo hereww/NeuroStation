@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "status": "formal",
+  "model_version": "learned_denoise_v5_ssvep",
+  "model_type": "multichannel_residual_tcn_synthetic_corruption_reference_reconstruction",
+  "reference_version": "ssvep_reference_v5",
+  "candidate_signal_key": "processed_v5",
+  "input_channels": 8,
+  "window_samples": 256,
+  "hop_samples": 128,
+  "normalization": "per_channel_window_mean_rms_with_eps",
+  "model": {
+    "hidden_channels": 64,
+    "kernel_size": 7,
+    "dilations": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32
+    ],
+    "dropout": 0.0,
+    "residual_limit_normalized": 3.0
+  },
+  "corruption": {
+    "seed": 20261007,
+    "identity_probability": 0.2,
+    "combine_probability": 0.2,
+    "families": [
+      "transient",
+      "low_frequency_drift",
+      "high_frequency_burst",
+      "common_mode"
+    ],
+    "transient": {
+      "amplitude_rms_range": [
+        0.5,
+        3.0
+      ],
+      "width_samples_range": [
+        3,
+        25
+      ],
+      "channel_count_range": [
+        1,
+        3
+      ]
+    },
+    "low_frequency_drift": {
+      "frequency_hz_range": [
+        0.25,
+        4.0
+      ],
+      "amplitude_rms_range": [
+        0.2,
+        1.5
+      ],
+      "channel_count_range": [
+        1,
+        8
+      ]
+    },
+    "high_frequency_burst": {
+      "frequency_hz_range": [
+        45.0,
+        100.0
+      ],
+      "amplitude_rms_range": [
+        0.2,
+        1.5
+      ],
+      "duration_samples_range": [
+        20,
+        120
+      ],
+      "channel_count_range": [
+        1,
+        4
+      ]
+    },
+    "common_mode": {
+      "amplitude_rms_range": [
+        0.2,
+        1.0
+      ],
+      "width_samples_range": [
+        10,
+        80
+      ]
+    },
+    "target_definition": "recorded_reference_reconstruction; reference is not clean ground truth"
+  },
+  "loss": {
+    "time_smooth_l1_weight": 1.0,
+    "band_log_magnitude_weight": 0.5,
+    "identity_weight": 2.0,
+    "change_penalty_weight": 0.02,
+    "protected_band_hz": [
+      8.0,
+      40.0
+    ]
+  },
+  "training": {
+    "fit_subjects": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "internal_validation_subjects": [
+      5,
+      6
+    ],
+    "outer_validation_subjects": [
+      7,
+      8
+    ],
+    "holdout_subjects": [
+      9,
+      10
+    ],
+    "epochs": 12,
+    "batch_size": 64,
+    "learning_rate": 0.0005,
+    "weight_decay": 0.0001,
+    "seed": 20261007,
+    "selection": "minimum_internal_validation_total_loss_then_earliest_epoch",
+    "amp": false,
+    "workers": 0,
+    "require_cuda": true
+  },
+  "runtime": {
+    "enabled": false,
+    "validation_status": "not_assessed",
+    "deployment_scope": "offline_candidate_evaluation_only",
+    "production_validated": false
+  },
+  "safety": {
+    "holdout_waveforms_loaded_before_candidate_freeze": false,
+    "outer_validation_not_used_for_training_or_selection": true,
+    "native_units_assumed": false,
+    "cross_dataset_native_power_aggregation": false,
+    "clinical_validity_claim": false
+  }
+}

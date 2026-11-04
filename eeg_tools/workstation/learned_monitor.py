@@ -139,7 +139,15 @@ def process_session(session_dir: Path, config_path: Path, model_path: Path, outp
         from eeg_tools.learned_denoise import load_config
 
         config = load_config(config_path)
-        if not bool(config.get("runtime", {}).get("enabled", True)):
+        runtime = config.get("runtime", {})
+        validation_status = str(runtime.get("validation_status", ""))
+        # Defense in depth for a directly invoked automatic worker: this is not
+        # the explicit offline diagnostic CLI, which remains available separately.
+        if validation_status.startswith("failed"):
+            return _state(output, "disabled", "failed_model_validation",
+                          model_validation_status=validation_status,
+                          automatic_processing_enabled=False)
+        if not bool(runtime.get("enabled", True)):
             return _state(output, "disabled", "configuration_disabled")
         if str(config.get("inference", {}).get("mode", "shadow")) != "shadow":
             return _state(output, "disabled", "non_shadow_mode_refused")

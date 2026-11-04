@@ -1,0 +1,173 @@
+{
+  "schema_version": 1,
+  "status": "formal",
+  "model_version": "learned_denoise_v13_personal",
+  "model_type": "independent_variable_context_protected_spectral_shrinkage",
+  "sample_rate_hz": 250,
+  "channel_count": 8,
+  "window_samples": 4096,
+  "supported_window_samples": [
+    512,
+    4096
+  ],
+  "hop_samples": 1024,
+  "preprocessing": {
+    "notch_hz": 50,
+    "notch_q": 30,
+    "phase": "offline_zero_phase",
+    "resample": false,
+    "unit_conversion": false
+  },
+  "model": {
+    "channels": [
+      4,
+      24,
+      24,
+      1
+    ],
+    "kernels": [
+      7,
+      5,
+      1
+    ],
+    "initial_gate_bias": -6,
+    "protected_band_hz": [
+      8,
+      40
+    ],
+    "dc_preserved": true,
+    "gain_bounds": [
+      0,
+      1
+    ],
+    "frequency_features": "rfftfreq(actual_N, d=1/250); frequency/Nyquist",
+    "forward_inputs": [
+      "signal"
+    ]
+  },
+  "normalization": {
+    "definition": "noisy_float64_channel_mean_rms_float32_forward_float64_residual_restore",
+    "rms_floor": 1e-8,
+    "loss": "float64 restored output minus float64 reference; same reference units MSE"
+  },
+  "data": {
+    "reference_directory": "datasets/processed/ssvep_reference_v5_20261007/Wearable",
+    "fit_subjects": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "selection_subjects": [
+      5,
+      6
+    ],
+    "evaluation_subjects": [
+      7,
+      8
+    ],
+    "window_start_sample": 125,
+    "window_end_sample_exclusive": 637,
+    "public_reference": "notch-conditioned recorded proxy, normalized once to reference RMS units; not physiological clean truth",
+    "public_evaluation_is_pristine": false,
+    "personal_sessions_used": false,
+    "public_evaluation_used_for_selection": false
+  },
+  "synthetic": {
+    "fit_count": 96,
+    "selection_count": 32,
+    "fit_seed": 2026101601,
+    "selection_seed": 2026101602,
+    "fundamental_hz": [
+      8,
+      20
+    ],
+    "second_harmonic_max_hz": 40,
+    "background_hz": 7,
+    "background_1_over_f": true,
+    "dc": true,
+    "continuous": true
+  },
+  "augmentation": {
+    "conditions": [
+      "identity",
+      "drift",
+      "high_burst",
+      "gaussian",
+      "combined"
+    ],
+    "drift_hz": [
+      0.1,
+      0.8
+    ],
+    "drift_rms": [
+      0.2,
+      1.5
+    ],
+    "trend_rms": [
+      0.1,
+      0.8
+    ],
+    "burst_hz": [
+      45,
+      110
+    ],
+    "burst_rms": [
+      0.2,
+      1.5
+    ],
+    "burst_duration_fraction": [
+      0.05,
+      0.3
+    ],
+    "gaussian_rms": [
+      0.2,
+      0.8
+    ]
+  },
+  "training": {
+    "seed": 20261016,
+    "epochs": 16,
+    "batch_size": 32,
+    "device": "cuda:0",
+    "require_cuda": true,
+    "deterministic": true,
+    "amp": false,
+    "allow_tf32": false,
+    "learning_rate": 0.0003,
+    "weight_decay": 0.0001,
+    "gradient_clip": 1,
+    "identity_loss_weight": 100,
+    "cpu_threads": 4,
+    "domain_balance": "equal public and long batches; cycle independently shuffled long cases"
+  },
+  "selection": {
+    "identity_normalized_change_max": 0.002,
+    "objective": "equal domains, equal four corrupted conditions, restored-reference-unit MSE",
+    "require_both_domain_identity_gates": true,
+    "tie_break": "earliest epoch",
+    "no_eligible_epoch": "save diagnostic last state with selected_epoch null and selection_gate_passed false"
+  },
+  "runtime": {
+    "enabled": false,
+    "production_validated": false,
+    "scope": "explicit_offline_research_only"
+  },
+  "artifacts": {
+    "lock": "analysis_outputs/ssvep_v13_training_lock_20261013.json",
+    "checkpoint": "models/denoiser_v13_personal.pt",
+    "manifest": "models/denoiser_v13_personal.manifest.json",
+    "report": "analysis_outputs/ssvep_v13_training_20261013.json"
+  },
+  "design": [
+    "4096 samples at native 250 Hz = 16.384 seconds; expected improvement of slow drift is a hypothesis to evaluate, not an achieved result.",
+    "v12 diagnostic window oracle MSE about 0.128 versus v12 about 0.864; retained-window-mean lower bound about 23.5% of window MSE. This is not proof of pure structural impossibility. Long context tests training-distribution and low-frequency-resolution hypotheses.",
+    "Synthetic references are continuously generated at 4096 points, never tiled 512-point snippets. No class, target, condition or gaze enters forward; no template replacement.",
+    "Fixed 50 Hz Q30 notch is measured separately from the learned residual.",
+    "DC and discrete 8-40 Hz bins are protected; white noise inside that band cannot be removed by this model. No broad-spectrum noise-removal claim.",
+    "Positive Hann overlap-add of residuals includes a final window; global protected-band/phase preservation is not mathematically guaranteed by per-window masks.",
+    "Recorded public proxies are not physiological clean truth. Long synthetic references are artificial numerical benchmarks. Public subjects 7/8 were historically accessed and are not pristine holdout.",
+    "Personal sessions and public 7/8 are excluded from fit, selection and freeze. No default deployment; independent physiological and whole-record evaluation remain required."
+  ],
+  "research_plan": "analysis_outputs/ssvep_v13_experiment_plan_20261013.json"
+}

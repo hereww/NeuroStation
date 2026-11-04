@@ -1,0 +1,10 @@
+"""Run the real Cyton NDJSON worker without importing the command UI."""
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from eeg_tools.realtime_capture import main
+
+if __name__ == "__main__":
+    raise SystemExit(main())

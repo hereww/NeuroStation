@@ -17,17 +17,29 @@
     "channel_count": 8
   },
   "targets": [
-    {"id": "top_left", "frequency_hz": 10},
-    {"id": "top_right", "frequency_hz": 12},
-    {"id": "bottom_left", "frequency_hz": 15},
-    {"id": "bottom_right", "frequency_hz": 20}
+    {
+      "id": "top_left",
+      "frequency_hz": 10
+    },
+    {
+      "id": "top_right",
+      "frequency_hz": 12
+    },
+    {
+      "id": "bottom_left",
+      "frequency_hz": 15
+    },
+    {
+      "id": "bottom_right",
+      "frequency_hz": 20
+    }
   ],
   "trial": {
-    "pre_session_rest_s": 0,
-    "pre_trial_rest_s": 0,
+    "pre_session_rest_s": 10,
+    "pre_trial_rest_s": 2,
     "stimulus_s": 5,
     "post_trial_rest_s": 3,
-    "repetitions": 3,
+    "repetitions": 10,
     "random_seed": 20260910
   },
   "events": {
