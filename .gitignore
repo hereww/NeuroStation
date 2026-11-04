@@ -32,3 +32,7 @@ datasets/external/**/*.rec
 datasets/external/**/*.edf
 datasets/external/**/*.zip
 .venv-ml-gpu/
+
+# Isolated quality-upgrade runtime, evidence and builds (never personal data).
+.quality-local/
+quality-output/

@@ -14,6 +14,7 @@ import numpy as np
 import torch
 
 from eeg_tools import matched_ssvep_decoder as decoder
+from eeg_tools.runtime_bindings import runtime_config, model_run
 from scripts.train_matched_ssvep_decoder import load_selected_model, select_device
 
 DEFAULT_RUN_DIR = Path(__file__).resolve().parents[1] / "analysis_outputs" / "wang2016_spectral_mlp_20261015"
@@ -97,7 +98,13 @@ class RealtimeCommandInference:
         self.device = select_device(device, require_cuda=device == "cuda")
         # Existing loader verifies source/code hashes, selection, state_dict and
         # weights_only=True. Do not rewrite training artifacts or their flags.
-        self.model, self.preregistration, self.selection = load_selected_model(Path(run_dir), self.device)
+        mappings = runtime_config().get("root_mappings", [])
+        if mappings:
+            from eeg_tools.model_relocation import load_relocated_model
+            loaded = load_relocated_model(model_run(run_dir), self.device, mappings)
+        else:
+            loaded = load_selected_model(Path(run_dir), self.device)
+        self.model, self.preregistration, self.selection = loaded
         self.model.eval()
         self.feature_mean = self.model.feature_mean.detach().cpu().numpy().astype(np.float64, copy=True)
         self.feature_std = self.model.feature_std.detach().cpu().numpy().astype(np.float64, copy=True)

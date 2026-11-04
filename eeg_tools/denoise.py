@@ -492,11 +492,16 @@ def _analyze_array(
             "artifact_rejected": int(rejected),
             "scores_json": json.dumps(score["scores"], ensure_ascii=False, sort_keys=True),
         })
+    from eeg_tools.quality.statistics import build_trial_ledger, summarize_trials
+    ledger = build_trial_ledger(events, rows, eeg.shape[1])
     presented_matches = [row["presented_target_match"] for row in rows]
     gaze_rows = [row for row in rows if row["gaze_target_id"]]
     return {
         "schema_version": 1,
         "analysis": "fft_ssvep_baseline",
+        "statistics_v2": summarize_trials(ledger),
+        "trial_ledger_v2": ledger,
+        "legacy_statistics_semantics": "scored rows including artifacts; not accepted-only accuracy",
         "sample_rate_hz": sample_rate,
         "trial_count": len(rows),
         "presented_target_accuracy": float(np.mean(presented_matches)) if presented_matches else None,

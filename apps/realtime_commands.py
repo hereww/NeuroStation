@@ -21,14 +21,17 @@ from PySide6.QtWidgets import (
 
 from apps.realtime_command_display import CommandStimulusWindow
 from apps.realtime_command_transport import JsonWorker
+from eeg_tools.runtime_bindings import bound_file, runtime_config
 from eeg_tools.realtime_commands import (
     CHANNEL_NAMES, CommandJournal, CommandWindowBuffer, PendingPredictionGate,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATA_ROOT = Path.home() / "Documents" / "NeuroStation" / "Datasets" / "RealtimeCommands"
-DEFAULT_MODEL_PYTHON = ROOT / ".venv-ml-gpu" / "Scripts" / "python.exe"
-DEFAULT_CAPTURE_PYTHON = ROOT / ".venv" / "Scripts" / "python.exe"
+DEFAULT_MODEL_PYTHON = bound_file("model_python", ROOT / ".venv-ml-gpu" / "Scripts" / "python.exe")
+DEFAULT_CAPTURE_PYTHON = bound_file("capture_python", ROOT / ".venv" / "Scripts" / "python.exe")
+if runtime_config().get("output_root"):
+    DEFAULT_DATA_ROOT = Path(runtime_config()["output_root"]) / "realtime"
 FLAGS = {
     "source": "realtime_eeg_model", "status": "formal", "experiment_only": True,
     "personal_validated": False, "runtime_enabled": False,
