@@ -333,11 +333,14 @@ def _filter_track(eeg: np.ndarray, sample_rate: float, config: dict[str, Any], l
     long_gap_mask = np.zeros_like(eeg, dtype=bool)
     for channel_index, values in enumerate(eeg):
         filled, long_gap = _interpolate_for_filter(values, max_gap_samples)
-        if filled.size <= 3 * max(1, sos.shape[0]):
-            raise ValueError("EEG session is too short for zero-phase denoising")
-        padlen = min(filled.size - 1, max(0, 3 * (2 * sos.shape[0] + 1)))
-        filtered = signal.sosfiltfilt(sos, filled, padlen=padlen)
-        filtered[long_gap] = np.nan
+        filtered = np.full_like(filled, np.nan)
+        # A long raw gap is a segment boundary, not a synthetic bridge for filtfilt.
+        for start, stop in _contiguous_segments(~long_gap):
+            if stop - start <= 3 * max(1, sos.shape[0]):
+                long_gap[start:stop] = True
+                continue
+            padlen = min(stop - start - 1, max(0, 3 * (2 * sos.shape[0] + 1)))
+            filtered[start:stop] = signal.sosfiltfilt(sos, filled[start:stop], padlen=padlen)
         output[channel_index] = filtered
         long_gap_mask[channel_index] = long_gap
     return output, long_gap_mask
@@ -570,7 +573,7 @@ def _cached_result(output_dir: Path, input_hashes: dict[str, str], config_sha: s
     return {**summary, "status": "up_to_date", "output_dir": str(output_dir)}
 
 
-def run_denoise_pipeline(session_dir: Path, pipeline_path: Path, output_dir: Path | None = None) -> dict[str, Any]:
+def _run_denoise_pipeline(session_dir: Path, pipeline_path: Path, output_dir: Path | None = None) -> dict[str, Any]:
     """Run the configured denoising pipeline without changing raw session files."""
 
     session_dir = Path(session_dir).expanduser().resolve()
@@ -624,6 +627,11 @@ def run_denoise_pipeline(session_dir: Path, pipeline_path: Path, output_dir: Pat
     if eeg.shape[1] < max(32, round(sample_rate)):
         raise ValueError("session contains too few samples for denoising")
     artifact_mask, artifact_records = _detect_artifacts(eeg, raw, sample_rate, config)
+    from eeg_tools.quality.artifacts import ArtifactConfig, ArtifactDetector
+    rule_config = ArtifactConfig(sample_rate_hz=round(sample_rate), **config.get("artifact_detection_v2", {}))
+    rules_v2 = ArtifactDetector(eeg_names, rule_config).process(eeg, stream_id="offline_raw", start=0)
+    for interval in rules_v2["intervals"]:
+        artifact_mask[eeg_names.index(interval["channel"]), interval["start"]:interval["stop"]] = True
     line_noise = [float(item) for item in config["line_noise_hz"]]
     marker = raw.get("marker")
     annotated_analysis, annotated_rows = _analyze_array(eeg, sample_rate, protocol, events, artifact_mask, marker)
@@ -639,6 +647,7 @@ def run_denoise_pipeline(session_dir: Path, pipeline_path: Path, output_dir: Pat
         analyses[key], rows_by_track[key] = _analyze_array(filtered, sample_rate, protocol, events, artifact_mask | long_gap, marker)
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "artifact_coverage_v2.json").write_text(json.dumps(rules_v2, ensure_ascii=False, indent=2), encoding="utf-8")
     _write_artifacts(output_dir / "artifact_segments.tsv", artifact_records)
     _write_npz(output_dir / "annotated_raw.npz", eeg, sample_rate, raw, artifact_mask, eeg_names)
     for key, values in filtered_tracks.items():
@@ -695,6 +704,30 @@ def run_denoise_pipeline(session_dir: Path, pipeline_path: Path, output_dir: Pat
     metrics["output_dir"] = str(output_dir)
     metrics["generated_files"] = [path.name for path in output_files] + ["derived_manifest.csv"]
     return metrics
+
+
+def run_denoise_pipeline(session_dir: Path, pipeline_path: Path, output_dir: Path | None = None) -> dict[str, Any]:
+    from eeg_tools.quality.cache import implementation_identity, run_revision
+    from eeg_tools.quality.contracts import identity
+    session_dir = Path(session_dir).expanduser().resolve()
+    pipeline_path = Path(pipeline_path).expanduser().resolve()
+    if not session_dir.is_dir():
+        raise ValueError(f"session directory was not found: {session_dir}")
+    if not pipeline_path.is_file():
+        raise ValueError(f"pipeline configuration was not found: {pipeline_path}")
+    _validate_session_manifest(session_dir)
+    effective = _merged_config(_load_json(pipeline_path))
+    _validate_config(effective)
+    names = set(_SESSION_INPUTS) | {"protocol.json", "ssvep_config.json", "manifest.csv"}
+    key = identity({"schema_version": 2, "effective_config": effective,
+                    "config_file_sha256": _sha256(pipeline_path),
+                    "implementation": implementation_identity(),
+                    "inputs": {name: _sha256(session_dir / name) for name in sorted(names) if (session_dir / name).is_file()}})
+    base = Path(output_dir or session_dir / "derived" / PIPELINE_VERSION).expanduser().resolve()
+    # Never allow a cache path to encompass or replace raw session inputs.
+    if base == session_dir or session_dir.is_relative_to(base):
+        raise ValueError("derived output must not replace the source session")
+    return run_revision(base, key, lambda stage: _run_denoise_pipeline(session_dir, pipeline_path, stage))
 
 
 __all__ = ["DEFAULT_CONFIG", "PIPELINE_VERSION", "run_denoise_pipeline"]

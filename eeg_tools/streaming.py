@@ -121,9 +121,10 @@ class BlockRecorder:
                 self.previous_hash = record['record_hash']
                 self.sequence += 1
                 block.flags.writeable = False
+                consumer_record = {**record, "watermarks": self.watermarks}
                 if consumer:
                     try:
-                        consumer(block, record)
+                        consumer(block, consumer_record)
                         self.assessed = self.durable
                     except Exception as exc:
                         self.consumer_errors.append({'start':meta['start'], 'stop':meta['stop'],
@@ -147,7 +148,7 @@ class BlockRecorder:
             self.journal.close()
             atomic_json(self.directory/'seal.json', {'schema_version':2,'status':'failed' if self.failed else status,
                         'error':self.failed, 'watermarks':self.watermarks, 'last_hash':self.previous_hash,
-                        'consumer_errors':self.consumer_errors})
+                        'consumer_errors':self.consumer_errors, 'quality_evidence':{p.name:sha256(p) for p in self.directory.glob('quality-*') if p.is_file()}})
         finally:
             self.closed = True
 

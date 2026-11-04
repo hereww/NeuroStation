@@ -368,6 +368,7 @@ def run_capture(
     quality: _Quality | None = None
     raw_writer = None
     recorder = None
+    quality_sink = None
     row_count = 0
     error_message = ""
     preflight: dict[str, Any] | None = None
@@ -380,7 +381,7 @@ def run_capture(
         assert quality is not None
         for begin in range(0, raw.shape[1], SAMPLE_RATE):
             chunk = raw[:, begin:begin + SAMPLE_RATE]
-            records = [r for _, r in recorder.append(chunk, received_at=received_at)]
+            records = [r for _, r in recorder.append(chunk, consumer=quality_sink, received_at=received_at)]
             quality.update(chunk)
             record = {**records[-1], "start": records[0]["start"], "segments": records,
                       "gaps": [gap for r in records for gap in r["gaps"]]}
@@ -392,6 +393,7 @@ def run_capture(
                 "timestamps_s": chunk[quality.timestamp_row].tolist(),
                 "timestamp_source": record["timestamp_source"],
                 "received_monotonic_s": received_at, "quality": quality.report(), "block": record,
+                "quality_v2": quality_sink.latest if quality_sink and quality_sink.latest and quality_sink.latest["stop"] == record["stop"] else None,
             }))
 
     phase = "configuration_validation"
@@ -431,6 +433,8 @@ def run_capture(
                                      channel_names=CHANNEL_NAMES, eeg_rows=eeg_rows,
                                      package_row=package_row, timestamp_row=timestamp_row,
                                      raw_handle=raw_handle, raw_writer=raw_writer)
+            from eeg_tools.quality.recording import QualitySink
+            quality_sink = QualitySink(recorder.directory, eeg_rows, CHANNEL_NAMES)
             write_column_definitions(session_dir / "raw_columns.tsv", definitions)
             owned_files.append(session_dir / "raw_columns.tsv")
             phase = "device_handshake"
@@ -502,6 +506,8 @@ def run_capture(
                 session["cleanup_errors"].append(f"release_session: {error}")
         if recorder is not None:
             try:
+                if quality_sink is not None:
+                    quality_sink.close()
                 recorder.close("failed" if error_message or session["cleanup_errors"] else "completed")
                 session["watermarks"] = recorder.watermarks
                 session["raw_blocks"] = {"path": "raw_blocks", "journal_sha256": sha256(recorder.directory / "blocks.jsonl"), "seal_sha256": sha256(recorder.directory / "seal.json")}

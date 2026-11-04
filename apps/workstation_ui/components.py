@@ -461,37 +461,20 @@ def _biquad_coefficients(
 class _OpenBCIDisplayFilter:
     """Causal 4th-order 5-50 Hz Butterworth path plus 50/60 Hz notches."""
 
-    _BUTTERWORTH_Q = (0.5411961001461971, 1.3065629648763766)
-
     def __init__(self, sample_rate_hz: int):
+        from eeg_tools.quality.filtering import CausalProcessor, ProcessingConfig
         self.sample_rate_hz = sample_rate_hz
-        self.sections = [
-            _Biquad(_biquad_coefficients("highpass", 5.0, sample_rate_hz, quality))
-            for quality in self._BUTTERWORTH_Q
-        ]
-        self.sections.extend(
-            _Biquad(_biquad_coefficients("lowpass", 50.0, sample_rate_hz, quality))
-            for quality in self._BUTTERWORTH_Q
-        )
-        self.sections.append(
-            _Biquad(_biquad_coefficients("notch", 50.0, sample_rate_hz, 25.0))
-        )
-        self.sections.append(
-            _Biquad(_biquad_coefficients("notch", 60.0, sample_rate_hz, 30.0))
-        )
+        self.processor = CausalProcessor(ProcessingConfig(sample_rate_hz=sample_rate_hz, channels=("display",)))
+        self.index = 0
 
     def reset(self) -> None:
-        for section in self.sections:
-            section.reset()
+        self.processor.reset()
+        self.index = 0
 
     def process(self, values: list[float]) -> list[float]:
-        output: list[float] = []
-        for value in values:
-            current = value if isfinite(value) else 0.0
-            for section in self.sections:
-                current = section.process(current)
-            output.append(current)
-        return output
+        result = self.processor.process([values], stream_id="display", start=self.index)
+        self.index += len(values)
+        return result["samples"][0].tolist()
 
 
 class WaveformDisplayModel:

@@ -27,7 +27,7 @@ def summarize_trials(ledger):
             "acceptance_authority": "explicit model decision only; FFT winner is not accepted"}
 
 
-def build_trial_ledger(events, scored, sample_count):
+def build_trial_ledger(events, scored, sample_count, *, complete_quality_coverage=False):
     groups = defaultdict(list)
     for event in events:
         key = str(event.get("trial_index", ""))
@@ -55,10 +55,11 @@ def build_trial_ledger(events, scored, sample_count):
             reason = "scoring_failed"
         row = {"trial_index": key, "quality": "unknown", "decision": "unassessable",
                "scoring_status": "unassessable", "reason": reason,
+               "quality_authority": "legacy mask rejects only; hardware rule coverage unvalidated",
                "presented_target_id": (onsets[0].get("presented_target_id") or onsets[0].get("target_id")) if onsets else None,
                "gaze_target_id": None, "predicted_target_id": None}
         if reason is None:
-            row.update(quality="fail" if score["artifact_rejected"] else "pass",
+            row.update(quality="fail" if score["artifact_rejected"] else "pass" if complete_quality_coverage else "unknown",
                        decision="rejected" if score["artifact_rejected"] else "unassessable",
                        scoring_status="scored", reason="artifact" if score["artifact_rejected"] else "no_model_decision",
                        presented_target_id=score["presented_target_id"], gaze_target_id=score["gaze_target_id"],

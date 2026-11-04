@@ -1074,7 +1074,7 @@ def main(argv: list[str] | None = None) -> int:
         status_file.parent / "live_waveform.tsv" if status_file is not None else None
     )
     live_waveform_writer: _LiveWaveformWriter | None = None
-    capture_owner = recorder = raw_handle = None
+    capture_owner = recorder = raw_handle = quality_sink = None
     column_definitions = None
     completed_trials = 0
     status = "error"
@@ -1272,8 +1272,15 @@ def main(argv: list[str] | None = None) -> int:
                                      timestamp_row=int(BoardShim.get_timestamp_channel(board_id)),
                                      sample_rate=int(BoardShim.get_sampling_rate(board_id)),
                                      raw_handle=raw_handle, raw_writer=raw_writer)
-            capture_owner = AcquisitionOwner(board, recorder,
-                live_waveform_writer.consume if live_waveform_writer is not None else None)
+            from eeg_tools.quality.recording import QualitySink
+            quality_sink = QualitySink(recorder.directory, eeg_rows, recorder.channels,
+                                       sample_rate=int(BoardShim.get_sampling_rate(board_id)),
+                                       live_path=status_file.parent / "quality-live.json" if status_file else None)
+            def consume_block(data, record):
+                quality_sink(data, record)
+                if live_waveform_writer is not None:
+                    live_waveform_writer.consume(data, record)
+            capture_owner = AcquisitionOwner(board, recorder, consume_block)
             capture_owner.start()
             acquisition_started = time.perf_counter()
             add_event(
@@ -1473,6 +1480,8 @@ def main(argv: list[str] | None = None) -> int:
             live_waveform_writer.close()
         if recorder is not None:
             try:
+                if quality_sink is not None:
+                    quality_sink.close()
                 recorder.close("completed" if status == "completed" else status)
                 from eeg_tools.streaming import materialize_verified
                 raw_data = materialize_verified(recorder.directory)
