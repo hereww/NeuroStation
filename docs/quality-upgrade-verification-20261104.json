@@ -1,0 +1,218 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-04",
+  "branch": "codex/neurostation-quality-upgrade",
+  "baseline_snapshot": "274a0cd",
+  "code_commit": "acc3fe04836d5e9443a250ecf46a5760d0657fa0",
+  "status": "software_branch_delivered_full_acceptance_incomplete",
+  "merged": false,
+  "pushed": false,
+  "source_identity": "ee5ce68596ff32a86211c3f0d9a991658c25bd2c5ec695fc49b8f718d0556286",
+  "focused": {
+    "started_tests": 302,
+    "passed_tests": 302,
+    "failure_events": 0,
+    "error_events": 0,
+    "skipped_tests": 0,
+    "checks": {
+      "formal_configuration": true,
+      "syntax": true,
+      "source_unchanged_during_run": true
+    },
+    "successful": true
+  },
+  "ui": {
+    "started_tests": 114,
+    "passed_tests": 114,
+    "failure_events": 0,
+    "error_events": 0,
+    "skipped_tests": 0,
+    "checks": {
+      "formal_configuration": true,
+      "syntax": true,
+      "source_unchanged_during_run": true
+    },
+    "successful": true
+  },
+  "full": {
+    "loaded_tests": 1864,
+    "started_tests": 1856,
+    "passed_tests": 1702,
+    "failure_events": 1,
+    "error_events": 135,
+    "skipped_tests": 25,
+    "not_started_ids": [
+      "test_ssvep_denoise_v6.CheckpointTests.test_binding_and_domain_schema",
+      "test_ssvep_denoise_v6.CheckpointTests.test_changed_freeze_or_collision_cannot_publish",
+      "test_ssvep_denoise_v6.CheckpointTests.test_epoch_gate_loss_and_condition_provenance",
+      "test_ssvep_denoise_v6.CheckpointTests.test_exact_top_keys_types_and_provenance",
+      "test_ssvep_denoise_v6.CheckpointTests.test_no_eligible_still_valid_failed_best_no_runtime_acceptance",
+      "test_ssvep_denoise_v6.CheckpointTests.test_publication_selfload_uses_one_bundle_and_rechecks_freeze",
+      "test_ssvep_denoise_v6.CheckpointTests.test_state_finite_dtype_shape_keys",
+      "test_ssvep_denoise_v6.CheckpointTests.test_strict_cpu_validator_and_inmemory_weights_only_roundtrip"
+    ],
+    "checks": {
+      "formal_configuration": true,
+      "syntax": true,
+      "source_unchanged_during_run": true
+    },
+    "successful": false
+  },
+  "full_count_note": "Unittest failure/error events include subtests and class setup, so events cannot be added as disjoint test-method counts.",
+  "baseline_comparison": {
+    "baseline_failure_events": 142,
+    "candidate_failure_events": 136,
+    "branch_only_failures": []
+  },
+  "performance": {
+    "schema_version": 2,
+    "fixture_only": true,
+    "hardware_opened": false,
+    "stimulus_started": false,
+    "simulated_stream_seconds": 90,
+    "block_samples": 13,
+    "wall_elapsed_s": 40.26190420000057,
+    "quality_execution": "bounded_async_worker",
+    "quality_queue": {
+      "submitted": 1731,
+      "completed": 1731,
+      "dropped": 0,
+      "pending": 0,
+      "active": false,
+      "capacity": 8,
+      "thread_stopped": true
+    },
+    "frame_count": 1731,
+    "offscreen_sample_to_paint_p95_ms": 28.71179999965534,
+    "quality_compute_p95_ms": 3.2633499995426973,
+    "record_and_quality_ready_p95_ms": 21.951400000034482,
+    "first_window_accumulation_s": {
+      "amplitude": 2,
+      "psd": 8,
+      "drift": 10,
+      "trend": 30
+    },
+    "targets": {
+      "offscreen_paint_ms": 250,
+      "quality_ready_ms": 1000,
+      "compute_ms": 100
+    },
+    "replay": {
+      "schema_version": 2,
+      "verified_blocks": 1731,
+      "verified_samples": 22500,
+      "recording_complete": true,
+      "online_replay_match": true,
+      "raw_hashes_unchanged": true,
+      "mismatches": [],
+      "hardware_verified": false,
+      "processing_id": "7f670fc31451c7c325584f06043bf9594ab3169c45dc9ea46cccc0b8450321f1"
+    },
+    "real_30min_load": "not_run",
+    "real_2h_soak": "not_run",
+    "physical_display_latency": "not_measured",
+    "software_only": true,
+    "passed": true
+  },
+  "build": {
+    "schema_version": 1,
+    "artifact": "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\build-20261104-180252\\dist\\NeuroStationQualityUpgrade",
+    "checks": [
+      {
+        "check": "workstation",
+        "arguments": [
+          "--smoke-test"
+        ],
+        "exit_code": 0,
+        "passed": true
+      },
+      {
+        "check": "realtime",
+        "arguments": [
+          "--realtime-commands",
+          "--smoke-test"
+        ],
+        "exit_code": 0,
+        "passed": true
+      },
+      {
+        "check": "capture_help",
+        "arguments": [
+          "--realtime-capture-worker",
+          "--help"
+        ],
+        "exit_code": 0,
+        "passed": true
+      },
+      {
+        "check": "main_worker_help",
+        "arguments": [
+          "--acquisition-worker",
+          "--help"
+        ],
+        "exit_code": 0,
+        "passed": true
+      },
+      {
+        "check": "diagnostics",
+        "arguments": [
+          "--diagnostics"
+        ],
+        "exit_code": 0,
+        "passed": true
+      }
+    ],
+    "all_passed": true,
+    "hardware_started": false,
+    "stimulus_started": false,
+    "model_included": false,
+    "torch_included": false,
+    "fresh_windows_machine_validation": "not_run",
+    "smoke_path": "C:\\Windows/System32;C:\\Windows"
+  },
+  "original_workspace": {
+    "source": "F:\\脑机采集\\NeuroStation",
+    "snapshot_files": 302,
+    "head_unchanged": true,
+    "tracked_status_unchanged": true,
+    "staged_diff_unchanged": true,
+    "changed_source_files": [],
+    "changed_model_artifacts": [],
+    "source_head": "8697608303bdf4d5f1a84454e0837fb8f647df88",
+    "expected_staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "actual_staged_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "scope": "302 snapshot source files and separately registered model artifacts; not a full-disk snapshot",
+    "status_path_encoding": "git -c core.quotepath=false, UTF-8"
+  },
+  "pending": [
+    "historical artifact-dependent full-suite paths",
+    "real EEG capture and stimulus timing",
+    "hardware threshold validation",
+    "real 30-minute load and 2-hour soak",
+    "power-loss durability",
+    "physical display latency / dual-display high-DPI checks",
+    "fresh Windows host smoke"
+  ],
+  "evidence_sha256": {
+    "quality-output/acceptance-focused-v3/results.json": "b99b718d604b7d27d949cac8e5ed560a6ac02824dc0450564023238d59eee108",
+    "quality-output/acceptance-full-v3/results.json": "c0144061070ae25f74e4d27accd8b4d942dfcbc1dea6fb4cf5e93d3d799154cf",
+    "quality-output/acceptance-ui-v3/results.json": "ca5dfcb9dffab51820c54774d2f07eafa52af866c0dc9f11da17c1b926d2866f",
+    "quality-output/benchmark-final-90s/performance.json": "5b425fb1872eee72b12c8ccc7c5753750a7011f2cf20e882ce62654e53291bbf",
+    "quality-output/build-20261104-180252/build-verification.json": "bb18a7c7f7fe9e1eac33487b12643a81988dcc91a4bc573d2acb49a01dec7860",
+    ".quality-local/original-workspace-verification.json": "fb719dd8803b62ee35e97751b36b8c0bcda66eaf13ec887616a83a0dd3dd3e08",
+    ".quality-local/baseline-comparison-final.json": "9958be65135d4264bd7816ddeb32c283d424e7041e863e9eafa2ca7be13d0d47",
+    ".quality-local/model-final-check.ndjson": "52424579fff9fd60a2f824c5ab81835aac1f649616410ad3df50ac57907dc26d",
+    ".quality-local/model-packaged-check.ndjson": "52424579fff9fd60a2f824c5ab81835aac1f649616410ad3df50ac57907dc26d"
+  },
+  "delivery": {
+    "directory": "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\delivery-20261104",
+    "archive": "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\delivery-20261104\\NeuroStationQualityUpgrade-20261104-acc3fe0-Windows-x64.zip",
+    "sha256": "2fd92dba6dba62c7a575f71118d484de76cd83548a6f52b2af469a11002e8801",
+    "zip_bytes": 131042784,
+    "runtime_file_count": 1046,
+    "runtime_bytes": 334988449,
+    "archive_members_verified": true,
+    "scipy_library_fixture_files": 111,
+    "eeg_data_included": false
+  }
+}
