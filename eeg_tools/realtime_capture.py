@@ -25,6 +25,7 @@ from typing import Any, Callable, TextIO
 import numpy as np
 
 from eeg_tools import config as config_tools
+from eeg_tools.streaming import BlockRecorder
 from eeg_tools.session_files import (
     brainflow_column_definitions, format_raw_number, sha256,
     write_column_definitions, write_json, write_manifest,
@@ -366,6 +367,7 @@ def run_capture(
     raw_handle = None
     quality: _Quality | None = None
     raw_writer = None
+    recorder = None
     row_count = 0
     error_message = ""
     preflight: dict[str, Any] | None = None
@@ -378,19 +380,18 @@ def run_capture(
         assert quality is not None
         for begin in range(0, raw.shape[1], SAMPLE_RATE):
             chunk = raw[:, begin:begin + SAMPLE_RATE]
-            first = quality.sample_count
-            # Write every original BrainFlow row, without timestamp deduplication or padding.
-            for offset in range(chunk.shape[1]):
-                raw_writer.writerow([first + offset] + [format_raw_number(value) for value in chunk[:, offset]])
-            raw_handle.flush()
+            records = [r for _, r in recorder.append(chunk, received_at=received_at)]
             quality.update(chunk)
+            record = {**records[-1], "start": records[0]["start"], "segments": records,
+                      "gaps": [gap for r in records for gap in r["gaps"]]}
             emit(_json_safe({
                 "type": "samples", "channel_names": list(CHANNEL_NAMES), "sample_rate_hz": SAMPLE_RATE,
                 "samples": chunk[quality.eeg_rows].tolist(),
-                "sample_indices": list(range(first, quality.sample_count)),
-                "package_numbers": [int(value) if np.isfinite(value) and value == int(value) and 0 <= value < 256 else None for value in chunk[quality.package_row]],
+                "sample_indices": list(range(record["start"], record["stop"])),
+                "package_numbers": [int(v) if np.isfinite(v) and v == int(v) and 0 <= v < 256 else None for v in chunk[quality.package_row]],
                 "timestamps_s": chunk[quality.timestamp_row].tolist(),
-                "received_monotonic_s": received_at, "quality": quality.report(),
+                "timestamp_source": record["timestamp_source"],
+                "received_monotonic_s": received_at, "quality": quality.report(), "block": record,
             }))
 
     phase = "configuration_validation"
@@ -426,6 +427,10 @@ def run_capture(
             raw_writer = csv.writer(raw_handle, delimiter="\t", lineterminator="\n")
             raw_writer.writerow([item["column_name"] for item in definitions])
             raw_handle.flush()
+            recorder = BlockRecorder(session_dir / "raw_blocks", session_id=session_dir.name,
+                                     channel_names=CHANNEL_NAMES, eeg_rows=eeg_rows,
+                                     package_row=package_row, timestamp_row=timestamp_row,
+                                     raw_handle=raw_handle, raw_writer=raw_writer)
             write_column_definitions(session_dir / "raw_columns.tsv", definitions)
             owned_files.append(session_dir / "raw_columns.tsv")
             phase = "device_handshake"
@@ -495,6 +500,13 @@ def run_capture(
                     board.release_session()
             except Exception as error:
                 session["cleanup_errors"].append(f"release_session: {error}")
+        if recorder is not None:
+            try:
+                recorder.close("failed" if error_message or session["cleanup_errors"] else "completed")
+                session["watermarks"] = recorder.watermarks
+                session["raw_blocks"] = {"path": "raw_blocks", "journal_sha256": sha256(recorder.directory / "blocks.jsonl"), "seal_sha256": sha256(recorder.directory / "seal.json")}
+            except Exception as error:
+                session["cleanup_errors"].append(f"recorder_close: {error}")
         if raw_handle is not None:
             try:
                 raw_handle.close()

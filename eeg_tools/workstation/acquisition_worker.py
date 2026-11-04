@@ -879,7 +879,7 @@ def _annotate_event_samples(
     timestamps = (
         raw_data[timestamp_channel, :]
         if timestamp_channel < raw_data.shape[0]
-        else np.zeros(raw_data.shape[1])
+        else np.full(raw_data.shape[1], np.nan)
     )
     used_by_marker: dict[int, int] = {}
     session_start_time: float | None = None
@@ -896,6 +896,8 @@ def _annotate_event_samples(
         used_by_marker[marker] = start + 1
         sample_time = float(timestamps[sample_index])
         event["sample_index"] = sample_index
+        if not np.isfinite(sample_time):
+            continue
         event["sample_time_s"] = round(sample_time, 9)
         if event.get("event_name") == "session_start":
             session_start_time = sample_time
@@ -917,6 +919,7 @@ class _LiveWaveformWriter:
             self.marker_row = int(BoardShim.get_marker_channel(board_id))
         except Exception:
             self.marker_row = -1
+        self.package_row = int(BoardShim.get_package_num_channel(board_id))
         self.sample_index = 0
         self.last_timestamp: float | None = None
         self.handle = path.open("w", encoding="utf-8", newline="")
@@ -924,54 +927,28 @@ class _LiveWaveformWriter:
             "\t".join(
                 ["sample_index", "timestamp_s", "marker"]
                 + [f"eeg_ch{index}" for index in range(1, len(self.eeg_rows) + 1)]
+                + ["stream_id", "generation", "package_number", "received_monotonic_s"]
             )
             + "\n"
         )
         self.handle.flush()
 
-    def pump(self, maximum_samples: int = 512) -> int:
-        import numpy as np
-
-        getter = getattr(self.board, "get_current_board_data", None)
-        if getter is None:
-            return 0
-        try:
-            data = getter(maximum_samples)
-        except Exception:
-            return 0
-        if getattr(data, "ndim", 0) != 2 or data.shape[1] == 0:
-            return 0
-        if self.timestamp_row < 0 or self.timestamp_row >= data.shape[0]:
-            return 0
-        timestamps = np.asarray(data[self.timestamp_row, :], dtype=float)
-        valid = np.isfinite(timestamps)
-        if self.last_timestamp is not None:
-            valid &= timestamps > self.last_timestamp + 1e-9
-        indexes = np.flatnonzero(valid)
-        if indexes.size == 0:
-            return 0
-        for column in indexes:
-            timestamp = float(timestamps[column])
-            marker = (
-                float(data[self.marker_row, column])
-                if 0 <= self.marker_row < data.shape[0]
-                else 0.0
-            )
-            eeg = [
-                float(data[row, column]) if 0 <= row < data.shape[0] else float("nan")
-                for row in self.eeg_rows
-            ]
-            values = [
-                self.sample_index,
-                format_raw_number(timestamp),
-                format_raw_number(marker),
-            ]
-            values.extend(format_raw_number(value) for value in eeg)
+    def consume(self, data, record) -> int:
+        for column in range(data.shape[1]):
+            values = [record["start"] + column,
+                      format_raw_number(data[self.timestamp_row, column]),
+                      format_raw_number(data[self.marker_row, column]) if self.marker_row >= 0 else "nan"]
+            values.extend(format_raw_number(data[row, column]) for row in self.eeg_rows)
+            values.extend([record["stream_id"], record["generation"],
+                           format_raw_number(data[self.package_row, column]),
+                           record["received_monotonic_s"]])
             self.handle.write("\t".join(str(value) for value in values) + "\n")
-            self.sample_index += 1
-            self.last_timestamp = timestamp
         self.handle.flush()
-        return int(indexes.size)
+        return data.shape[1]
+
+    def pump(self, maximum_samples: int = 512) -> int:
+        # Compatibility shim: only AcquisitionOwner may drain the board.
+        return 0
 
     def close(self) -> None:
         if not self.handle.closed:
@@ -1097,6 +1074,8 @@ def main(argv: list[str] | None = None) -> int:
         status_file.parent / "live_waveform.tsv" if status_file is not None else None
     )
     live_waveform_writer: _LiveWaveformWriter | None = None
+    capture_owner = recorder = raw_handle = None
+    column_definitions = None
     completed_trials = 0
     status = "error"
     error_message: str | None = None
@@ -1132,8 +1111,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0.0 if recording_started is None else time.perf_counter() - recording_started
 
     def pump_live_waveform() -> None:
-        if live_waveform_writer is not None:
-            live_waveform_writer.pump()
+        if capture_owner is not None:
+            capture_owner.check()
 
     def add_event(
         name: str,
@@ -1279,6 +1258,23 @@ def main(argv: list[str] | None = None) -> int:
                 live_waveform_writer = _LiveWaveformWriter(
                     live_waveform_path, board, int(board_id)
                 )
+            from eeg_tools.streaming import BlockRecorder, AcquisitionOwner
+            from eeg_tools.session_files import brainflow_column_definitions
+            eeg_rows = tuple(BoardShim.get_eeg_channels(board_id))
+            column_definitions = brainflow_column_definitions(int(board_id), int(BoardShim.get_num_rows(board_id)), sampling_rate_hz=int(BoardShim.get_sampling_rate(board_id)))
+            raw_handle = (session_dir / "raw_brainflow.tsv").open("x", encoding="utf-8", newline="")
+            raw_writer = csv.writer(raw_handle, delimiter="\t", lineterminator="\n")
+            raw_writer.writerow([row["column_name"] for row in column_definitions])
+            raw_handle.flush()
+            recorder = BlockRecorder(session_dir / "raw_blocks", session_id=session_id,
+                                     channel_names=[f"eeg_ch{i+1}" for i in range(len(eeg_rows))],
+                                     eeg_rows=eeg_rows, package_row=int(BoardShim.get_package_num_channel(board_id)),
+                                     timestamp_row=int(BoardShim.get_timestamp_channel(board_id)),
+                                     sample_rate=int(BoardShim.get_sampling_rate(board_id)),
+                                     raw_handle=raw_handle, raw_writer=raw_writer)
+            capture_owner = AcquisitionOwner(board, recorder,
+                live_waveform_writer.consume if live_waveform_writer is not None else None)
+            capture_owner.start()
             acquisition_started = time.perf_counter()
             add_event(
                 "acquisition_start",
@@ -1447,33 +1443,55 @@ def main(argv: list[str] | None = None) -> int:
             pass
         status = "error"
     finally:
-        pump_live_waveform()
-        if live_waveform_writer is not None:
-            live_waveform_writer.close()
         if window is not None:
             window.close()
+        if capture_owner is not None:
+            try:
+                capture_owner.stop()
+            except Exception as exc:
+                error_message = f"capture_stop: {exc}"
+                status, exit_code = "error", 1
         if board is not None:
             if streaming:
                 try:
                     board.stop_stream()
-                except Exception:
-                    pass
-                try:
-                    raw_data = board.get_board_data()
-                except Exception:
-                    raw_data = np.empty((0, 0))
-            if prepared:
+                    if capture_owner is not None and not capture_owner.thread.is_alive():
+                        capture_owner.final_drain()
+                except Exception as exc:
+                    error_message = f"final_drain: {exc}"
+                    status, exit_code = "error", 1
+            if prepared and (capture_owner is None or not capture_owner.thread.is_alive()):
                 try:
                     board.release_session()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    error_message = f"release: {exc}"
+                    status, exit_code = "error", 1
+        if capture_owner is not None and capture_owner.thread.is_alive():
+            # Never close or read files while the sole capture owner can still write.
+            raise RuntimeError("Capture owner remains active; recording requires offline recovery")
+        if live_waveform_writer is not None:
+            live_waveform_writer.close()
+        if recorder is not None:
+            try:
+                recorder.close("completed" if status == "completed" else status)
+                from eeg_tools.streaming import materialize_verified
+                raw_data = materialize_verified(recorder.directory)
+            except Exception as exc:
+                error_message = f"recording_seal: {exc}"
+                status, exit_code = "error", 1
+        if raw_handle is not None:
+            raw_handle.close()
 
     _annotate_event_samples(events, raw_data, board_id)
     raw_path = session_dir / "raw_brainflow.tsv"
     sample_rate_hz = 0 if board_id is None else int(BoardShim.get_sampling_rate(board_id))
-    column_definitions = write_brainflow_tsv(
-        raw_path, raw_data, board_id, sampling_rate_hz=sample_rate_hz
-    )
+    if column_definitions is None:
+        column_definitions = write_brainflow_tsv(raw_path, raw_data, board_id, sampling_rate_hz=sample_rate_hz)
+    if raw_data.size and board_id is not None:
+        from eeg_tools.quality.events import associate_events
+        write_json(session_dir / "event_associations_v2.json", associate_events(
+            events, raw_data[int(BoardShim.get_marker_channel(board_id))],
+            raw_data[int(BoardShim.get_timestamp_channel(board_id))]))
     columns_path = session_dir / "raw_columns.tsv"
     write_column_definitions(columns_path, column_definitions)
     events_path = session_dir / "events.tsv"
@@ -1516,6 +1534,9 @@ def main(argv: list[str] | None = None) -> int:
         recording_status=status,
         error=error_message,
     )
+    if recorder is not None:
+        quality_report["watermarks_v2"] = recorder.watermarks
+        quality_report["consumer_errors_v2"] = recorder.consumer_errors
     quality_report["frame_timing"] = display_metadata["frame_timing"]
     quality_report["graphics"] = display_metadata.get("rendering", {})
     write_json(quality_path, quality_report)

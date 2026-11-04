@@ -565,7 +565,13 @@ class AcquisitionProcessGateway:
         channel_names = self._live_channel_names or channel_labels_from_path(
             self.channel_config_path, len(eeg_columns)
         )
+        metadata = {}
+        for key in ("sample_index", "timestamp_s", "stream_id", "generation", "package_number", "received_monotonic_s"):
+            if key in self._live_waveform_header:
+                index = self._live_waveform_header.index(key)
+                metadata[key] = [row[index] if index < len(row) else None for row in rows]
         return {
+            "metadata_v2": metadata,
             "channel_names": channel_names[: len(eeg_columns)],
             "sample_rate_hz": int(self.device.sample_rate or 250),
             "samples": samples,
