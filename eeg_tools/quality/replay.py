@@ -8,6 +8,7 @@ import re
 
 import numpy as np
 from eeg_tools.quality.engine import QualityEngine, safe_json
+from eeg_tools.quality.contracts import identity
 from eeg_tools.quality.evidence import capture_snapshot, snapshot_matches, check_cancelled, read_snapshot
 from eeg_tools.streaming import recover_blocks
 
@@ -121,7 +122,10 @@ def replay_quality(directory, *, on_result=None, cancelled=None):
     numerical_match = not mismatches and bool(recovery['records'])
     mismatches.extend({'reason': reason} for reason in evidence_issues)
     check_cancelled(cancelled)
-    return {'schema_version': 2, 'verified_blocks': len(recovery['records']),
+    return {'schema_version': 2, 'source_directory': str(directory.resolve()),
+            'source_hashes': snapshot, 'source_identity': identity(snapshot),
+            'verification_scope': 'verified raw prefix and recorded local evidence at replay time',
+            'verified_blocks': len(recovery['records']),
             'verified_samples': recovery['verified_samples'], 'recording_complete': recovery['complete'],
             'online_replay_match': numerical_match and not evidence_issues and raw_unchanged,
             'numerical_replay_match': numerical_match, 'quality_evidence_verified': not evidence_issues,

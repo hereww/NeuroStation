@@ -25,6 +25,19 @@ class QualityAuditEvidenceTests(unittest.TestCase):
                                             self.cancel, seconds=1, realtime=False)['session_dir'])
         self.raw = self.session / 'raw_blocks'
 
+    def test_saved_replay_binds_verdict_to_the_exact_source_files(self):
+        import hashlib
+        result = preview.run_replay(self.session, self.root / 'replays', lambda *_: None,
+                                    self.cancel, realtime_preview=False)
+        saved = json.loads((Path(result['output_dir']) / 'replay.json').read_text(encoding='utf-8'))
+        self.assertEqual(saved['source_directory'], str(self.raw.resolve()))
+        self.assertEqual(saved['source_hashes']['seal.json'],
+                         hashlib.sha256((self.raw / 'seal.json').read_bytes()).hexdigest())
+        self.assertEqual(saved['source_hashes']['00000000.npy'],
+                         hashlib.sha256((self.raw / '00000000.npy').read_bytes()).hexdigest())
+        self.assertEqual(len(saved['source_identity']), 64)
+        self.assertTrue(saved['quality_evidence_verified'])
+
     def test_uncompared_quality_field_tampering_must_not_pass_replay(self):
         path = self.raw / 'quality-v2.jsonl'
         rows = path.read_text(encoding='utf-8').splitlines()
