@@ -1,0 +1,300 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-06",
+  "created_at": "2026-11-06T08:56:22.733812+00:00",
+  "branch": "codex/neurostation-quality-upgrade",
+  "audit_entry_commit": "4ee934d9ed5d6647f5c07d43aa9bb1d24d68117f",
+  "source_commit": "6fe44b7cb41d58db5c0274333c6537c02572d32b",
+  "source_identity": "2027eb7eb457633eb48dd31004030dab3dbdda9aad083db4c8587a207ff3c5e6",
+  "source_file_count": 392,
+  "acceptance": "conditional_software_scope_passed_not_full_or_hardware_acceptance",
+  "recommended_next_state": "independent_trial_no_merge",
+  "new_regression_test_methods": 29,
+  "tests": {
+    "focused": {
+      "git_head": "6fe44b7cb41d58db5c0274333c6537c02572d32b",
+      "source_identity": "2027eb7eb457633eb48dd31004030dab3dbdda9aad083db4c8587a207ff3c5e6",
+      "loaded_tests": 335,
+      "started_tests": 335,
+      "passed_tests": 335,
+      "failure_events": 0,
+      "error_events": 0,
+      "skipped_tests": 0,
+      "checks": {
+        "formal_configuration": true,
+        "syntax": true,
+        "source_unchanged_during_run": true
+      },
+      "successful": true,
+      "not_started_count": 0
+    },
+    "ui": {
+      "git_head": "6fe44b7cb41d58db5c0274333c6537c02572d32b",
+      "source_identity": "2027eb7eb457633eb48dd31004030dab3dbdda9aad083db4c8587a207ff3c5e6",
+      "loaded_tests": 129,
+      "started_tests": 129,
+      "passed_tests": 129,
+      "failure_events": 0,
+      "error_events": 0,
+      "skipped_tests": 0,
+      "checks": {
+        "formal_configuration": true,
+        "syntax": true,
+        "source_unchanged_during_run": true
+      },
+      "successful": true,
+      "not_started_count": 0
+    },
+    "full": {
+      "git_head": "6fe44b7cb41d58db5c0274333c6537c02572d32b",
+      "source_identity": "2027eb7eb457633eb48dd31004030dab3dbdda9aad083db4c8587a207ff3c5e6",
+      "loaded_tests": 1897,
+      "started_tests": 1889,
+      "passed_tests": 1735,
+      "failure_events": 1,
+      "error_events": 135,
+      "skipped_tests": 25,
+      "checks": {
+        "formal_configuration": true,
+        "syntax": true,
+        "source_unchanged_during_run": true
+      },
+      "successful": false,
+      "not_started_count": 8
+    }
+  },
+  "full_comparison": {
+    "new_issue_events": [],
+    "resolved_issue_events": [],
+    "skip_ids_unchanged": true,
+    "not_started_ids_unchanged": true
+  },
+  "performance": {
+    "schema_version": 2,
+    "fixture_only": true,
+    "hardware_opened": false,
+    "stimulus_started": false,
+    "simulated_stream_seconds": 90,
+    "block_samples": 13,
+    "wall_elapsed_s": 43.16837879997911,
+    "quality_execution": "bounded_async_worker",
+    "quality_queue": {
+      "submitted": 1731,
+      "completed": 1731,
+      "dropped": 0,
+      "pending": 0,
+      "active": false,
+      "capacity": 8,
+      "thread_stopped": true
+    },
+    "frame_count": 1731,
+    "offscreen_sample_to_paint_p95_ms": 30.228699994040653,
+    "quality_compute_p95_ms": 3.3058500121114776,
+    "record_and_quality_ready_p95_ms": 21.95009999559261,
+    "first_window_accumulation_s": {
+      "amplitude": 2,
+      "psd": 8,
+      "drift": 10,
+      "trend": 30
+    },
+    "targets": {
+      "offscreen_paint_ms": 250,
+      "quality_ready_ms": 1000,
+      "compute_ms": 100
+    },
+    "real_30min_load": "not_run",
+    "real_2h_soak": "not_run",
+    "physical_display_latency": "not_measured",
+    "software_only": true,
+    "passed": true
+  },
+  "performance_replay": {
+    "schema_version": 2,
+    "source_directory": "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\audit-20261106-01\\performance-final\\raw_blocks",
+    "source_identity": "91227eb62fd368071bb1e0a695456da4770a2c457623ece22533f023801b5705",
+    "verification_scope": "verified raw prefix and recorded local evidence at replay time",
+    "verified_blocks": 1731,
+    "verified_samples": 22500,
+    "recording_complete": true,
+    "online_replay_match": true,
+    "numerical_replay_match": true,
+    "quality_evidence_verified": true,
+    "evidence_authority": "local_seal_hashes_not_external_signature",
+    "source_unchanged": true,
+    "raw_hashes_unchanged": true,
+    "mismatches": [],
+    "hardware_verified": false,
+    "processing_id": "7f670fc31451c7c325584f06043bf9594ab3169c45dc9ea46cccc0b8450321f1"
+  },
+  "package": {
+    "release_date": "2026-11-06",
+    "branch": "codex/neurostation-quality-upgrade",
+    "source_commit": "6fe44b7cb41d58db5c0274333c6537c02572d32b",
+    "source_identity": "2027eb7eb457633eb48dd31004030dab3dbdda9aad083db4c8587a207ff3c5e6",
+    "purpose": "quality audit fixes and source-bound replay verdicts; no model/hardware validation",
+    "acceptance": "focused software checks passed; full historical suite and field validation remain blocked/not run",
+    "zip_name": "NeuroStation-QualityWorkspace-20261106-6fe44b7-Windows-x64.zip",
+    "zip_bytes": 131111482,
+    "zip_sha256": "b73600bc70a22df49f9e2a9e984e59b1b42188ee23e949747d6dd774db70339e",
+    "file_count": 1050,
+    "extracted_files_match": true,
+    "extracted_directory": "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\zip-audit-20261106-final\\NeuroStationQualityUpgrade"
+  },
+  "visible_final": {
+    "checked_at": "2026-11-06T08:51:51.020365+00:00",
+    "source_commit": "6fe44b7cb41d58db5c0274333c6537c02572d32b",
+    "scope": "Final extracted ZIP visible startup, folder selection, previous-release synthetic replay and source-bound saved verdict. Full report/export workflow separately passed automated final-package checks and intermediate visible checks.",
+    "result_file": "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\audit-20261106-01\\visible-final\\quality-workspace\\replays\\20261106T084539Z-56c89f60d96c\\replay.json",
+    "source_preservation": [
+      {
+        "source": "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\manual-preview-workspace\\quality-workspace\\demos\\20261104T124156Z-07704a9c5cef",
+        "file_count": 158,
+        "all_hashes_and_inventory_unchanged": true
+      },
+      {
+        "source": "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\audit-20261106-01\\visible\\quality-workspace\\demos\\20261106T081928Z-dba2794e3859",
+        "file_count": 158,
+        "all_hashes_and_inventory_unchanged": true
+      }
+    ],
+    "source_hash_count": 157,
+    "saved_source_hashes_match": true,
+    "saved_source_identity_matches": true,
+    "replay": {
+      "schema_version": 2,
+      "source_directory": "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\manual-preview-workspace\\quality-workspace\\demos\\20261104T124156Z-07704a9c5cef\\raw_blocks",
+      "source_identity": "2a3d2ad33f394884f2127cb30e017452f586297e005fdf40aafbebaf97821e07",
+      "verification_scope": "verified raw prefix and recorded local evidence at replay time",
+      "verified_blocks": 150,
+      "verified_samples": 7500,
+      "recording_complete": true,
+      "online_replay_match": true,
+      "numerical_replay_match": true,
+      "quality_evidence_verified": true,
+      "evidence_authority": "local_seal_hashes_not_external_signature",
+      "source_unchanged": true,
+      "raw_hashes_unchanged": true,
+      "mismatches": [],
+      "hardware_verified": false,
+      "processing_id": "21d907af9516f411fd1a7da1f4c69f4e0c807a33164824347eddee02824d45ac"
+    },
+    "screenshot": "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\audit-20261106-01\\visible-final-replay.png",
+    "hardware_opened": false,
+    "physical_stimulus_started": false,
+    "personal_model_loaded": false
+  },
+  "preservation": {
+    "checked_at": "2026-11-06T08:51:50.812944+00:00",
+    "baseline_commit": "4ee934d9ed5d6647f5c07d43aa9bb1d24d68117f",
+    "source_commit": "6fe44b7cb41d58db5c0274333c6537c02572d32b",
+    "original_head_unchanged": true,
+    "original_tracked_status_unchanged": true,
+    "original_staged_diff_unchanged": true,
+    "original_checked_files": 302,
+    "original_changed_files": [],
+    "dependency_bindings": [
+      {
+        "name": "capture_python",
+        "path": "F:\\脑机采集\\NeuroStation\\.venv\\Scripts\\python.exe",
+        "match": true
+      },
+      {
+        "name": "model_python",
+        "path": "F:\\脑机采集\\NeuroStation\\.venv-ml-gpu\\Scripts\\python.exe",
+        "match": true
+      },
+      {
+        "name": "best_weights.pt",
+        "path": "F:\\脑机采集\\NeuroStation\\analysis_outputs\\wang2016_spectral_mlp_20261015\\best_weights.pt",
+        "match": true
+      },
+      {
+        "name": "final_test.json",
+        "path": "F:\\脑机采集\\NeuroStation\\analysis_outputs\\wang2016_spectral_mlp_20261015\\final_test.json",
+        "match": true
+      },
+      {
+        "name": "history.json",
+        "path": "F:\\脑机采集\\NeuroStation\\analysis_outputs\\wang2016_spectral_mlp_20261015\\history.json",
+        "match": true
+      },
+      {
+        "name": "personal_transfer_proxy_20261015.json",
+        "path": "F:\\脑机采集\\NeuroStation\\analysis_outputs\\wang2016_spectral_mlp_20261015\\personal_transfer_proxy_20261015.json",
+        "match": true
+      },
+      {
+        "name": "preregistration.json",
+        "path": "F:\\脑机采集\\NeuroStation\\analysis_outputs\\wang2016_spectral_mlp_20261015\\preregistration.json",
+        "match": true
+      },
+      {
+        "name": "preregistration_lock.json",
+        "path": "F:\\脑机采集\\NeuroStation\\analysis_outputs\\wang2016_spectral_mlp_20261015\\preregistration_lock.json",
+        "match": true
+      },
+      {
+        "name": "selection.json",
+        "path": "F:\\脑机采集\\NeuroStation\\analysis_outputs\\wang2016_spectral_mlp_20261015\\selection.json",
+        "match": true
+      },
+      {
+        "name": "selection_lock.json",
+        "path": "F:\\脑机采集\\NeuroStation\\analysis_outputs\\wang2016_spectral_mlp_20261015\\selection_lock.json",
+        "match": true
+      },
+      {
+        "name": "test_attempt.json",
+        "path": "F:\\脑机采集\\NeuroStation\\analysis_outputs\\wang2016_spectral_mlp_20261015\\test_attempt.json",
+        "match": true
+      },
+      {
+        "name": "validation_report.json",
+        "path": "F:\\脑机采集\\NeuroStation\\analysis_outputs\\wang2016_spectral_mlp_20261015\\validation_report.json",
+        "match": true
+      }
+    ],
+    "frozen_source_diff_empty": true,
+    "source_manifest_equal_final_tests": true,
+    "source_manifest_file_count": 392,
+    "source_identity": "2027eb7eb457633eb48dd31004030dab3dbdda9aad083db4c8587a207ff3c5e6",
+    "coverage_note": "Registered current-entry files and declared dependencies only; not a complete inventory of private recordings.",
+    "verification_note": "Supersedes preservation-final.json textual status comparison, which mixed quoted and unquoted Chinese Git paths. This check uses core.quotepath=false as the entry snapshot did; no repository settings changed."
+  },
+  "not_completed": [
+    "full_historical_test_suite",
+    "fresh_Windows_host",
+    "hardware_threshold_validation",
+    "physical_stimulus_timing",
+    "physical_display_latency",
+    "multi_display_and_HiDPI_matrix",
+    "real_30min_load",
+    "real_2h_soak"
+  ],
+  "hardware_opened": false,
+  "stimulus_started": false,
+  "personal_training": false,
+  "experimental_model_enabled": false,
+  "pushed": false,
+  "merged": false,
+  "evidence_sha256": {
+    "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\audit-20261106-01\\entry-state.json": "c2096cd48afebd575e53cc8547a69214d2bf70295a682c2f5ce2ebb1d95932aa",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\audit-20261106-01\\regressions-before.log": "c8669312a214cf27cba7456bd109b672e3e8c8055e0e8c67b162f223a8c49d5e",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\audit-20261106-01\\ui-regression-before.log": "e74c9fcb1a335d4de5293b887dcd7d2c865747290014b93e01f58f067bcc3496",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\audit-20261106-01\\payload-before.log": "9ecea6c6e7970b075f493287203750ff5fb0754d9da115793749ca4bbcd56404",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\audit-20261106-01\\final-v2-focused\\results.json": "1bd96a61a921cdfce6dd94c39b2b5aca697b12cffe62c8ffb7d0eb4a6bf5766d",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\audit-20261106-01\\final-v2-focused\\source-manifest.json": "42dc03e42908acd441061de64c34a58e88bcca8dda873b2e45aaabe4d49e9742",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\audit-20261106-01\\final-v2-ui\\results.json": "d86b4265b8a3729f194e6cc8ba61f70a77126a5daf85e142c84d381678a76601",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\audit-20261106-01\\final-v2-full\\results.json": "cbe134e0b17cc5097df97eeb91725a8da3a7d05096443a303803ee766316dd91",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\audit-20261106-01\\full-final-comparison.json": "1d367496e2c028d02afdc802a32854db418c40c3610c90c0d54ae7c4a87cb85e",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\audit-20261106-01\\performance-final\\performance.json": "597f10fdcd8dae150adcdbe4fbf2b1f8276c8e160486a9717008daeb4a7ac346",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\audit-20261106-01\\zip-final-verification\\build-verification.json": "94b2cfc5012c1132d6d598fc092aa606452e8ef9c875358624b518d049aa2581",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\audit-20261106-01\\zip-final-verification\\quality-workflow\\workflow-verification.json": "bf0033d0ed47f9c8d92f13578bce5bfd0eada821008ec8983f67b19cc986622a",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\audit-20261106-01\\visible-verification.json": "861072d5b95d5d1a69210e04bcec766eacda1a749fae5aded9a5d6ff83f35f6a",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\audit-20261106-01\\visible-final-verification.json": "3258bc44e188b790af9a698bbcba215f072a9da64dff773b2f9c5102291b50be",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\audit-20261106-01\\visible-final-ui-observations.json": "014ecd3da42c938d779fbbe08a88e0e5294fa940c1835e4860967ed1df141fb3",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\audit-20261106-01\\visible-final-replay.png": "d42f553cddab22364bfa79d8b58865c5a8e5620bc82515618805d96b63a897f7",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\audit-20261106-01\\preservation-final-verified.json": "a41e8eceffb85d2cb82c729d7d1c624980a5be2dbf325e13c51d5e074814bc24",
+    "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\audit-20261106-01\\package-final-recheck.json": "7cd42fd1d416f94b438c7f471d2d47a436ee19d46316faca448cf5007a30e8ef"
+  }
+}
