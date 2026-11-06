@@ -152,13 +152,17 @@ class QualityWorkspaceController(QObject):
         return self._start('replay', self.replay_options)
 
     def start_report(self):
-        if self.session is None:
+        if self.session is None or self.busy or self.capture_busy:
             return False
+        # A failed refresh must not leave an old report presented as the new result.
+        # Previous files remain available on disk; only this view's result is reset.
+        self.report = self.export_dir = None
         return self._start('report')
 
     def export_report(self, destination):
-        if not self.report:
+        if not self.report or self.busy or self.capture_busy:
             return False
+        self.export_dir = None
         return self._start('export', {'report': self.report, 'destination': str(destination)})
 
     def _start(self, job, options=None):
@@ -358,6 +362,7 @@ class QualityWorkspacePage(Page):
             self.verification_label.setText(self.tr('quality.verification',
                 blocks=v['verified_blocks'], samples=v['verified_samples'],
                 match=self.tr('quality.yes' if v['online_replay_match'] else 'quality.no'),
+                evidence=self.tr('quality.yes' if v.get('quality_evidence_verified') is True else 'quality.no'),
                 hashes=self.tr('quality.yes' if v['raw_hashes_unchanged'] else 'quality.no'),
                 complete=self.tr('quality.yes' if v['recording_complete'] else 'quality.no')))
         else:

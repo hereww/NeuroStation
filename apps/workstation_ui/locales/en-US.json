@@ -624,11 +624,11 @@
   "quality.capture_busy": "Capture, preflight, import or offline-model analysis is busy. Demo, replay and reports cannot start.",
   "quality.skipped": "UI queue skipped {count} display updates; traces preserve gaps. Raw saving and replay verification are not skipped.",
   "quality.exported": "Exported: {path}",
-  "quality.report_note": "Reports are written to separate branch output. Legacy sessions are readable; missing events, scores or quality evidence are never invented.",
+  "quality.report_note": "Reports publish only after all files and source checks complete; failure/cancellation leaves no partial delivery. Missing legacy evidence is not invented. Failed regeneration clears the previous view, not its files.",
   "quality.report_empty": "No report yet. Complete a synthetic demo or select a session, then generate a report.",
   "quality.safety": "No training, inference or external device control occurs here. Synthetic/replayed data never enters live command gating. Formal protocol status does not establish signal, hardware or clinical validity.",
   "quality.windows": "First accumulation: amplitude 2s · PSD 8s · drift 10s · trend 30s. Hardware thresholds and physical stimulus timing still require on-site validation.",
-  "quality.verification": "Replay: {blocks} blocks / {samples} samples · Online match: {match} · Raw hashes unchanged: {hashes} · Complete seal: {complete}. Software evidence only.",
+  "quality.verification": "Replay: {blocks} blocks / {samples} samples · Online match: {match} · Sealed evidence verified: {evidence} · Raw hashes unchanged: {hashes} · Complete seal: {complete}. Software evidence only.",
   "quality.yes": "Yes",
   "quality.no": "No",
   "quality.error.not_session": "Select a session directory containing session.json, events.tsv or raw_blocks/blocks.jsonl.",
@@ -680,5 +680,7 @@
   "quality.reason.unknown_timestamp": "Unknown timestamp",
   "quality.mode.live": "Quality: live observer (no device start)",
   "quality.mode.demo": "Quality: synthetic demo (not real EEG)",
-  "quality.mode.replay": "Quality: read-only replay"
+  "quality.mode.replay": "Quality: read-only replay",
+  "quality.invalid_payload": "Missing or malformed quality evidence · UNKNOWN. Previous display cleared; no command authority.",
+  "quality.error.source_changed": "Source content or file inventory changed during reporting. No report published. Stop acquisition/editing and regenerate."
 }

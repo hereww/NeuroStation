@@ -624,11 +624,11 @@
   "quality.capture_busy": "采集、预检、导入或模型离线分析正在进行；演示、回放和报告暂不可启动。",
   "quality.skipped": "界面队列已跳过 {count} 个显示更新；波形保留断点，原始保存与回放核对不因此跳过。",
   "quality.exported": "已导出：{path}",
-  "quality.report_note": "报告写入支线独立输出目录。可以阅读旧会话，但缺失的事件、评分或质量证据不会被补造。",
+  "quality.report_note": "报告完整生成并核验来源后才发布；写入失败或取消不保留半成品。旧会话可读，缺失证据不会补造。重新生成失败时不再显示上一次报告（旧文件仍保留）。",
   "quality.report_empty": "尚无报告。先完成合成演示，或选择已有会话，然后点击“生成质量报告”。",
   "quality.safety": "本页不进行训练、模型推理或外部设备控制。合成数据和历史回放不进入实时指令门控。正式协议状态不等于信号、硬件或临床有效性验收。",
   "quality.windows": "首次积累窗口：幅度 2 秒 · 频谱 8 秒 · 漂移 10 秒 · 趋势 30 秒。硬件阈值和物理刺激时序仍待现场验证。",
-  "quality.verification": "回放核对：{blocks} 块 / {samples} 点 · 在线一致：{match} · 原始哈希未变：{hashes} · 完整封存：{complete}。仅为软件证据。",
+  "quality.verification": "回放核对：{blocks} 块 / {samples} 点 · 在线一致：{match} · 封存证据核验：{evidence} · 原始哈希未变：{hashes} · 完整封存：{complete}。仅为软件证据。",
   "quality.yes": "是",
   "quality.no": "否",
   "quality.error.not_session": "请选择包含 session.json、events.tsv 或 raw_blocks/blocks.jsonl 的会话目录。",
@@ -680,5 +680,7 @@
   "quality.reason.unknown_timestamp": "时间戳未知",
   "quality.mode.live": "质量工作区：实时观测（不启动设备）",
   "quality.mode.demo": "质量工作区：合成演示（非真实采集）",
-  "quality.mode.replay": "质量工作区：历史回放（只读）"
+  "quality.mode.replay": "质量工作区：历史回放（只读）",
+  "quality.invalid_payload": "质量证据缺失或格式异常 · UNKNOWN；已清空旧显示，不能据此触发指令。",
+  "quality.error.source_changed": "生成报告期间源文件或文件清单发生变化。未发布报告；请停止采集/编辑后重新生成。"
 }

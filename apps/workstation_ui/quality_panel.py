@@ -1,5 +1,6 @@
 """Read-only operator quality evidence, with explicit live/demo/replay context."""
 from collections import deque
+from copy import deepcopy
 import math
 import time
 
@@ -9,6 +10,67 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QCombo
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView)
 
 from .i18n import Translator
+
+
+def _finite(value):
+    try:
+        return type(value) in (int, float) and math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+def _display_payload_valid(result):
+    """Validate optional display fields before they reach asynchronous Qt painting."""
+    if (not isinstance(result, dict) or type(result.get('schema_version')) is not int
+            or result['schema_version'] != 2 or not isinstance(result.get('dimensions'), dict)
+            or type(result.get('start')) is not int or type(result.get('stop')) is not int
+            or not 0 <= result['start'] < result['stop']):
+        return False
+    if not all(isinstance(value, str) for value in result['dimensions'].values()):
+        return False
+    channels = result.get('channels', [])
+    if not isinstance(channels, list):
+        return False
+    for row in channels:
+        if (not isinstance(row, dict) or not isinstance(row.get('channel'), str)
+                or not isinstance(row.get('quality_reasons', []), list)):
+            return False
+        if any(row.get(key) is not None and not _finite(row[key]) for key in
+               ('mean_uv', 'ac_rms_uv', 'peak_to_peak_uv', 'drift_range_uv')):
+            return False
+    for key in ('raw_samples', 'display_samples'):
+        if key not in result:
+            continue
+        rows = result[key]
+        if not isinstance(rows, list) or len(rows) != len(channels):
+            return False
+        if any(not isinstance(row, list) or len(row) != result['stop'] - result['start']
+               or any(value is not None and not _finite(value) for value in row) for row in rows):
+            return False
+    if not isinstance(result.get('watermarks', {}), dict) or not isinstance(result.get('reasons', []), list):
+        return False
+    artifacts = result.get('artifacts', {})
+    if not isinstance(artifacts, dict) or not isinstance(artifacts.get('intervals', []), list):
+        return False
+    if any(not isinstance(row, dict) or not all(key in row for key in ('channel', 'rule', 'start', 'stop'))
+           for row in artifacts.get('intervals', [])):
+        return False
+    if result.get('updated_monotonic_s') is not None and not _finite(result['updated_monotonic_s']):
+        return False
+    if 'stale_after_s' in result and (not _finite(result['stale_after_s']) or result['stale_after_s'] <= 0):
+        return False
+    psd = result.get('psd')
+    if psd is not None:
+        if not isinstance(psd, dict):
+            return False
+        frequency, power = psd.get('frequency_hz', []), psd.get('power_uv2_hz', [])
+        if (not isinstance(frequency, list) or not all(_finite(x) and x >= 0 for x in frequency)
+                or not isinstance(power, list) or len(power) not in (0, len(channels))):
+            return False
+        if any(not isinstance(row, list) or len(row) != len(frequency)
+               or any(x is not None and (not _finite(x) or x < 0) for x in row) for row in power):
+            return False
+    return True
 
 
 class QualityPlot(QWidget):
@@ -54,9 +116,10 @@ class QualityPlot(QWidget):
         if not self.raw:
             p.drawText(12, 80, self.tr('quality.plot.empty'))
         if self.psd:
-            logs = [10 * math.log10(max(v, 1e-20)) for v in self.psd]
+            logs = [10 * math.log10(max(v, 1e-20)) if v is not None else None for v in self.psd]
+            limits = [value for value in logs if value is not None] or [0.]
             draw(logs, '#f0b663', wave_right + 12, width - 12, 40, height - 26,
-                 min(logs) - 1, max(logs) + 1)
+                 min(limits) - 1, max(limits) + 1)
             p.setPen(QColor('#d3deef'))
             end = self.frequency[-1] if self.frequency else 0
             p.drawText(int(wave_right + 12), height - 5, f'0 Hz                 {end:g} Hz · dB µV²/Hz')
@@ -136,11 +199,14 @@ class QualityPanel(QWidget):
         return str(value) if translated == key else translated
 
     def update_quality(self, result):
-        if not isinstance(result, dict) or result.get('schema_version') != 2:
-            return
+        if not _display_payload_valid(result):
+            self.clear()
+            self.status.setText(self.tr('quality.invalid_payload'))
+            return False
+        result = deepcopy(result)
         self.latest = result
         channels = result.get('channels', [])
-        key = (result.get('stream_id'), result.get('processing_id'))
+        key = (result.get('stream_id'), result.get('processing_id'), result.get('generation'), tuple(r['channel'] for r in channels))
         if self.identity != key:
             self.identity, self.last_stop = key, -1
             self.raw = [deque(maxlen=1250) for _ in channels]
@@ -197,8 +263,8 @@ class QualityPanel(QWidget):
                 activity=self.tr('quality.playing' if self.running else 'quality.static')))
             return
         stamp = self.latest.get('updated_monotonic_s')
-        age = max(0, time.monotonic() - stamp) if isinstance(stamp, (float, int)) else float('inf')
-        if age > self.latest.get('stale_after_s', 2):
+        age = time.monotonic() - stamp if _finite(stamp) else float('inf')
+        if not 0 <= age <= min(2., self.latest.get('stale_after_s', 2.)):
             state = self.tr('quality.expired')
         self.status.setText(self.tr('quality.live_state', state=state, age=f'{age:.1f}'))
 

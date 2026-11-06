@@ -432,5 +432,18 @@ class ControllerTests(unittest.TestCase):
         self.assertIn('C3 无效', text)
         self.assertFalse(any(row['accepted'] for row in self.outputs()))
 
+    def test_malformed_quality_invalidates_pending_prediction_and_clears_view(self):
+        self.run_capture()
+        request = self.fill_window()
+        broken = batch(1500)['quality_v2']
+        broken['dimensions'] = None
+        # Direct dispatch makes a leaked Python exception fail the test, not a swallowed Qt slot.
+        self.window._quality_update(broken)
+        self.assertIsNone(self.window.quality_panel.latest)
+        self.assertEqual(self.window.buffer.sample_count, 0)
+        self.window.model_worker.message.emit(prediction(request))
+        self.assertFalse(any(row['accepted'] for row in self.outputs()))
+        self.assertEqual(self.outputs()[-1]['command'], 'UNKNOWN')
+
 if __name__ == "__main__":
     unittest.main()

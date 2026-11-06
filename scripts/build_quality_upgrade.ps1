@@ -40,7 +40,7 @@ try {
         $launcher += "powershell.exe -NoProfile -WindowStyle Hidden -Command `"$command`""
         Set-Content -LiteralPath (Join-Path $artifact $entry[0]) -Value ($launcher -join "`r`n") -Encoding ascii
     }
-    Copy-Item -LiteralPath (Join-Path $root 'docs/NeuroStation-质量工作区试用说明-20261104.md') -Destination (Join-Path $artifact 'README-QualityWorkspace.md')
+    Copy-Item -LiteralPath (Join-Path $root 'docs/NeuroStation-质量工作区试用说明-20261106.md') -Destination (Join-Path $artifact 'README-QualityWorkspace.md')
     # The smoke runner removes source Python and build-tool paths from the executable environment.
     & $Python -B scripts/verify_quality_package.py --artifact $artifact --output $output
     if ($LASTEXITCODE -ne 0) { throw 'Independent executable verification failed; inspect build-verification.json' }

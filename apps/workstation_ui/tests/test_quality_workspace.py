@@ -159,3 +159,31 @@ class QualityWorkspaceUITests(unittest.TestCase):
         panel.set_context('live')
         self.assertIn('过期 UNKNOWN', panel.status.text())
         panel.close(); panel.deleteLater()
+
+    def test_failed_report_regeneration_clears_old_export_state(self):
+        from unittest.mock import patch
+        self.c.start_demo(); self.wait_idle()
+        self.c.start_report(); self.wait_idle()
+        previous = Path(self.c.report['output_dir'])
+        self.c.export_dir = 'old export path'
+        with patch('eeg_tools.quality.preview.run_report', side_effect=OSError('injected report failure')):
+            self.assertTrue(self.c.start_report())
+            self.wait_idle()
+        self.assertEqual(self.c.phase, 'error')
+        self.assertIsNone(self.c.report)
+        self.assertIsNone(self.c.export_dir)
+        self.assertFalse(self.window.pages['quality'].export_button.isEnabled())
+        self.assertTrue((previous / 'report.html').is_file())  # Never delete prior deliveries.
+
+    def test_failed_export_retry_clears_old_location_but_retains_report(self):
+        from unittest.mock import patch
+        self.c.start_demo(); self.wait_idle()
+        self.c.start_report(); self.wait_idle()
+        report = self.c.report
+        self.c.export_dir = 'previous-export'
+        with patch('eeg_tools.quality.preview.export_report', side_effect=OSError('injected export failure')):
+            self.assertTrue(self.c.export_report(self.root / 'exports'))
+            self.wait_idle()
+        self.assertEqual(self.c.phase, 'error')
+        self.assertIs(self.c.report, report)
+        self.assertIsNone(self.c.export_dir)

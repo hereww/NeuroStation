@@ -24,7 +24,7 @@ def render_report_html(report, locale='zh-CN'):
              table([(text('会话', 'Session'), report.get('session_id')),
                     (text('数据来源目录', 'Source directory'), report.get('source_session')),
                     (text('原记录状态', 'Recorded status'), report.get('recording_status')),
-                    (text('报告期间元数据未变', 'Metadata unchanged during reporting'), report.get('source_unchanged'))]),
+                    (text('来源清单与内容复核通过', 'Source inventory and contents recheck passed'), report.get('source_unchanged'))]),
              '<h2>' + text('1. 原始记录完整性', '1. Raw recording integrity') + '</h2>']
     if raw.get('status') == 'legacy_no_block_journal':
         parts.append('<p>' + text('旧会话没有连续数据块日志：仍可读取元数据与事件，不能据此确认逐块完整性或复现在线处理。', 'Legacy session has no block journal. Metadata and events remain readable; block integrity and online replay are unavailable.') + '</p>')
@@ -85,7 +85,8 @@ def render_report_html(report, locale='zh-CN'):
     if len(ledger) > 500:
         parts.append('<p>' + text('此视图只展示前 500 行；完整逐试次记录见 report.json。', 'Only the first 500 rows are displayed; report.json contains the full ledger.') + '</p>')
     parts += ['<h2>' + text('6. 来源哈希与限制', '6. Provenance and limitations') + '</h2>',
-              table(list(report.get('source_hashes', {}).items()), [text('文件', 'File'), 'SHA-256']),
+              table(list(report.get('source_hashes', {}).items())[:500], [text('文件', 'File'), 'SHA-256']),
+              '<p>' + text('此视图至多展示 500 条来源哈希；完整清单保存在 report.json。', 'This view shows at most 500 source hashes; the full inventory is in report.json.') + '</p>',
               '<p>' + text('仅对已观察记录作软件检查；硬件阈值、物理刺激时序、临床及个人模型有效性均未由本报告验收。旧记录的历史结论未被改写。', 'Software checks cover observed records only. Hardware thresholds, physical stimulus timing, clinical validity and personal-model validity are not established. Historical conclusions are not rewritten.') + '</p>',
               '</body></html>']
     return ''.join(parts)

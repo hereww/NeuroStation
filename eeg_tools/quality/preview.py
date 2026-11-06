@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import hashlib
+from copy import deepcopy
 from pathlib import Path
 import threading
 import time
@@ -10,6 +12,7 @@ import uuid
 
 import numpy as np
 
+from eeg_tools.quality.evidence import publish_bundle, snapshot_matches, check_cancelled
 from eeg_tools.quality.recording import QualitySink
 from eeg_tools.quality.replay import replay_quality
 from eeg_tools.quality.reporting import build_session_report
@@ -38,8 +41,12 @@ def new_output(root, kind, source=None):
         source = Path(source).resolve()
         if root == source or source in root.parents:
             raise ValueError('quality.error.output_in_source')
-    parent = root / kind
+    parent = (root / kind).resolve()
+    if source is not None and (parent == source or source in parent.parents):
+        raise ValueError('quality.error.output_in_source')
     parent.mkdir(parents=True, exist_ok=True)
+    if source is not None and (parent.resolve() == source or source in parent.resolve().parents):
+        raise ValueError('quality.error.output_in_source')
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     return parent / f'{stamp}-{uuid.uuid4().hex[:12]}'
 
@@ -128,8 +135,8 @@ def run_replay(selected, root, publish, cancel, *, realtime_preview=True):
     if cancel.is_set():
         raise PreviewCancelled('quality.cancelled')
     output = new_output(root, 'replays', source)
-    output.mkdir()
-    atomic_json(output / 'replay.json', result)
+    publish_bundle(output, {'replay.json': json.dumps(result, ensure_ascii=False, indent=2).encode('utf-8')},
+                   cancelled=cancel.is_set)
     return {'kind': 'replay', 'session_dir': str(source), 'output_dir': str(output),
             'verification': result, 'status': 'completed'}
 
@@ -150,14 +157,21 @@ def export_report(selected, generated, destination, cancel):
     if cancel.is_set():
         raise PreviewCancelled('quality.cancelled')
     origin = Path(generated['output_dir'])
-    report = generated['report']
-    if json.loads((origin / 'report.json').read_text(encoding='utf-8')) != report:
-        raise ValueError('quality.error.report_changed')
-    if (origin / 'report.html').read_text(encoding='utf-8') != render_report_html(report):
-        raise ValueError('quality.error.report_changed')
+    report = deepcopy(generated['report'])
+    # Read exactly once for validation/copy; final recheck detects persistent mutation.
+    files = {name: (origin / name).read_bytes() for name in ('report.json', 'report.html')}
+    expected = {name: hashlib.sha256(data).hexdigest() for name, data in files.items()}
+    try:
+        if json.loads(files['report.json']) != report or files['report.html'].decode('utf-8') != render_report_html(report):
+            raise ValueError('report content mismatch')
+    except (ValueError, UnicodeError) as exc:
+        raise ValueError('quality.error.report_changed') from exc
+
+    def verify_report():
+        if not snapshot_matches(origin, expected, cancelled=cancel.is_set):
+            raise ValueError('quality.error.report_changed')
+
+    check_cancelled(cancel.is_set)
     output = new_output(destination, 'NeuroStation-reports', source)
-    output.mkdir()
-    for name in ('report.json', 'report.html'):
-        with (output / name).open('xb') as handle:
-            handle.write((origin / name).read_bytes())
+    publish_bundle(output, files, cancelled=cancel.is_set, validate=verify_report)
     return {'kind': 'export', 'export_dir': str(output), 'status': 'completed'}
