@@ -7,6 +7,7 @@ read personal sessions, or execute game commands.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from collections import defaultdict
@@ -123,8 +124,9 @@ def analyze(report: dict) -> dict:
         "status": "formal",
         "exploratory_only": True,
         "analysis_kind": "posthoc_validation_diagnostic_not_model_selection",
-        "source_report": str(DEFAULT_INPUT.resolve()),
-        "source_report_sha256": benchmark.sha256_file(DEFAULT_INPUT),
+        "source_report": None,
+        "source_report_sha256": None,
+        "source_binding_status": "unbound_in_memory",
         "source_split": "validation_S25-S29",
         "source_trials_not_window_rows": len(trial_rows),
         "rule": "move only when both adjacent 1000-sample windows independently pass the existing fixed gate and predict the same direction; otherwise HOLD",
@@ -145,13 +147,20 @@ def analyze(report: dict) -> dict:
 
 
 def run(input_path: Path, output_path: Path) -> dict:
-    input_path, output_path = Path(input_path).resolve(), Path(output_path).resolve()
+    input_path, output_path = Path(input_path).absolute(), Path(output_path).absolute()
+    for path in (input_path, output_path):
+        require(not any(p.is_symlink() or getattr(p, "is_junction", lambda: False)()
+                        for p in (path, *path.parents)), "unsafe symlink/junction report path")
+    input_path, output_path = input_path.resolve(), output_path.resolve()
     require(input_path.is_file() and not input_path.is_symlink(), "missing or unsafe validation report")
     require(not output_path.exists(), "diagnostic output already exists; refusing overwrite")
-    report = benchmark.read_json(input_path)
+    source_bytes = input_path.read_bytes()
+    report = json.loads(source_bytes)
     result = analyze(report)
     result["source_report"] = str(input_path)
-    result["source_report_sha256"] = benchmark.sha256_file(input_path)
+    result["source_report_sha256"] = hashlib.sha256(source_bytes).hexdigest()
+    result["source_binding_status"] = "bound_consumed_file_bytes"
+    require(input_path.read_bytes() == source_bytes, "input changed during analysis")
     with output_path.open("x", encoding="utf-8") as handle:
         json.dump(result, handle, ensure_ascii=False, indent=2, allow_nan=False)
         handle.write("\n")

@@ -2,6 +2,11 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
+from pathlib import Path
+import tempfile
+from unittest.mock import patch
 import unittest
 
 from scripts import analyze_ssvep_temporal_confirmation as analysis
@@ -47,6 +52,63 @@ class TemporalConfirmationTests(unittest.TestCase):
         invalid["split"] = "final_test"
         with self.assertRaises(ValueError):
             analysis.analyze(invalid)
+
+
+class SourceBindingTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="temporal-contract-")
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.input = self.root / "custom-validation.json"
+        self.output = self.root / "new-diagnostic.json"
+        self.data = report([row("trial", 0, 10, "MOVE_LEFT"), row("trial", 250, 10, "MOVE_LEFT")])
+        self.raw = (json.dumps(self.data, indent=3) + "\n\n").encode()
+        self.input.write_bytes(self.raw)
+
+    def test_in_memory_analysis_has_no_invented_file_identity(self):
+        with patch.object(Path, "read_bytes", side_effect=AssertionError("pure computation")):
+            value = analysis.analyze(self.data)
+        self.assertIsNone(value["source_report"])
+        self.assertIsNone(value["source_report_sha256"])
+        self.assertEqual(value["source_binding_status"], "unbound_in_memory")
+
+    def test_custom_file_binds_exact_consumed_bytes_without_default(self):
+        with patch.object(analysis, "DEFAULT_INPUT", self.root / "absent.json"):
+            result = analysis.run(self.input, self.output)
+        self.assertEqual(result["source_report_sha256"], hashlib.sha256(self.raw).hexdigest())
+        self.assertEqual(result["source_report"], str(self.input.resolve()))
+        self.assertEqual(result["source_binding_status"], "bound_consumed_file_bytes")
+        self.assertEqual(json.loads(self.output.read_text("utf-8")), result)
+        self.assertEqual(self.input.read_bytes(), self.raw)
+        self.assertFalse(result["commands_executed"])
+
+    def test_changed_source_refuses_publication(self):
+        original = analysis.analyze
+        def changed(report):
+            value = original(report)
+            self.input.write_bytes(self.raw + b" ")
+            return value
+        with patch.object(analysis, "analyze", side_effect=changed), self.assertRaisesRegex(ValueError, "changed"):
+            analysis.run(self.input, self.output)
+        self.assertFalse(self.output.exists())
+
+    def test_existing_output_is_preserved_without_analysis(self):
+        self.output.write_bytes(b"keep existing result")
+        with patch.object(analysis, "analyze", side_effect=AssertionError), self.assertRaisesRegex(ValueError, "overwrite"):
+            analysis.run(self.input, self.output)
+        self.assertEqual(self.output.read_bytes(), b"keep existing result")
+
+    def test_unsafe_alias_rejected_before_resolving_away_the_link(self):
+        with patch.object(Path, "is_symlink", lambda p: p == self.input), self.assertRaisesRegex(ValueError, "unsafe"):
+            analysis.run(self.input, self.output)
+        self.assertFalse(self.output.exists())
+
+    def test_invalid_report_does_not_create_output(self):
+        self.data["split"] = "final_test"
+        self.input.write_text(json.dumps(self.data))
+        with self.assertRaises(ValueError):
+            analysis.run(self.input, self.output)
+        self.assertFalse(self.output.exists())
 
 
 if __name__ == "__main__":
