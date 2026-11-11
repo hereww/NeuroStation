@@ -1,5 +1,6 @@
 """Synthetic/mocked v4 training checks. No research training or holdout metrics."""
 from __future__ import annotations
+from tests.synthetic_research_fixtures import research_contract
 from copy import deepcopy
 import importlib.util
 import io
@@ -72,7 +73,7 @@ class TrainingV4Tests(unittest.TestCase):
             loader.assert_not_called()
 
     def test_training_contract_changes_rejected(self):
-        prereg=json.loads((ROOT/data.DEFAULT_PREREGISTRATION_RELATIVE).read_text(encoding="utf-8"))
+        prereg=research_contract('v4-preregistration.json')
         trainer.validate_training_contract(prereg,self.config)
         for key,value in (("epochs",31),("seed",10),("batch_size",64),("optimizer","Adam"),("learning_rate",.001),("weight_decay",.01)):
             changed=deepcopy(prereg);changed["training"][key]=value

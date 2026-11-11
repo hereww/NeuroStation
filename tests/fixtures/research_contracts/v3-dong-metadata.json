@@ -1,0 +1,32 @@
+{
+  "fixture_scope": "synthetic_contract_only_not_historical_training_evidence",
+  "dataset": "Dong2023",
+  "sample_rate_hz": 250,
+  "expected_shape": [
+    8,
+    1250,
+    40,
+    4
+  ],
+  "axis_order": [
+    "channel",
+    "time",
+    "target",
+    "block"
+  ],
+  "array_key": "eegdata",
+  "analysis_window_samples": {
+    "start": 125,
+    "stop_exclusive": 1125,
+    "count": 1000,
+    "indexing": "zero_based_half_open"
+  },
+  "stimulus_onset_status": "confirmed_primary_author_paper",
+  "channel_count": 8,
+  "target_count": 40,
+  "trial_structure": {
+    "blocks": 4
+  },
+  "target_axis_mapping_confirmed": false,
+  "target_frequencies_hz": null
+}

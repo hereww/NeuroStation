@@ -1,5 +1,6 @@
 """Synthetic/mock v3 evaluation/CLI fixtures; never reads real S4/S5 or old test metrics."""
 from __future__ import annotations
+from tests.synthetic_research_fixtures import research_contract
 
 from contextlib import redirect_stdout
 from copy import deepcopy
@@ -130,7 +131,7 @@ class FreezeTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="v3 freeze fixture ")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.prereg = json.loads((ROOT / "analysis_outputs" / "learned_denoiser_v3_preregistration.json").read_text(encoding="utf-8"))
+        self.prereg = research_contract('v3-preregistration.json')
         self.prereg_path = self.root / "analysis_outputs" / "learned_denoiser_v3_preregistration.json"
         self.prereg_path.parent.mkdir()
         self.protected = self.root / "protected_fixture.txt"

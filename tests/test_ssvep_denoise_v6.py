@@ -5,6 +5,8 @@ Run with -B and unittest (no pytest cache/log artifacts are created).
 from __future__ import annotations
 
 import contextlib
+import hashlib
+import tempfile
 import copy
 import importlib
 import io
@@ -71,8 +73,8 @@ def synthetic_losses(cases):
 
 
 def synthetic_report():
-    # Read only the authorized JSON metadata, not a binary source/checkpoint.
-    prereg = json.loads((ROOT / api.PREREG_RELATIVE).read_text(encoding="utf-8"))
+    # Read only the class-local, hash-bound synthetic metadata, never history.
+    prereg = core._frozen_prereg()
     records = []
     domain_reports = {}
     for domain in core.DOMAINS:
@@ -406,7 +408,34 @@ class TrainerSyntheticTests(unittest.TestCase):
 class CheckpointTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        # A fixture-only pin and temporary root keep real byte/hash checks active.
+        # Production constants, original preregistration and training locks stay
+        # untouched. These source identities describe inert generated strings.
+        cls.temp = tempfile.TemporaryDirectory(prefix="synthetic-v6-contract-")
+        cls.addClassCleanup(cls.temp.cleanup)
+        cls.root = Path(cls.temp.name)
+        bound = {}
+        for domain in core.DOMAINS:
+            for sid in range(1, 7):
+                for suffix in ("", ".manifest.json"):
+                    name = f"{api.REFERENCE_DIR}/{domain}/subject_{sid:03d}.npz{suffix}"
+                    bound[name] = hashlib.sha256(("synthetic: " + name).encode()).hexdigest()
+        cls.prereg = cls.root / api.PREREG_RELATIVE
+        cls.prereg.parent.mkdir(parents=True)
+        cls.prereg.write_text(json.dumps({"fixture_scope":"synthetic_contract_only_not_historical_training_evidence",
+                                         "bound_files":bound}),encoding="utf-8")
+        for field, value in (("ROOT", cls.root), ("PREREG_SHA256", hashlib.sha256(cls.prereg.read_bytes()).hexdigest())):
+            binding = patch.object(core, field, value); binding.start(); cls.addClassCleanup(binding.stop)
         cls.base = synthetic_checkpoint()
+
+    def test_synthetic_preregistration_tamper_is_still_rejected(self):
+        before = self.prereg.read_bytes()
+        try:
+            self.prereg.write_bytes(before + b" ")
+            with self.assertRaisesRegex(ValueError, "preregistration SHA mismatch"):
+                core.validate_checkpoint(self.base, CFG, LOCK_SHA)
+        finally:
+            self.prereg.write_bytes(before)
 
     def test_strict_cpu_validator_and_inmemory_weights_only_roundtrip(self):
         stream = io.BytesIO()

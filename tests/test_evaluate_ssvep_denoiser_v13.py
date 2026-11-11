@@ -1,5 +1,6 @@
 """Fixed v13 evaluator tests, using artificial evidence and tiny mock weights."""
 from __future__ import annotations
+from tests.synthetic_research_fixtures import research_contract
 import contextlib
 import copy
 import csv
@@ -21,7 +22,7 @@ ROOT = Path(__file__).absolute().parents[1]
 
 
 def gate_evidence():
-    plan = ev.read_json(ROOT/ev.PLAN)
+    plan = research_contract('v13-plan.json')
     public = {'conditions': {'identity': {'output_reference_normalized_change': 0.001}}}
     def aggregate():
         return {'output_reference_normalized_change': 0.001,

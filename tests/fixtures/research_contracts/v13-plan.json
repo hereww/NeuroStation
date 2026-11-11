@@ -1,0 +1,52 @@
+{
+  "fixture_scope": "synthetic_contract_only_not_historical_training_evidence",
+  "schema_version": 1,
+  "status": "formal",
+  "training_design": {
+    "long_window_samples": 4096,
+    "sample_rate_hz": 250,
+    "channel_count": 8,
+    "hop_samples": 1024,
+    "public_fit_subjects": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "public_selection_subjects": [
+      5,
+      6
+    ],
+    "public_evaluation_subjects": [
+      7,
+      8
+    ],
+    "personal_sessions_for_fit_or_selection": false,
+    "labels_enter_model_forward": false,
+    "same_noisy_statistics_for_reference_and_input": true,
+    "epochs": 16,
+    "checkpoint_selection": "joint public and synthetic corruption error, both identity changes <= .002",
+    "independent_personal_validation": false
+  },
+  "fixed_research_checks": {
+    "public_identity_normalized_change_max": 0.002,
+    "long_synthetic_identity_normalized_change_max": 0.002,
+    "pooled_long_drift_and_combined_error_reduction_from_notch_min": 0.5,
+    "all_long_corrupted_conditions_nonworse_than_notch": true,
+    "noisefree_and_line50_fundamental_amplitude_relative_error_max": 0.02,
+    "noisefree_and_line50_fundamental_phase_error_degrees_max": 2.0,
+    "noisefree_and_line50_second_harmonic_amplitude_relative_error_max": 0.05,
+    "noisefree_and_line50_second_harmonic_phase_error_degrees_max": 3.0,
+    "normalization_contract_max_absolute_difference": 1e-10,
+    "personal_presented_match_count_not_lower_than_raw": true
+  },
+  "runtime_enabled": false,
+  "production_validated": false,
+  "research_checks_authorize_default_deployment": false,
+  "prior_evidence": {
+    "analysis_outputs/v12_evaluation_20261013/summary.json": "0000000000000000000000000000000000000000000000000000000000000000",
+    "analysis_outputs/v12_evaluation_20261013/synthetic.json": "0000000000000000000000000000000000000000000000000000000000000000",
+    "analysis_outputs/v12_architecture_diagnosis_20261013.json": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "objective": "Synthetic contract mutation test; no historical validation"
+}

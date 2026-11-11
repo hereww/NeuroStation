@@ -4,6 +4,7 @@ Lock/artifact tests use disposable directories. Real FFT tests run on CPU with
 installed torch, while metadata subprocesses deliberately forbid torch/numpy/scipy.
 """
 from __future__ import annotations
+from tests.synthetic_research_fixtures import research_contract
 
 import copy
 import importlib.abc
@@ -35,7 +36,7 @@ class MetadataTests(unittest.TestCase):
                 continue
             else:
                 target.write_bytes(b'fixture source or waveform archive; metadata never decodes it')
-        plan = json.loads((api.ROOT/api.PLAN).read_text(encoding='utf-8'))
+        plan = research_contract('v13-plan.json')
         for name in plan['prior_evidence']:
             target = self.root/name
             target.parent.mkdir(parents=True, exist_ok=True)

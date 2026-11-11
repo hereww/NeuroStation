@@ -1,5 +1,6 @@
 """Synthetic/mocked source-contract tests; never open real Dong subjects."""
 from __future__ import annotations
+from tests.synthetic_research_fixtures import research_contract
 
 from copy import deepcopy
 import json
@@ -35,8 +36,8 @@ class DomainDatasetTests(unittest.TestCase):
         self.signal[7:] = np.nan  # poison test values: must not be inspected
         self.mask = np.ones((9, 1, 500), dtype=bool); self.mask[7:] = False
         self.split = np.array(['train'] * 4 + ['validation'] * 3 + ['test'] * 2)
-        self.contract = json.loads((ROOT / domain.PREREGISTRATION).read_text(encoding='utf-8'))
-        self.meta = json.loads((ROOT / domain.DONG_METADATA).read_text(encoding='utf-8'))
+        self.contract = research_contract('v3-preregistration.json')
+        self.meta = research_contract('v3-dong-metadata.json')
         self.metadata_path = self.root / domain.DONG_METADATA
         self.metadata_path.parent.mkdir(parents=True)
         self.metadata_path.write_text(json.dumps(self.meta), encoding='utf-8')

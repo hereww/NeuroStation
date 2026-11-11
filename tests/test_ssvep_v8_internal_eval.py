@@ -12,6 +12,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 from eeg_tools import ssvep_v8_internal_eval as e
+from eeg_tools import ssvep_v8_experiment as experiment
+from tests.synthetic_research_fixtures import embedded_preregistration_bytes
 
 
 def config():
@@ -179,7 +181,7 @@ class PreflightFixture:
     """56 synthetic bindings: real config metadata, arbitrary binary placeholders."""
     def __init__(self,root):
         self.root=root
-        protocol=json.loads((e.ROOT/e.PREREG_RELATIVE).read_text(encoding='utf-8'))
+        protocol=json.loads(embedded_preregistration_bytes(experiment))
         for rel in protocol['bound_files']:
             self.put(rel,(e.ROOT/e.CONFIG_RELATIVE).read_bytes() if rel==e.CONFIG_RELATIVE else ('SYNTHETIC '+rel).encode())
         protocol['bound_files']={p:self.digest(p) for p in protocol['bound_files']}

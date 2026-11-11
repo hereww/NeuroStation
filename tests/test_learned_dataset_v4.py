@@ -1,5 +1,6 @@
 """Synthetic MAT/NPZ tests only; never open the research source corpus."""
 from __future__ import annotations
+from tests.synthetic_research_fixtures import research_contract
 from copy import deepcopy
 import json
 from pathlib import Path
@@ -15,8 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def fixture(root: Path, samples=801):
-    prereg = json.loads((ROOT / data.DEFAULT_PREREGISTRATION_RELATIVE).read_text(encoding="utf-8"))
-    interface = json.loads((ROOT / data.DEFAULT_INTERFACE_RELATIVE).read_text(encoding="utf-8"))
+    prereg = research_contract('v4-preregistration.json')
+    interface = research_contract('v4-interface.json')
     d = prereg["data"]
     d.update(source_segments=3, group_assignments={"1": 3, "2": 1, "3": 2},
              train_groups=[3], validation_groups=[1], test_groups=[2])

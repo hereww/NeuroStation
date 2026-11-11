@@ -1,5 +1,6 @@
 """Fixture-only safety tests: no training, public data or held-out evaluation."""
 from __future__ import annotations
+from tests.synthetic_research_fixtures import research_contract
 
 from copy import deepcopy
 import hashlib
@@ -39,7 +40,7 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(250, actual["sample_rate_hz"])
         self.assertEqual(1, actual["input_channels"])
         self.assertEqual((500, 500), (actual["window_samples"], actual["hop_samples"]))
-        frozen = json.loads((ROOT / "analysis_outputs" / "learned_denoiser_v3_preregistration.json").read_text(encoding="utf-8"))
+        frozen = research_contract('v3-preregistration.json')
         for key in ("channels", "kernel_sizes", "strides", "hidden_features", "dropout"):
             self.assertEqual(frozen["model"][key], actual["model"][key])
         self.assertEqual(set(frozen["interfaces"]["checkpoint_keys"]), v3.CHECKPOINT_KEYS)

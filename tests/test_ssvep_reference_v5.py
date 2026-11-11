@@ -10,6 +10,7 @@ import numpy as np
 from scipy.io import savemat,whosmat
 from eeg_tools import ssvep_reference_v5 as reference
 from scripts import prepare_ssvep_reference_v5 as cli
+from tests.synthetic_research_fixtures import research_contract
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -25,9 +26,10 @@ class SSVEPReferenceV5Tests(unittest.TestCase):
         specs["Nakanishi2015"]["shape"]=[12,8,47,2]
         specs["Wearable"]["shape"]=[8,128,2,2,12]
         self.spec_patch=patch.object(reference,"SPECS",specs);self.spec_patch.start();self.addCleanup(self.spec_patch.stop)
+        texts = research_contract("v5-parser-texts.json")["texts"]
         for role,relative in reference.EVIDENCE_PATHS.items():
             target=self.workspace/relative;target.parent.mkdir(parents=True,exist_ok=True)
-            target.write_bytes((ROOT/relative).read_bytes())
+            target.write_text(texts[role], encoding="utf-8")
         inventory=[];self.originals={}
         for name,spec in reference.SPECS.items():
             for subject in range(1,11):

@@ -1,0 +1,83 @@
+{
+  "fixture_scope": "synthetic_contract_only_not_historical_training_evidence",
+  "status": "design_interface_frozen_before_new_holdout_metrics",
+  "config": {
+    "schema_version": 1,
+    "status": "formal",
+    "model_version": "learned_denoise_v4",
+    "model_type": "eog_only_bandlimited_single_channel_tcn",
+    "sample_rate_hz": 250,
+    "input_channels": 1,
+    "window_samples": 500,
+    "hop_samples": 500,
+    "normalization": "per_channel_window_noisy_mean_ac_rms",
+    "model": {
+      "hidden_channels": 24,
+      "dilations": [
+        1,
+        2,
+        4,
+        8,
+        16
+      ],
+      "kernel_size": 5,
+      "dropout": 0.0,
+      "residual_peak_bound": 2.0,
+      "residual_band_hz": [
+        0.5,
+        6.0
+      ]
+    },
+    "inference": {
+      "mode": "shadow",
+      "min_ac_rms": 1e-08,
+      "max_invalid_fraction": 0.0,
+      "threshold_comparison": ">",
+      "artifact_threshold_floor": 0.5,
+      "clean_false_replacement_max": 0.01,
+      "max_high_frequency_fraction_above_45hz": 0.1,
+      "max_abs_dc_to_ac_rms": 20.0,
+      "max_change_ac_rms_ratio": 0.75,
+      "protected_band_hz": [
+        8.0,
+        40.0
+      ],
+      "protected_band_relative_tolerance": 1e-06,
+      "confidence_interpretation": "one_minus_artifact_score_not_calibrated_efficacy"
+    },
+    "loss": {
+      "time_weight": 1.0,
+      "clean_identity_multiplier": 5.0,
+      "artifact_weight": 0.5
+    },
+    "runtime": {
+      "enabled": false,
+      "validation_status": "not_assessed",
+      "deployment_scope": "explicit_offline_diagnostics_only",
+      "production_validated": false
+    }
+  },
+  "core": {
+    "module": "eeg_tools.learned_denoise_v4",
+    "functions": [
+      "load_config(path=None)",
+      "validate_config(config)",
+      "load_model(checkpoint, config, device)",
+      "apply_model_to_array(bundle, signal, valid_mask=None)"
+    ],
+    "result": "dataclass DenoiseResult(denoised, model_denoised, artifact_probability, confidence, replacement_mask, valid_mask, rejected_mask, diagnostics); arrays [T,C] except diagnostics dict",
+    "checkpoint_keys": [
+      "checkpoint_schema_version",
+      "model_version",
+      "config",
+      "model_state",
+      "artifact_threshold",
+      "threshold_calibration",
+      "dataset_sha256",
+      "metadata"
+    ]
+  },
+  "dataset": {
+    "module": "eeg_tools.learned_dataset_v4"
+  }
+}

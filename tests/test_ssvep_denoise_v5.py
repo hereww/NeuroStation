@@ -1,4 +1,7 @@
 import unittest
+import json
+import tempfile
+from unittest.mock import patch
 from pathlib import Path
 import numpy as np
 from eeg_tools import ssvep_denoise_v5 as core
@@ -36,8 +39,18 @@ class V5Tests(unittest.TestCase):
     def test_checkpoint_metadata_rejects_wrong_binding(self):
         with self.assertRaises(core.SSVEPDenoiseV5Error): core.checkpoint_metadata(self.cfg,{"reference_manifest_sha256":"0"*64,"partition_lock_sha256":core.PARTITION_LOCK_SHA256})
     def test_loader_rejects_validation_and_holdout_subjects(self):
-        with self.assertRaises(core.SSVEPDenoiseV5Error): core.load_reference_records(self.root,[7])
-        with self.assertRaises(core.SSVEPDenoiseV5Error): core.load_reference_records(self.root,[9])
+        # The original check never reached the subject gate when history was
+        # absent. Bind an actual disposable manifest, not a historical hash.
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp); manifest=root/core.REFERENCE_RELATIVE/"manifest.json"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(json.dumps({"fixture_scope":"synthetic_contract_only_not_historical_training_evidence",
+                                            "materialized_subjects": []}))
+            with patch.object(core,"REFERENCE_MANIFEST_SHA256",core.sha256(manifest)), \
+                 patch.object(np,"load",side_effect=AssertionError("must not load waveforms")):
+                for subjects in ([7],[9],[],[1,7]):
+                    with self.subTest(subjects=subjects), self.assertRaisesRegex(core.SSVEPDenoiseV5Error,"only permits train"):
+                        core.load_reference_records(root,subjects)
     def test_config_rejects_runtime_enablement(self):
         bad=dict(self.cfg); bad["runtime"]=dict(self.cfg["runtime"]); bad["runtime"]["enabled"]=True
         with self.assertRaises(core.SSVEPDenoiseV5Error): core.validate_config(bad)

@@ -1,5 +1,6 @@
 """Synthetic/mocked v3 training serialization; no real training or test metrics."""
 from __future__ import annotations
+from tests.synthetic_research_fixtures import research_contract
 
 import ast
 from copy import deepcopy
@@ -100,7 +101,7 @@ class MockTrainingTests(unittest.TestCase):
                 'max_clean_false_replacement_fraction': .01},
         }
         trainer.torch.save(denoiser_checkpoint, self.denoiser)
-        self.contract = json.loads((ROOT / 'analysis_outputs/learned_denoiser_v3_preregistration.json').read_text(encoding='utf-8'))
+        self.contract = research_contract('v3-preregistration.json')
         self.contract['protected_sha256']['models/denoiser_v2.pt'] = trainer.sha256(self.denoiser)
         self.contract_path = self.root / 'analysis_outputs/learned_denoiser_v3_preregistration.json'
         self.contract_path.write_text(json.dumps(self.contract), encoding='utf-8')

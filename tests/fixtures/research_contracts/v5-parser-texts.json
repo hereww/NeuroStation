@@ -1,0 +1,8 @@
+{
+  "fixture_scope": "synthetic_contract_only_not_historical_training_evidence",
+  "texts": {
+    "nakanishi_author": "SYNTHETIC parser input, not author evidence.\nSampling rate: 256 Hz\nOnset: 39th sample\n[9.25,11.25,13.25,9.75,11.75,13.75,10.25,12.25,14.25,10.75,12.75,14.75]\n",
+    "wearable_readme": "SYNTHETIC parser input, not author evidence.\n250 Hz; [8,710,2,10,12]\nPOz PO3 PO4 PO5 PO6 Oz O1 O2\n0.5 s; 1:dry; 2:wet\n",
+    "wearable_stimulation": "SYNTHETIC parser input, not author evidence.\n1 9.25 0\n2 11.25 0\n3 13.25 0\n4 9.75 0.5\n5 11.75 0.5\n6 13.75 0.5\n7 10.25 1\n8 12.25 1\n9 14.25 1\n0 10.75 1.5\n* 12.75 1.5\n# 14.75 1.5\n"
+  }
+}

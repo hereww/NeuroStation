@@ -1,5 +1,6 @@
 """Synthetic-only v4 evaluator tests; no real holdout/model/training access."""
 from __future__ import annotations
+from tests.synthetic_research_fixtures import research_contract
 from copy import deepcopy
 from dataclasses import dataclass
 import json
@@ -35,8 +36,8 @@ def fake_apply(bundle, signal, valid_mask=None):
 def config_contract():
     # Design JSON only: no raw data/holdout/weights.
     config = ev.read_json(ev.ROOT / "configs/learned_denoiser_v4.json")
-    contract = ev.read_json(ev.ROOT / "analysis_outputs/learned_denoiser_v4_interface_contract.json")
-    prereg = ev.read_json(ev.ROOT / "analysis_outputs/learned_denoiser_v4_preregistration.json")
+    contract = research_contract('v4-interface.json')
+    prereg = research_contract('v4-preregistration.json')
     return config, contract, prereg
 
 
@@ -282,7 +283,7 @@ class SyntheticMetricTests(unittest.TestCase):
         with self.assertRaises(ValueError): ev.evaluate_known(data, None, self.limits, apply=fake_apply)
 
     def test_dong_strict_shape_rate_interval_gain_and_order(self):
-        meta = ev.read_json(ev.ROOT / ev.DONG_METADATA)
+        meta = research_contract('v3-dong-metadata.json')
         ev.validate_dong_metadata(meta)
         for key, value in (("sample_rate_hz", 1000), ("axis_order", ["time", "channel", "target", "block"]),
                            ("target_axis_mapping_confirmed", True)):

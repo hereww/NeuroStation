@@ -4,6 +4,7 @@ Run with python -B -m unittest tests.test_ssvep_v8_experiment -v.
 All synthetic locks remain in memory; no real lock/training/report is created.
 """
 from __future__ import annotations
+from tests.synthetic_research_fixtures import embedded_preregistration_bytes
 
 import contextlib
 import copy
@@ -31,7 +32,7 @@ LOCK_SHA = 'a' * 64
 ROOT = Path(__file__).absolute().parents[1]
 # Authorized text metadata ONLY. Never read a source NPZ/PT or a real EEG file.
 CFG_BYTES = (ROOT / api.CONFIG_RELATIVE).read_bytes()
-PREREG_BYTES = (ROOT / api.PREREG_RELATIVE).read_bytes()
+PREREG_BYTES = embedded_preregistration_bytes(api)
 
 
 def synthetic_lock():
@@ -268,9 +269,34 @@ class MetadataTests(unittest.TestCase):
             self.assertEqual(cli.main(['--run']), 2)
 
     def test_fresh_import_no_torch_and_check_only_no_binary(self):
-        code = "import sys; from eeg_tools import ssvep_v8_experiment as a; assert 'torch' not in sys.modules; s=a.preflight(); assert 'torch' not in sys.modules; assert not s.report()['waveforms_loaded']"
-        # This subprocess calls metadata-only on the current workspace; no real
-        # lock is needed, no binary I/O or CUDA is possible in this code path.
+        # Cold process uses only shipped metadata in a disposable root. The
+        # production SHA checks remain active; no historical lock/data is read.
+        code = """
+import sys, tempfile
+from pathlib import Path
+from eeg_tools import ssvep_v8_experiment as a
+from tests.synthetic_research_fixtures import embedded_preregistration_bytes
+assert 'torch' not in sys.modules
+with tempfile.TemporaryDirectory() as tmp:
+    root = Path(tmp)
+    for rel, raw in ((a.CONFIG_RELATIVE, (a.ROOT / a.CONFIG_RELATIVE).read_bytes()),
+                     (a.PREREG_RELATIVE, embedded_preregistration_bytes(a))):
+        target = root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(raw)
+    reads = []
+    original = a._read_bytes
+    def metadata_only(base, rel):
+        assert rel in (a.CONFIG_RELATIVE, a.PREREG_RELATIVE)
+        reads.append(rel)
+        return original(base, rel)
+    a._read_bytes = metadata_only
+    s = a.preflight(root)
+    assert set(reads) == {a.CONFIG_RELATIVE, a.PREREG_RELATIVE}
+    assert s.lock_sha256 is None
+    assert not s.report()['waveforms_loaded']
+    assert 'torch' not in sys.modules
+"""
         result = subprocess.run([sys.executable, '-B', '-c', code], cwd=ROOT, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 

@@ -1,0 +1,119 @@
+{
+  "fixture_scope": "synthetic_contract_only_not_historical_training_evidence",
+  "schema_version": 1,
+  "status": "formal",
+  "experiment": "learned_denoiser_v3_domain_gate",
+  "seed": 20261005,
+  "epochs": 20,
+  "batch_size": 128,
+  "learning_rate": 0.001,
+  "threads": 2,
+  "model": {
+    "type": "normalized_single_channel_domain_cnn",
+    "channels": [
+      16,
+      32,
+      32
+    ],
+    "kernel_sizes": [
+      9,
+      7,
+      5
+    ],
+    "strides": [
+      2,
+      2,
+      2
+    ],
+    "hidden_features": 32,
+    "dropout": 0.0,
+    "normalization": "per-window noisy mean and AC RMS, identical to v2; no paths, subject IDs, amplitude units or raw DC as model inputs"
+  },
+  "training": {
+    "loss": "balanced binary_cross_entropy_with_logits; support label1, unsupported label0",
+    "checkpoint_selection": "minimum validation balanced BCE, first epoch on exact tie",
+    "threshold_selection": "max(0.5, unsupported-validation empirical order statistic giving <=1% strict > false acceptance); supported-validation acceptance reported, never used to lower threshold",
+    "comparison": ">",
+    "max_unsupported_false_acceptance": 0.01,
+    "test_access_before_freeze": false,
+    "denoiser_v2_frozen": true
+  },
+  "predeclared_acceptance": {
+    "new_unsupported_false_acceptance_max": 0.01,
+    "supported_corrupted_accepted_fraction_min": 0.5,
+    "known_benchmark_corrupted_rmse_improvement_min": 0.25,
+    "known_benchmark_clean_replacement_fraction_max": 0.01,
+    "known_session_rmse_ratio_to_noisy_max": 1.1,
+    "known_session_independent": false,
+    "all_noop_cannot_pass": true,
+    "production_validated": false,
+    "automatic_enabled": false,
+    "transfer_target_accuracy": "not_assessed_target_mapping"
+  },
+  "interfaces": {
+    "core_module": "eeg_tools.learned_denoise_v3",
+    "functions": [
+      "load_config(path=None)",
+      "build_gate(config)",
+      "load_model(checkpoint_path, denoiser_checkpoint_path, config=None, device=\"cpu\")",
+      "apply_model_to_array(bundle, signal, valid_mask=None)"
+    ],
+    "gate_forward": "logits tensor [B]; float32 normalized [B,1,500] input",
+    "checkpoint_keys": [
+      "checkpoint_schema_version",
+      "model_version",
+      "config",
+      "gate_state",
+      "support_threshold",
+      "threshold_calibration",
+      "denoiser_sha256",
+      "dataset_sha256",
+      "metadata"
+    ],
+    "result_fields": [
+      "denoised",
+      "model_denoised",
+      "artifact_probability",
+      "confidence",
+      "replacement_mask",
+      "valid_mask",
+      "rejected_mask",
+      "support_probability",
+      "domain_rejected_mask",
+      "diagnostics"
+    ],
+    "domain_probability": "uncalibrated supported-domain score; not artifact or denoising efficacy probability",
+    "dataset_loader": "eeg_tools.learned_domain_dataset_v3.load_domain_split(root, split) returns dict normalized(float32 [N,1,500]), supported(bool [N]), provenance(list[dict]); allow train or validation only; separate load_unsupported_holdout(root) for evaluation-only"
+  },
+  "data": {
+    "support_npz": "datasets/processed/learned_denoiser_v2.npz",
+    "supported_train_split": "train",
+    "supported_validation_split": "validation",
+    "known_benchmark_split": "test",
+    "known_benchmark_not_new_holdout": true,
+    "unsupported_dong_dir": "datasets/external/ssvep_datasets/dong2023_ssvep",
+    "dong_metadata": "datasets/external/v2_metadata_audit/DONG2023_METADATA.json",
+    "unsupported_train_subjects": [
+      "S6.mat",
+      "S7.mat"
+    ],
+    "unsupported_validation_subjects": [
+      "S8.mat",
+      "S9.mat"
+    ],
+    "new_unsupported_holdout_subjects": [
+      "S4.mat",
+      "S5.mat"
+    ],
+    "dong_interval_samples": [
+      125,
+      1125
+    ],
+    "window_samples": 500,
+    "sample_rate_hz": 250,
+    "all_targets_blocks_channels": true,
+    "max_window_exclusion": 0,
+    "use_unsupported_as_clean_ground_truth": false
+  },
+  "protected_sha256": {}
+}

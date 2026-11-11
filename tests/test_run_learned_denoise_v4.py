@@ -1,5 +1,6 @@
 """Synthetic-only offline runner/launcher tests; never train or read holdout."""
 from __future__ import annotations
+from tests.synthetic_research_fixtures import research_contract
 from copy import deepcopy
 import contextlib
 import io
@@ -37,7 +38,7 @@ def fixture_root(root):
                 "scripts/verify_denoiser_v4_artifacts.py", "eeg_tools/learned_denoise_v4.py"):
         p = root / rel; p.parent.mkdir(parents=True, exist_ok=True); p.write_bytes(b"synthetic")
     config = ev.read_json(ev.ROOT / "configs/learned_denoiser_v4.json")
-    interface = ev.read_json(ev.ROOT / "analysis_outputs/learned_denoiser_v4_interface_contract.json")
+    interface = research_contract('v4-interface.json')
     for rel, value in (("configs/learned_denoiser_v4.json", config),
                        ("analysis_outputs/learned_denoiser_v4_interface_contract.json", interface)):
         p=root/rel; p.parent.mkdir(parents=True, exist_ok=True); p.write_text(json.dumps(value), encoding="utf-8")

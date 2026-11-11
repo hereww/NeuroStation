@@ -1,5 +1,6 @@
 """CPU-only v4 fixtures; no dataset, held-out access, optimizer or training run."""
 from __future__ import annotations
+from tests.synthetic_research_fixtures import research_contract
 
 from copy import deepcopy
 from dataclasses import fields
@@ -41,7 +42,7 @@ def assert_bits(test, actual, expected):
 
 class ConfigAndCalibrationTests(unittest.TestCase):
     def test_defaults_match_frozen_contract_and_config_and_dataclass_field_order(self):
-        contract = json.loads((ROOT / "analysis_outputs" / "learned_denoiser_v4_interface_contract.json").read_text(encoding="utf-8"))
+        contract = research_contract('v4-interface.json')
         config = v4.load_config(ROOT / "configs" / "learned_denoiser_v4.json")
         self.assertEqual(contract["config"], config)
         self.assertEqual(v4.DEFAULT_CONFIG, config)
