@@ -1,0 +1,522 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-11-11T06:57:42.262051+00:00",
+  "local_date": "2026-11-11",
+  "timezone": "Asia/Shanghai",
+  "branch": "codex/neurostation-quality-upgrade",
+  "baseline_code_head": "e4299a41d86c511e3217ec5d5079671ecc767f91",
+  "verified_code_head": "6bd56272a78718d1d9486526ac470d6a547213b2",
+  "verified_source_identity": "fb89981120f26656553b7bdb220febd69a24a12ba44e30016e4732e5b08de25d",
+  "verified_source_file_count": 406,
+  "code_commits": [
+    "1dd331aafff684971391c173cc7e23956148d67c",
+    "f046d051dd4b9788eef867d3258aea47cd83f8c2",
+    "6bd56272a78718d1d9486526ac470d6a547213b2"
+  ],
+  "scope": "historical_dependency_decoupling_and_readonly_byte_audit_not_complete_historical_or_hardware_acceptance",
+  "result": "software_core_and_ui_passed_full_suite_still_blocked",
+  "all_acceptance_passed": false,
+  "count_semantics": "success callbacks and failure/error events; subtests and class setup may overlap method counts",
+  "test_groups_overlap": true,
+  "runtime": {
+    "python": "F:\\脑机采集\\NeuroStation\\.venv\\Scripts\\python.exe",
+    "python_version": "3.14.5 (tags/v3.14.5:5607950, May 10 2026, 10:43:50) [MSC v.1944 64 bit (AMD64)]",
+    "packages": {
+      "brainflow": "5.22.2",
+      "numpy": "2.5.3",
+      "scipy": "1.18.1",
+      "PySide6": "6.11.2",
+      "torch": "2.14.1"
+    }
+  },
+  "acceptance": {
+    "contracts": {
+      "mode": "contracts",
+      "git_head": "6bd56272a78718d1d9486526ac470d6a547213b2",
+      "source_identity": "fb89981120f26656553b7bdb220febd69a24a12ba44e30016e4732e5b08de25d",
+      "loaded_tests": 561,
+      "started_tests": 561,
+      "passed_tests": 560,
+      "failure_events": 0,
+      "error_events": 0,
+      "skipped_tests": 1,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "not_started_ids": [],
+      "elapsed_s": 75.84752589999698,
+      "checks": {
+        "formal_configuration": true,
+        "syntax": true,
+        "source_unchanged_during_run": true
+      },
+      "successful": true,
+      "fully_passed_selection": false
+    },
+    "focused": {
+      "mode": "focused",
+      "git_head": "6bd56272a78718d1d9486526ac470d6a547213b2",
+      "source_identity": "fb89981120f26656553b7bdb220febd69a24a12ba44e30016e4732e5b08de25d",
+      "loaded_tests": 364,
+      "started_tests": 364,
+      "passed_tests": 364,
+      "failure_events": 0,
+      "error_events": 0,
+      "skipped_tests": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "not_started_ids": [],
+      "elapsed_s": 23.64963379999972,
+      "checks": {
+        "formal_configuration": true,
+        "syntax": true,
+        "source_unchanged_during_run": true
+      },
+      "successful": true,
+      "fully_passed_selection": true
+    },
+    "ui": {
+      "mode": "ui",
+      "git_head": "6bd56272a78718d1d9486526ac470d6a547213b2",
+      "source_identity": "fb89981120f26656553b7bdb220febd69a24a12ba44e30016e4732e5b08de25d",
+      "loaded_tests": 129,
+      "started_tests": 129,
+      "passed_tests": 129,
+      "failure_events": 0,
+      "error_events": 0,
+      "skipped_tests": 0,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "not_started_ids": [],
+      "elapsed_s": 13.54672080000455,
+      "checks": {
+        "formal_configuration": true,
+        "syntax": true,
+        "source_unchanged_during_run": true
+      },
+      "successful": true,
+      "fully_passed_selection": true
+    },
+    "full": {
+      "mode": "full",
+      "git_head": "6bd56272a78718d1d9486526ac470d6a547213b2",
+      "source_identity": "fb89981120f26656553b7bdb220febd69a24a12ba44e30016e4732e5b08de25d",
+      "loaded_tests": 2110,
+      "started_tests": 2110,
+      "passed_tests": 2077,
+      "failure_events": 0,
+      "error_events": 8,
+      "skipped_tests": 25,
+      "expected_failures": 0,
+      "unexpected_successes": 0,
+      "not_started_ids": [],
+      "elapsed_s": 162.00769850000506,
+      "checks": {
+        "formal_configuration": true,
+        "syntax": true,
+        "source_unchanged_during_run": true
+      },
+      "successful": false,
+      "fully_passed_selection": false
+    }
+  },
+  "contracts_excluded_tests": [
+    {
+      "id": "test_evaluate_ssvep_denoiser_v14.EvaluatorContractTests.test_personal_sessions_are_fixed_and_present",
+      "reason": "requires original personal-session directories; retained in full mode, NOT portable acceptance",
+      "status": "not_run_in_contracts"
+    }
+  ],
+  "historical_personal_directory_probe_in_full": "passed_directory_presence_only_not_content_or_effectiveness",
+  "comparison_counts": {
+    "entry_failure_events": 1,
+    "entry_error_events": 135,
+    "final_failure_events": 0,
+    "final_error_events": 8,
+    "retained_issue_ids": 8,
+    "new_issue_ids": 0,
+    "no_longer_observed_issue_ids": 128,
+    "baseline_passing_ids_no_longer_passing": 0,
+    "previously_not_started_now_passing": 8
+  },
+  "remaining_issues": [
+    {
+      "id": "test_diagnose_ssvep_v14_event_window_sensitivity.V14EventWindowSensitivityTests.test_existing_evaluation_is_failed_selection",
+      "kind": "error",
+      "reason": "FileNotFoundError: [Errno 2] No such file or directory: 'C:\\\\Users\\\\Administrator\\\\.codex\\\\worktrees\\\\neurostation-quality-upgrade\\\\NeuroStation\\\\analysis_outputs\\\\v14_evaluation_20261014_diagnostic\\\\summary.json'",
+      "disposition": "historical_dependency_blocked_not_a_pass"
+    },
+    {
+      "id": "test_evaluate_personal_ssvep_calibration_v1.EvaluatorCalibrationV1Tests.test_existing_report_is_ineligible_and_source_unchanged",
+      "kind": "error",
+      "reason": "FileNotFoundError: [Errno 2] No such file or directory: 'C:\\\\Users\\\\Administrator\\\\.codex\\\\worktrees\\\\neurostation-quality-upgrade\\\\NeuroStation\\\\analysis_outputs\\\\personal_ssvep_calibration_v1_20261014\\\\summary.json'",
+      "disposition": "historical_dependency_blocked_not_a_pass"
+    },
+    {
+      "id": "test_evaluate_personal_ssvep_decoder_v2.EvaluatorV2Tests.test_existing_report_is_formal_and_source_unchanged",
+      "kind": "error",
+      "reason": "FileNotFoundError: [Errno 2] No such file or directory: 'C:\\\\Users\\\\Administrator\\\\.codex\\\\worktrees\\\\neurostation-quality-upgrade\\\\NeuroStation\\\\analysis_outputs\\\\personal_ssvep_decoder_v2_20261014\\\\summary.json'",
+      "disposition": "historical_dependency_blocked_not_a_pass"
+    },
+    {
+      "id": "test_evaluate_personal_ssvep_decoder_v3.EvaluatorV3Tests.test_existing_report_is_formal_and_fail_closed",
+      "kind": "error",
+      "reason": "FileNotFoundError: [Errno 2] No such file or directory: 'C:\\\\Users\\\\Administrator\\\\.codex\\\\worktrees\\\\neurostation-quality-upgrade\\\\NeuroStation\\\\analysis_outputs\\\\personal_ssvep_decoder_v3_20261014\\\\summary.json'",
+      "disposition": "historical_dependency_blocked_not_a_pass"
+    },
+    {
+      "id": "test_plot_ssvep_v14_diagnostic.V14DiagnosticFigureTests.test_input_evaluation_exists_and_is_formal",
+      "kind": "error",
+      "reason": "ValueError: v14 figure generator: evaluation directory does not exist: C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\analysis_outputs\\v14_evaluation_20261014_diagnostic",
+      "disposition": "historical_dependency_blocked_not_a_pass"
+    },
+    {
+      "id": "test_plot_ssvep_v14_diagnostic.V14DiagnosticFigureTests.test_receipt_has_three_figures_per_person_and_fail_closed_flags",
+      "kind": "error",
+      "reason": "ValueError: v14 figure generator: evaluation directory does not exist: C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\analysis_outputs\\v14_evaluation_20261014_diagnostic",
+      "disposition": "historical_dependency_blocked_not_a_pass"
+    },
+    {
+      "id": "test_ssvep_v7_internal_eval_patch.PatchTests.test_check_only_publishes_a_patch_scoped_report",
+      "kind": "error",
+      "reason": "eeg_tools.ssvep_v6_contract.V6Error: missing/inaccessible frozen file: analysis_outputs/ssvep_v7_training_preregistration_20261007.json",
+      "disposition": "historical_dependency_blocked_not_a_pass"
+    },
+    {
+      "id": "test_verify_ssvep_v14_final.V14FinalVerificationTests.test_existing_diagnostic_artifacts_verify",
+      "kind": "error",
+      "reason": "FileNotFoundError: [Errno 2] No such file or directory: 'C:\\\\Users\\\\Administrator\\\\.codex\\\\worktrees\\\\neurostation-quality-upgrade\\\\NeuroStation\\\\analysis_outputs\\\\v14_evaluation_20261014_diagnostic\\\\summary.json'",
+      "disposition": "historical_dependency_blocked_not_a_pass"
+    }
+  ],
+  "full_skips": [
+    {
+      "id": "test_apply_ssvep_denoiser_v5.SyntheticExporterFixture.test_symlink_reference_is_rejected",
+      "reason": "symlinks unavailable"
+    },
+    {
+      "id": "test_audit_local_ssvep_v5.LocalSSVEPAuditTests.test_symlink_and_git_excluded_no_follow_or_execute",
+      "reason": "host does not permit symlinks"
+    },
+    {
+      "id": "test_denoiser_v2_launcher.DenoiserV2LauncherTests.test_check_only_with_explicit_session_validates_but_does_not_process",
+      "reason": "pwsh and project .venv are required"
+    },
+    {
+      "id": "test_denoiser_v2_launcher.DenoiserV2LauncherTests.test_checkpoint_requiring_pickle_objects_is_rejected_without_unsafe_fallback",
+      "reason": "pwsh and project .venv are required"
+    },
+    {
+      "id": "test_denoiser_v2_launcher.DenoiserV2LauncherTests.test_explicit_fixture_session_runs_offline_without_mutating_raw_or_official_quality",
+      "reason": "pwsh and project .venv are required"
+    },
+    {
+      "id": "test_denoiser_v2_launcher.DenoiserV2LauncherTests.test_missing_checkpoint_check_only_is_not_ready_and_read_only",
+      "reason": "pwsh and project .venv are required"
+    },
+    {
+      "id": "test_denoiser_v2_launcher.DenoiserV2LauncherTests.test_missing_torch_rejects_existing_checkpoint_without_loading",
+      "reason": "pwsh and project .venv are required"
+    },
+    {
+      "id": "test_denoiser_v2_launcher.DenoiserV2LauncherTests.test_no_session_missing_model_prints_manual_usage_and_never_processes",
+      "reason": "pwsh and project .venv are required"
+    },
+    {
+      "id": "test_denoiser_v2_launcher.DenoiserV2LauncherTests.test_nonformal_or_automatically_enabled_config_fails_closed",
+      "reason": "pwsh and project .venv are required"
+    },
+    {
+      "id": "test_denoiser_v2_launcher.DenoiserV2LauncherTests.test_powershell_parser_and_safe_entrypoints",
+      "reason": "pwsh and project .venv are required"
+    },
+    {
+      "id": "test_denoiser_v2_launcher.DenoiserV2LauncherTests.test_saved_research_summary_is_read_only_and_cannot_enable_processing",
+      "reason": "pwsh and project .venv are required"
+    },
+    {
+      "id": "test_denoiser_v2_launcher.DenoiserV2LauncherTests.test_session_requires_new_external_output_even_in_check_only",
+      "reason": "pwsh and project .venv are required"
+    },
+    {
+      "id": "test_denoiser_v2_launcher.DenoiserV2LauncherTests.test_valid_fixture_without_session_only_reports_diagnostic_readiness",
+      "reason": "pwsh and project .venv are required"
+    },
+    {
+      "id": "test_denoiser_v3_launcher.DenoiserV3LauncherTests.test_check_only_loads_real_fixture_weights_and_never_reads_source",
+      "reason": "pwsh, project .venv and optional PyTorch are required"
+    },
+    {
+      "id": "test_denoiser_v3_launcher.DenoiserV3LauncherTests.test_cuda_request_never_falls_back_to_cpu",
+      "reason": "pwsh, project .venv and optional PyTorch are required"
+    },
+    {
+      "id": "test_denoiser_v3_launcher.DenoiserV3LauncherTests.test_existing_output_is_rejected_before_inference",
+      "reason": "pwsh, project .venv and optional PyTorch are required"
+    },
+    {
+      "id": "test_denoiser_v3_launcher.DenoiserV3LauncherTests.test_explicit_input_runs_offline_without_mutating_input_or_claiming_repair",
+      "reason": "pwsh, project .venv and optional PyTorch are required"
+    },
+    {
+      "id": "test_denoiser_v3_launcher.DenoiserV3LauncherTests.test_formal_release_preflight_fails_before_model_loading",
+      "reason": "pwsh, project .venv and optional PyTorch are required"
+    },
+    {
+      "id": "test_denoiser_v3_launcher.DenoiserV3LauncherTests.test_no_source_is_readiness_only_and_output_requires_source",
+      "reason": "pwsh, project .venv and optional PyTorch are required"
+    },
+    {
+      "id": "test_denoiser_v3_launcher.DenoiserV3LauncherTests.test_powershell_parser_exposes_only_explicit_safe_entrypoints",
+      "reason": "pwsh, project .venv and optional PyTorch are required"
+    },
+    {
+      "id": "test_learned_denoise.LearnedDenoiseTests.test_build_eegdenoisenet_arrays_if_downloaded",
+      "reason": "EEGdenoiseNet was not downloaded"
+    },
+    {
+      "id": "test_learned_denoise_v3.CheckpointTests.test_explicit_cuda_gate_and_cpu_frozen_denoiser",
+      "reason": "CUDA unavailable; no silent CPU fallback"
+    },
+    {
+      "id": "test_prepare_matched_ssvep_training.PrepareMatchedSSVEPTrainingTests.test_dangling_output_symlink_is_rejected",
+      "reason": "symlink creation unavailable: [WinError 1314] 客户端没有所需的特权。: 'C:\\\\Users\\\\Administrator\\\\AppData\\\\Local\\\\Temp\\\\tmpgz_e096y\\\\absent-target' -> 'C:\\\\Users\\\\Administrator\\\\AppData\\\\Local\\\\Temp\\\\tmpgz_e096y\\\\existing-link'"
+    },
+    {
+      "id": "test_ssvep_denoise_v10.SpectralDenoiserV10Tests.test_cuda_forward_backward_and_cpu_agreement",
+      "reason": "CUDA not available"
+    },
+    {
+      "id": "test_ssvep_saved_audit_v5.PublicationTests.test_symlink_parent_rejected",
+      "reason": "OS does not allow symlink creation: [WinError 1314] 客户端没有所需的特权。: 'C:\\\\Users\\\\Administrator\\\\AppData\\\\Local\\\\Temp\\\\synthetic-v5-audit-_19oub4h\\\\actual' -> 'C:\\\\Users\\\\Administrator\\\\AppData\\\\Local\\\\Temp\\\\synthetic-v5-audit-_19oub4h\\\\linked'"
+    }
+  ],
+  "historical_metadata": {
+    "declared_files": 19,
+    "verified_files": 19,
+    "blocked_files": 0,
+    "frozen_contract_pins": 4,
+    "local_inventory_pins": 15,
+    "manifest_sha256": "54a99c28c6b136440c174b9897e9faabb2e53f551a23cdb38a0743c0154ba1e3",
+    "historical_conclusions_verified": false,
+    "complete_dependency_graph": false,
+    "historical_integrations_migrated": false
+  },
+  "compatibility_notes": [
+    "In-memory temporal analysis now exposes null source path/hash instead of a false default-file binding.",
+    "File-based temporal run binds consumed bytes and refuses overwrite.",
+    "Synthetic fixtures and test-scope pin overrides prove test contracts only, not historical training.",
+    "Acceptance schema 2 adds explicit selection, source manifest scope and fully_passed_selection; skips are not passes."
+  ],
+  "preservation": {
+    "checks": {
+      "original_head_unchanged": true,
+      "original_tracked_status_unchanged": true,
+      "original_staged_diff_unchanged": true,
+      "original_files_unchanged": true,
+      "dependency_files_unchanged": true,
+      "frozen_source_files_unchanged": true,
+      "previous_delivery_zip_unchanged": true,
+      "tested_source_still_matches": true
+    },
+    "all_registered_checks_passed": true,
+    "registered_original_files": 302,
+    "registered_dependencies": 12,
+    "frozen_sources": 4,
+    "all_personal_files_scanned": false
+  },
+  "previous_delivery_zip": {
+    "path": "C:\\Users\\Administrator\\.codex\\worktrees\\neurostation-quality-upgrade\\NeuroStation\\quality-output\\delivery-audit-20261106-final\\NeuroStation-QualityWorkspace-20261106-6fe44b7-Windows-x64.zip",
+    "expected_sha256": "b73600bc70a22df49f9e2a9e984e59b1b42188ee23e949747d6dd774db70339e",
+    "observed_sha256": "b73600bc70a22df49f9e2a9e984e59b1b42188ee23e949747d6dd774db70339e",
+    "byte_count": 131111482,
+    "rebuilt_this_round": false
+  },
+  "performed": {
+    "personal_training": false,
+    "real_acquisition": false,
+    "physical_stimulus": false,
+    "experimental_runtime_enablement": false,
+    "new_windows_build": false,
+    "packaged_application_launch": false,
+    "clean_windows_validation": false,
+    "performance_or_soak_retest": false,
+    "push": false,
+    "merge": false
+  },
+  "evidence": [
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/entry-state.json",
+      "sha256": "bfce1520f2e640f15102ec158775b4bd304a7fdf7842bb30ce5ed647a2f946b7",
+      "byte_count": 40778,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/entry-full/results.json",
+      "sha256": "53e166e8c5ca38984452d46c12019d759f392d4d37c4fcd0af7b89df8d915542",
+      "byte_count": 426450,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/entry-full/source-manifest.json",
+      "sha256": "42dc03e42908acd441061de64c34a58e88bcca8dda873b2e45aaabe4d49e9742",
+      "byte_count": 43300,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/entry-full/tests.log",
+      "sha256": "3cf965e69b5a564ba11814b165ce0a3b882db83cbcadbc90d287597ef0551877",
+      "byte_count": 536662,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/full-final-comparison.json",
+      "sha256": "590a189bb77aa99a5e0a85e1c8ad7650b0a666619cebdb1da3046991e14cc379",
+      "byte_count": 72222,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/preservation-final-verified.json",
+      "sha256": "26001eebad43c597bd1a30b34def615b3e165e2893888359e0f96522a10ba5b3",
+      "byte_count": 134209,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/temporal-source-before-after.json",
+      "sha256": "b1a67474730ec99f3c4c19685ade7b22997b431260d5c7cd0401298997760907",
+      "byte_count": 625,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/historical-test-evidence-manifest-final.json",
+      "sha256": "54a99c28c6b136440c174b9897e9faabb2e53f551a23cdb38a0743c0154ba1e3",
+      "byte_count": 26141,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/historical-test-evidence-final.json",
+      "sha256": "6c38f838f6a0b163ab61799d614aeae254a611b3bb0528adf5aed2829663c62b",
+      "byte_count": 15014,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/historical-test-evidence-recheck.json",
+      "sha256": "6c38f838f6a0b163ab61799d614aeae254a611b3bb0528adf5aed2829663c62b",
+      "byte_count": 15014,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/v5-v6-contracts.log",
+      "sha256": "74be2624eb77affcf8e985171d2acbef0bc9ff2b06fe617b7a1be1786ebb2f8a",
+      "byte_count": 12496,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/evidence-final-regression.log",
+      "sha256": "c8e168258811998b015e49e6e796080fecefdacab0a8e23bbcac48d5d43fb3c3",
+      "byte_count": 1126,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/docs/NeuroStation-历史依赖解耦与复验报告-20261111.md",
+      "sha256": "26cfeb851bed0f103e9697b0448468eee509fa249b5dfb1c39c95e897122de81",
+      "byte_count": 17797,
+      "committed": true
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/final-v2-contracts/results.json",
+      "sha256": "1c21b89f9c9a25c70313687df03f95c9d5b07242bd4af939b4dccaa021528808",
+      "byte_count": 124139,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/final-v2-contracts/source-manifest.json",
+      "sha256": "847cd5e5fe9146c89b6a0186a6cc40ae1f4eaaa8697303d091f51e8114e9ecc3",
+      "byte_count": 44940,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/final-v2-contracts/tests.log",
+      "sha256": "b8c591fc80342327d925981af4981388d3d1fa7a4a295e5cf12b17f54f12e993",
+      "byte_count": 92194,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/final-v2-contracts/formal-config.log",
+      "sha256": "17654d51cfddcc26962b8d80bea4b8dd86f1bb617c00681be6ba335f6c98c31e",
+      "byte_count": 257,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/final-v2-focused/results.json",
+      "sha256": "e31b20cb9aac9755bc43d14590af79c5e54a20fa445a5f8bd13c0c8f5c3302a4",
+      "byte_count": 85074,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/final-v2-focused/source-manifest.json",
+      "sha256": "847cd5e5fe9146c89b6a0186a6cc40ae1f4eaaa8697303d091f51e8114e9ecc3",
+      "byte_count": 44940,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/final-v2-focused/tests.log",
+      "sha256": "6f37baef857d24e076a0fb1e919d253fe618a3e02d859b85613adff02496336c",
+      "byte_count": 63560,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/final-v2-focused/formal-config.log",
+      "sha256": "17654d51cfddcc26962b8d80bea4b8dd86f1bb617c00681be6ba335f6c98c31e",
+      "byte_count": 257,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/final-v2-ui/results.json",
+      "sha256": "a12a4d535d6885990da289ed36b1b18685e5403b90a8511af151c723be7a06dd",
+      "byte_count": 34668,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/final-v2-ui/source-manifest.json",
+      "sha256": "847cd5e5fe9146c89b6a0186a6cc40ae1f4eaaa8697303d091f51e8114e9ecc3",
+      "byte_count": 44940,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/final-v2-ui/tests.log",
+      "sha256": "f9fe36dfa72dfe395ef542d026e9ef48f9369ef0341dd125accd82f62b804d10",
+      "byte_count": 23472,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/final-v2-ui/formal-config.log",
+      "sha256": "17654d51cfddcc26962b8d80bea4b8dd86f1bb617c00681be6ba335f6c98c31e",
+      "byte_count": 257,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/final-v2-full/results.json",
+      "sha256": "9afbb682682feca4c983ff9d260ffbd112544053e2999d2fbaacd687d82aa839",
+      "byte_count": 473260,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/final-v2-full/source-manifest.json",
+      "sha256": "847cd5e5fe9146c89b6a0186a6cc40ae1f4eaaa8697303d091f51e8114e9ecc3",
+      "byte_count": 44940,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/final-v2-full/tests.log",
+      "sha256": "dd0204154fcafdf59a24f18e855a4b8c28d332cb5cdb48d88f121016d9fb48c9",
+      "byte_count": 362875,
+      "committed": false
+    },
+    {
+      "path": "C:/Users/Administrator/.codex/worktrees/neurostation-quality-upgrade/NeuroStation/quality-output/audit-20261111-01/final-v2-full/formal-config.log",
+      "sha256": "17654d51cfddcc26962b8d80bea4b8dd86f1bb617c00681be6ba335f6c98c31e",
+      "byte_count": 257,
+      "committed": false
+    }
+  ]
+}
