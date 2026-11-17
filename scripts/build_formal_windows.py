@@ -65,8 +65,8 @@ def main():
     run(args, env)
     (output / "dist/workstation").rename(artifact)
     shutil.copytree(runtime, artifact / "_internal/integrations/openbci_gui/runtime/windows")
-    shutil.copy2(ROOT / "release/NeuroStation-1.04-Windows-x64.md", artifact / "RELEASE_NOTES.md")
-    shutil.copy2(ROOT / "release/formal-update-20261117.md", artifact / "UPDATE_NOTES.md")
+    shutil.copy2(ROOT / "release/NeuroStation-1.05-Windows-x64.md", artifact / "RELEASE_NOTES.md")
+    shutil.copy2(ROOT / "release/NeuroStation-1.05-Windows-x64.md", artifact / "UPDATE_NOTES.md")
     run([sys.executable, "-B", ROOT / "scripts/generate_sbom.py", "-o", artifact / "SBOM.json"], env)
     (artifact / "VERSION.txt").write_text(
         f"NeuroStation\nVersion: {PRODUCT_VERSION}\nSemantic version: {PRODUCT_SEMVER}\n"
