@@ -9,8 +9,7 @@ from pathlib import Path
 from typing import Any
 
 
-class SSVEPProtocolError(ValueError):
-    """Raised when an SSVEP protocol cannot be executed safely."""
+from neurostation_protocol_errors import SSVEPProtocolError
 
 
 def _number(value: Any, name: str, *, minimum: float, allow_equal: bool = True) -> float:

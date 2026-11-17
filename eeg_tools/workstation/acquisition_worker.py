@@ -181,6 +181,8 @@ def _create_stimulus_window(eye_side: str):
             self._painted_generation = 0
             self._swapped_generation = 0
             self.rendering_metadata: dict[str, Any] = {}
+            self.condition_state = None
+            self.condition_parameters = None
             self.target_index: int | None = None
             self.lit = False
             self.message = ""
@@ -254,6 +256,14 @@ def _create_stimulus_window(eye_side: str):
             self._gl.glClearColor(0.0, 0.0, 0.0, 1.0)
             self._gl.glClear(0x00004000)  # GL_COLOR_BUFFER_BIT
 
+            if self.condition_state is not None:
+                from neurostation_condition_render import paint_condition_state
+                painter = QPainter(self)
+                paint_condition_state(painter, self.width(), self.height(),
+                                      self.condition_parameters, self.condition_state)
+                painter.end()
+                return
+
             half = eye_half_geometry(0, 0, width, height, eye_side)
             if self.lit or (self.message and self.message_flash):
                 self._gl.glEnable(0x0C11)  # GL_SCISSOR_TEST
@@ -286,6 +296,7 @@ def _create_stimulus_window(eye_side: str):
                 painter.end()
 
         def show_message(self, message: str, *, flash: bool = False) -> None:
+            self.condition_state = None
             self._state_generation += 1
             self.message = message
             self.target_index = None
@@ -294,10 +305,21 @@ def _create_stimulus_window(eye_side: str):
             self.update()
 
         def show_target(self, target_index: int, lit: bool) -> int:
+            self.condition_state = None
             self._state_generation += 1
             self.message = ""
             self.target_index = target_index
             self.lit = lit
+            self.update()
+            return self._state_generation
+
+        def show_condition(self, state: Any, parameters: dict[str, Any]) -> int:
+            self._state_generation += 1
+            self.condition_state = state
+            self.condition_parameters = dict(parameters)
+            self.message = ""
+            self.lit = False
+            self.message_flash = False
             self.update()
             return self._state_generation
 
@@ -329,6 +351,41 @@ def _create_stimulus_window(eye_side: str):
         window.close()
         raise RuntimeError("visual stimulus requires vertical synchronization (swap interval 1)")
     return application, window, mapping
+
+
+class QtConditionDisplay:
+    """Adapter for an already preflighted window; never creates/starts a window.
+
+    Not wired into the live worker CLI until session/EEG association and new
+    protocol preflight are integrated. The old runner still accepts schema 2 only.
+    """
+    def __init__(self, application, window, protocol, cancel_file=None):
+        protocol.require_locked_parameters()
+        self.application = application
+        self.window = window
+        self.parameters = protocol.parameters
+        self.cancel_file = cancel_file
+        self.previous_swap_count = 0
+
+    def submit(self, state):
+        self.previous_swap_count = self.window.frame_swapped_count
+        return self.window.show_condition(state, self.parameters)
+
+    def wait_swap(self, generation):
+        from .four_condition_presenter import FrameSwap, PresentationCancelled
+        try:
+            actual = _wait_for_frame_swap(
+                self.application, self.window, self.previous_swap_count,
+                cancel_file=self.cancel_file, minimum_generation=generation,
+            )
+        except UserAbort as exc:
+            raise PresentationCancelled(str(exc)) from exc
+        return FrameSwap(self.window.swapped_generation, actual)
+
+    def emergency_blank(self):
+        # Hide rather than waiting for a swap that may be the failed operation.
+        # This requests removal; it does not assert a measured light-off time.
+        self.window.hide()
 
 
 def _wait_for_frame_swap(

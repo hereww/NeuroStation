@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from .components import action, label
+from .four_condition_page import FourConditionPage
 from .gateway import CaptureGateway, CaptureConfig, CaptureMode, Phase, Dataset
 from .i18n import Translator
 from .monitor import AcquisitionMonitorWindow
@@ -383,6 +384,7 @@ class MainWindow(QMainWindow):
         detail.mode.currentIndexChanged.connect(lambda _index: self._capture_form_changed())
         detail.port.textChanged.connect(lambda _text: self._capture_form_changed())
         self._replace_page("ssvep", detail)
+        self._replace_page("ssvep_four_condition", FourConditionPage(self.tr, self.navigate))
         task = TaskPage(self.tr)
         task.cancel_requested.connect(self.cancel_task)
         task.monitor_requested.connect(self.show_acquisition_monitor)
@@ -505,7 +507,7 @@ class MainWindow(QMainWindow):
             self._refresh_diagnostics()
         self.current_page = key
         self.stack.setCurrentWidget(self.screens[key])
-        nav_key = "apps" if key in ("ssvep", "task", "result") else key
+        nav_key = "apps" if key in ("ssvep", "ssvep_four_condition", "task", "result") else key
         self.navigation.blockSignals(True)
         self.navigation.setCurrentRow(NAVIGATION.index(nav_key))
         self.navigation.blockSignals(False)
@@ -530,6 +532,7 @@ class MainWindow(QMainWindow):
     def change_language(self, locale: str):
         if locale == self.tr.locale:
             return
+        four_condition_draft = self.pages["ssvep_four_condition"].draft_state()
         self.draft_config = self.pages["ssvep"].config()
         if self.persist_settings:
             self.settings.setValue("ui/language", locale)
@@ -538,6 +541,7 @@ class MainWindow(QMainWindow):
         self._dispose_acquisition_monitor()
         self._monitor_suppressed = monitor_suppressed
         self._build_shell()
+        self.pages["ssvep_four_condition"].restore_draft(four_condition_draft)
 
     def _error(self, error: Exception):
         self.diagnostic_store.exception(error, source="ui")

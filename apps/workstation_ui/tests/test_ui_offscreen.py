@@ -66,6 +66,21 @@ class QtOffscreenTests(unittest.TestCase):
         self.gateway._active = acquisition
         return acquisition.snapshot
 
+    def test_four_condition_navigation_and_language_preserves_edits(self):
+        self.window.pages["ssvep"].four_condition_button.click()
+        self.assertEqual("ssvep_four_condition", self.window.current_page)
+        page = self.window.pages["ssvep_four_condition"]
+        page.fields["frequency_hz"].setText("12")
+        page.operator.setText("synthetic operator")
+        self.window.change_language("en-US")
+        page = self.window.pages["ssvep_four_condition"]
+        self.assertEqual("ssvep_four_condition", self.window.current_page)
+        self.assertEqual("12", page.fields["frequency_hz"].text())
+        self.assertEqual("synthetic operator", page.operator.text())
+        self.assertFalse(page.reviewed.isChecked())
+        self.assertFalse(page.start_button.isEnabled())
+        self.assertEqual([], self.start_calls)
+
     def _add_user(self, user_id="U0001", name="Test user"):
         from neurostation_contract import UserProfile
 

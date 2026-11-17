@@ -1,0 +1,58 @@
+{
+  "schema_version": 3,
+  "kind": "ssvep_four_condition",
+  "protocol_id": "ssvep_four_condition_v1",
+  "status": "formal",
+  "source_plan": "左右固定与单向移动闪烁脑电采集方案_正式版V1.0_20261022.docx",
+  "condition_order": [
+    "L_FIXED",
+    "R_FIXED",
+    "L_TO_R",
+    "R_TO_L"
+  ],
+  "parameters": {
+    "refresh_rate_hz": null,
+    "frequency_hz": null,
+    "duty_cycle": null,
+    "left_x": null,
+    "right_x": null,
+    "y": null,
+    "target_width": null,
+    "target_height": null,
+    "shape": null,
+    "motion_mode": null,
+    "gaze_instruction": null,
+    "background_level": null,
+    "on_level": null,
+    "off_level": null,
+    "cue_s": null,
+    "baseline_s": null,
+    "stimulus_s": null,
+    "rest_s": null,
+    "trials_per_block": null,
+    "blocks_per_condition": null,
+    "block_rest_s": null,
+    "condition_rest_s": null,
+    "makeup_policy": null
+  },
+  "parameter_confirmation": null,
+  "execution_boundary": "offline_planner_only; hardware/display preflight and participant confirmation still required",
+  "suggestions_not_selected": {
+    "cue_s": 1,
+    "baseline_s": 1,
+    "stimulus_s": 4,
+    "rest_s": 2,
+    "trials_per_block": 15,
+    "blocks_per_condition": 2,
+    "block_rest_s": 30,
+    "condition_rest_s_range": [
+      60,
+      120
+    ],
+    "left_x": 0.2,
+    "right_x": 0.8,
+    "y": 0.5,
+    "frequency_hz": null,
+    "note": "30 is an effective-trial goal, not a guaranteed valid-trial count; no automatic makeup."
+  }
+}

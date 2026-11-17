@@ -1734,6 +1734,8 @@ class SSVEPPage(Page):
 
     def __init__(self, tr, config: CaptureConfig, navigate, users=()):
         super().__init__(tr, "SSVEP", tr("ssvep.subtitle"))
+        self.four_condition_button = action(tr("four.entry"), lambda: navigate("ssvep_four_condition"))
+        self.layout.addWidget(self.four_condition_button)
         self.layout.addWidget(action(tr("action.back_apps"), lambda: navigate("apps")))
         self.layout.addWidget(label(tr("ssvep.workflow_steps"), "estimate"))
         self.layout.addWidget(label(tr("ssvep.description"), "muted"))

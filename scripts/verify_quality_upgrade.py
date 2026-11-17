@@ -23,6 +23,7 @@ FOCUSED={
  'test_session_files','test_formal_acquisition_defaults','test_formal_ssvep_protocol',
  'test_release_config_policy','test_release_metadata','test_workstation_cli',
  'test_workstation_ssvep','test_desktop_gateway','test_device_discovery',
+ 'test_ssvep_four_conditions', 'test_ssvep_four_condition_presenter',
 }
 
 # Portable contracts are deliberately distinct from historical-evidence checks.

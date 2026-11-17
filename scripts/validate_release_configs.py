@@ -12,6 +12,7 @@ if str(ROOT) not in sys.path:
 
 from eeg_tools.config import ConfigError, load_and_validate_configs
 from eeg_tools.workstation.ssvep import SSVEPProtocol
+from eeg_tools.workstation.four_condition import FourConditionProtocol
 
 
 def _read_object(path: Path) -> dict:
@@ -45,7 +46,13 @@ def validate_release_configs(root: Path = ROOT) -> dict:
             if "DRAFT" in label or "MVP" in label:
                 raise ConfigError(f"Release {key} must not contain MVP/DRAFT: {path}")
 
+    pending_protocols = {}
     for path in protocols:
+        if _read_object(path).get("kind") == "ssvep_four_condition":
+            spatial = FourConditionProtocol.load(path)
+            if spatial.pending:
+                pending_protocols[path.name] = list(spatial.pending)
+            continue
         protocol = SSVEPProtocol.load(path)
         if (protocol.channel_count, protocol.sampling_rate_hz, protocol.refresh_rate_hz) != (8, 250, 60):
             raise ConfigError(f"Release protocol must match Cyton/display defaults: {path}")
@@ -59,6 +66,7 @@ def validate_release_configs(root: Path = ROOT) -> dict:
         "status": "ready",
         "protocol_status": "formal",
         "protocol_count": len(protocols),
+        "parameter_lock_pending": pending_protocols,
         "channel_config_path": str(channel_path.resolve()),
         "warnings": [],
     }
