@@ -45,8 +45,8 @@ class ReleaseMetadataTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
         self.assertIn(f'default: "v{PRODUCT_SEMVER}"', workflow)
         self.assertIn(f"name: NeuroStation {PRODUCT_VERSION}", workflow)
-        self.assertIn(f"body_path: release/{notes_name}", workflow)
-        self.assertIn(f"files: dist/{archive_name}", workflow)
+        self.assertIn(f"body_path: C:/NeuroStation-ci/release/{notes_name}", workflow)
+        self.assertIn(f"files: C:/NeuroStation-ci/dist/{archive_name}", workflow)
         notes = (ROOT / "release" / notes_name).read_text(encoding="utf-8")
         for field in (f"Product version: `{PRODUCT_VERSION}`", f"Semantic version: `{PRODUCT_SEMVER}`", f"Build date: `{RELEASE_DATE}`", f"Intended release tag: `v{PRODUCT_SEMVER}`"):
             self.assertIn(field, notes)

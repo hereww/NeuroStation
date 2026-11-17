@@ -10,7 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 from scripts import evaluate_personal_ssvep_decoder_v3 as evaluator
 
 
+from tests.historical_evidence import historical_evidence
+
 class EvaluatorV3Tests(unittest.TestCase):
+    @historical_evidence
     def test_existing_report_is_formal_and_fail_closed(self):
         report = evaluator.read_json(ROOT / "analysis_outputs" / "personal_ssvep_decoder_v3_20261014" / "summary.json")
         self.assertEqual(report["status"], "formal")

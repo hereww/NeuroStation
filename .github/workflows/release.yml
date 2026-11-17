@@ -17,11 +17,25 @@ permissions:
 jobs:
   windows-release:
     runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: ${{ runner.os == 'Windows' && 'C:/NeuroStation-ci' || github.workspace }}
     env:
       QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+      # Historical research code intentionally rejects D: access. Do not weaken
+      # that guard to accommodate GitHub's default D: checkout on Windows.
+      - name: Move CI checkout to permitted drive (Windows)
+        if: runner.os == 'Windows'
+        working-directory: ${{ github.workspace }}
+        shell: pwsh
+        run: |
+          git clone --no-hardlinks --local "$env:GITHUB_WORKSPACE" C:/NeuroStation-ci
+          if ($LASTEXITCODE -ne 0) { throw "CI checkout failed" }
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -31,6 +45,26 @@ jobs:
 
       - name: Install desktop dependencies
         run: python -m pip install -r requirements.txt "Nuitka>=4.2,<5"
+      - name: Canonical temporary paths
+        shell: bash
+        run: |
+          python -c "import pathlib, tempfile; p = str(pathlib.Path(tempfile.gettempdir()).resolve()); print('TMPDIR='+p); print('TEMP='+p); print('TMP='+p)" >> "$GITHUB_ENV"
+      - name: Install isolated CPU test dependencies
+        shell: bash
+        run: |
+          python -m venv .venv-ci-tests
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            TEST_PYTHON="$PWD/.venv-ci-tests/Scripts/python.exe"
+          else
+            TEST_PYTHON="$PWD/.venv-ci-tests/bin/python"
+          fi
+          "$TEST_PYTHON" -m pip install -r requirements.txt
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            "$TEST_PYTHON" -m pip install "torch==2.2.2" "numpy<2"
+          else
+            "$TEST_PYTHON" -m pip install "torch==2.6.0" --index-url https://download.pytorch.org/whl/cpu
+          fi
+          echo "TEST_PYTHON=$TEST_PYTHON" >> "$GITHUB_ENV"
 
       - name: Prepare OpenBCI GUI runtime
         shell: pwsh
@@ -40,9 +74,10 @@ jobs:
           .\scripts\build_openbci_gui.ps1 -Python python
 
       - name: Run acceptance tests
+        shell: bash
         run: |
-          python -m unittest discover -s tests -v
-          python -m unittest discover -s apps/workstation_ui/tests -v
+          "$TEST_PYTHON" -m unittest discover -s tests -v
+          "$TEST_PYTHON" -m unittest discover -s apps/workstation_ui/tests -v
 
       - name: Build Windows standalone package
         shell: pwsh
@@ -57,5 +92,5 @@ jobs:
           name: NeuroStation 1.04
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           generate_release_notes: true
-          body_path: release/NeuroStation-1.04-Windows-x64.md
-          files: dist/NeuroStation-1.04-Windows-x64.zip
+          body_path: C:/NeuroStation-ci/release/NeuroStation-1.04-Windows-x64.md
+          files: C:/NeuroStation-ci/dist/NeuroStation-1.04-Windows-x64.zip

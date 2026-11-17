@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 from scripts import plot_ssvep_v14_diagnostic as plotter
 
 
+from tests.historical_evidence import historical_evidence
+
 class V14DiagnosticFigureTests(unittest.TestCase):
     def test_help_does_not_import_scientific_stack(self):
         code = """
@@ -33,6 +35,7 @@ assert not blocked.intersection(sys.modules)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('--evaluation-directory', result.stdout)
 
+    @historical_evidence
     def test_input_evaluation_exists_and_is_formal(self):
         evaluation = ROOT / 'analysis_outputs' / 'v14_evaluation_20261014_diagnostic'
         summary, reports = plotter.load_inputs(evaluation)
@@ -50,6 +53,7 @@ assert not blocked.intersection(sys.modules)
             with self.assertRaisesRegex(ValueError, 'under analysis_outputs'):
                 plotter.create_output(Path(directory) / 'out')
 
+    @historical_evidence
     def test_receipt_has_three_figures_per_person_and_fail_closed_flags(self):
         evaluation = ROOT / 'analysis_outputs' / 'v14_evaluation_20261014_diagnostic'
         summary, _ = plotter.load_inputs(evaluation)

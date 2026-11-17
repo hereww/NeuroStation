@@ -8,6 +8,8 @@ from scripts import evaluate_ssvep_denoiser_v14 as ev
 from eeg_tools import ssvep_v14_runtime as api
 from tests.synthetic_research_fixtures import failed_v14_fixture
 ROOT=Path(__file__).resolve().parents[1]
+from tests.historical_evidence import historical_evidence
+
 class EvaluatorContractTests(unittest.TestCase):
  @classmethod
  def setUpClass(cls):
@@ -43,6 +45,7 @@ class EvaluatorContractTests(unittest.TestCase):
   with tempfile.NamedTemporaryFile(dir=self.root,delete=False) as f:f.write(b'v14')
   try:self.assertEqual(ev.sha(f.name),ev.sha(f.name))
   finally:Path(f.name).unlink()
+ @historical_evidence
  def test_personal_sessions_are_fixed_and_present(self):
   self.assertEqual(len(ev.SESSIONS),2)
   self.assertTrue(all(Path(p).is_dir() for p in ev.SESSIONS))

@@ -408,8 +408,11 @@ class DeliveryContractTests(unittest.TestCase):
                        "CC BY-NC 4.0", "数据许可尚未确认", "target_axis_mapping_confirmed=false",
                        "不自动加到", "保留 raw", "不是有效去噪证据", "不接入采集工作站自动处理"):
             self.assertIn(marker, text)
-        source_hash = hashlib.sha256(Path(check.__file__).read_bytes()).hexdigest()
-        self.assertIn(source_hash, text)
+        # The document is a dated execution record, not an assertion that the
+        # current script still has the historical bytes. Never rewrite evidence
+        # to make it match a later source revision.
+        self.assertIn("a02dd3544a336680701b46e87ec84717510ff07143cd3d26acec652084a26f50", text)
+        self.assertIn("未来如改源码", text)
         self.assertIn("135,680", text)
         self.assertIn("3.6544200999996974", text)
         # Commands must use absolute interpreter/script/report/test paths.

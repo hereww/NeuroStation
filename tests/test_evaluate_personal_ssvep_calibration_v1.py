@@ -10,7 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 from scripts import evaluate_personal_ssvep_calibration_v1 as evaluator
 
 
+from tests.historical_evidence import historical_evidence
+
 class EvaluatorCalibrationV1Tests(unittest.TestCase):
+    @historical_evidence
     def test_existing_report_is_ineligible_and_source_unchanged(self):
         report = evaluator.read_json(ROOT / "analysis_outputs" / "personal_ssvep_calibration_v1_20261014" / "summary.json")
         self.assertEqual(report["status"], "formal")

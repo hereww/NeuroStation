@@ -6,7 +6,10 @@ import unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 from scripts import evaluate_personal_ssvep_decoder_v2 as ev
+from tests.historical_evidence import historical_evidence
+
 class EvaluatorV2Tests(unittest.TestCase):
+ @historical_evidence
  def test_existing_report_is_formal_and_source_unchanged(self):
   d=ev.read_json(ROOT/'analysis_outputs'/'personal_ssvep_decoder_v2_20261014'/'summary.json')
   self.assertEqual(d['status'],'formal');self.assertTrue(d['source_files_unchanged']);self.assertFalse(d['runtime_enabled']);self.assertTrue(d['v2_is_fixed_posterior_diagnostic'])

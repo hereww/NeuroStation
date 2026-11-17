@@ -41,6 +41,12 @@ def file_sha256(path: Path) -> str:
 def checked_path(root: Path, relative: str) -> Path:
     if not isinstance(relative, str) or not relative:
         raise ValueError("empty/non-string artifact path")
+    # Validate both path syntaxes even on POSIX: Windows traversal/ADS must
+    # not be treated as harmless filename characters by a Linux audit.
+    from pathlib import PureWindowsPath
+    windows = PureWindowsPath(relative)
+    if windows.drive or windows.root or ".." in windows.parts or ":" in relative:
+        raise ValueError(f"artifact must stay inside workspace: {relative}")
     root = root.resolve()
     p = (root / relative).resolve()
     if not p.is_relative_to(root) or p == root:

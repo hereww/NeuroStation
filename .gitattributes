@@ -1,0 +1,6 @@
+# Portable source checkout: never let core.autocrlf change test/lock bytes.
+* text=auto eol=lf
+# These two historical contracts were frozen from exact CRLF bytes.
+# Store them verbatim, including in git archive; do not change their SHA locks.
+configs/learned_denoiser_v6_ssvep.json -text whitespace=cr-at-eol
+configs/learned_denoiser_v8_ssvep.json -text whitespace=cr-at-eol

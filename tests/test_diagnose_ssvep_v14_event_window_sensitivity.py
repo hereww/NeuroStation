@@ -9,11 +9,14 @@ ROOT = Path(__file__).resolve().parents[1]
 from scripts import diagnose_ssvep_v14_event_window_sensitivity as diagnostic
 
 
+from tests.historical_evidence import historical_evidence
+
 class V14EventWindowSensitivityTests(unittest.TestCase):
     def test_grid_is_fixed_and_not_selection(self):
         self.assertEqual(diagnostic.TRIMS, (0, 50, 100, 125, 150, 200))
         self.assertFalse(diagnostic.FALSE_FLAGS['presented_matches_are_gaze_accuracy'])
 
+    @historical_evidence
     def test_existing_evaluation_is_failed_selection(self):
         summary = diagnostic.read_json(ROOT / 'analysis_outputs' / 'v14_evaluation_20261014_diagnostic' / 'summary.json')
         self.assertIsNone(summary['model']['selected_epoch'])

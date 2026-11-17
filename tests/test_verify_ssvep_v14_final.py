@@ -10,7 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 from scripts import verify_ssvep_v14_final as verifier
 
 
+from tests.historical_evidence import historical_evidence
+
 class V14FinalVerificationTests(unittest.TestCase):
+    @historical_evidence
     def test_existing_diagnostic_artifacts_verify(self):
         evaluation = ROOT / 'analysis_outputs' / 'v14_evaluation_20261014_diagnostic'
         figures = ROOT / 'analysis_outputs' / 'v14_diagnostic_figures_20261014'

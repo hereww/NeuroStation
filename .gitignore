@@ -36,3 +36,6 @@ datasets/external/**/*.zip
 # Isolated quality-upgrade runtime, evidence and builds (never personal data).
 .quality-local/
 quality-output/
+
+# Disposable CPU test environment; never bundled in the desktop app.
+.venv-ci-tests/

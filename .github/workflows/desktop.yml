@@ -18,16 +18,50 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-24.04, macos-15-intel]
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: ${{ runner.os == 'Windows' && 'C:/NeuroStation-ci' || github.workspace }}
     env:
       QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@v4
+      # Historical research code intentionally rejects D: access. Do not weaken
+      # that guard to accommodate GitHub's default D: checkout on Windows.
+      - name: Move CI checkout to permitted drive (Windows)
+        if: runner.os == 'Windows'
+        working-directory: ${{ github.workspace }}
+        shell: pwsh
+        run: |
+          git clone --no-hardlinks --local "$env:GITHUB_WORKSPACE" C:/NeuroStation-ci
+          if ($LASTEXITCODE -ne 0) { throw "CI checkout failed" }
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
       - name: Install desktop dependencies
         run: python -m pip install -r requirements.txt "Nuitka>=4.2,<5"
+      - name: Canonical temporary paths
+        shell: bash
+        run: |
+          python -c "import pathlib, tempfile; p = str(pathlib.Path(tempfile.gettempdir()).resolve()); print('TMPDIR='+p); print('TEMP='+p); print('TMP='+p)" >> "$GITHUB_ENV"
+      - name: Install isolated CPU test dependencies
+        shell: bash
+        run: |
+          python -m venv .venv-ci-tests
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            TEST_PYTHON="$PWD/.venv-ci-tests/Scripts/python.exe"
+          else
+            TEST_PYTHON="$PWD/.venv-ci-tests/bin/python"
+          fi
+          "$TEST_PYTHON" -m pip install -r requirements.txt
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            "$TEST_PYTHON" -m pip install "torch==2.2.2" "numpy<2"
+          else
+            "$TEST_PYTHON" -m pip install "torch==2.6.0" --index-url https://download.pytorch.org/whl/cpu
+          fi
+          echo "TEST_PYTHON=$TEST_PYTHON" >> "$GITHUB_ENV"
       - name: Install Qt runtime dependencies
         if: runner.os == 'Linux'
         run: |
@@ -51,9 +85,11 @@ jobs:
       - name: Real hardware entrypoint guard
         run: python run_ssvep_session.py --validate-only --channel-config configs/channel_config_v1_auto.json
       - name: Core and integration tests
-        run: python -m unittest discover -s tests -v
+        shell: bash
+        run: '"$TEST_PYTHON" -m unittest discover -s tests -v'
       - name: Independent UI tests
-        run: python -m unittest discover -s apps/workstation_ui/tests -v
+        shell: bash
+        run: '"$TEST_PYTHON" -m unittest discover -s apps/workstation_ui/tests -v'
       - name: UI scale matrix smoke
         run: python scripts/smoke_ui_matrix.py
       - name: Syntax check
@@ -79,5 +115,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: NeuroStation-${{ runner.os }}-${{ runner.arch }}
-          path: dist/**
+          path: ${{ runner.os == 'Windows' && 'C:/NeuroStation-ci/dist/**' || 'dist/**' }}
           if-no-files-found: error
