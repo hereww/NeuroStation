@@ -65,7 +65,7 @@ class ReleaseConfigPolicyTests(unittest.TestCase):
             validate_release_configs(self.root)
 
     def test_all_desktop_build_entries_enforce_formal_configs(self) -> None:
-        for script in ("build_desktop.ps1", "build_desktop.sh"):
+        for script in ("build_desktop.ps1", "build_desktop.sh", "build_formal_windows.py"):
             with self.subTest(script=script):
                 text = (ROOT / "scripts" / script).read_text(encoding="utf-8")
                 self.assertIn("validate_release_configs.py", text)

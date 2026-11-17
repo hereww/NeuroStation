@@ -9,12 +9,13 @@ import subprocess
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--artifact',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
+    p.add_argument('--entry-name',default='NeuroStationQualityUpgrade.exe')
     a=p.parse_args();artifact=a.artifact.resolve();output=a.output.resolve()
-    exe=artifact/'NeuroStationQualityUpgrade.exe';output.mkdir(parents=True,exist_ok=True)
+    exe=artifact/a.entry_name;output.mkdir(parents=True,exist_ok=True)
     env={**os.environ,'QT_QPA_PLATFORM':'offscreen','NEUROSTATION_DATASETS':str(output/'smoke-data'),
          'NEUROSTATION_SETTINGS':str(output/'smoke-settings'),'NEUROSTATION_DIAGNOSTICS':str(output/'smoke-diagnostics'),
          'PATH':os.environ['SystemRoot']+'/System32;'+os.environ['SystemRoot']}
-    env.pop('NEUROSTATION_RUNTIME_CONFIG',None);env.pop('PYTHONPATH',None)
+    env.pop('NEUROSTATION_RUNTIME_CONFIG',None);env.pop('PYTHONPATH',None);env.pop('NEUROSTATION_QUALITY_ROOT',None)
     checks=[]
     for name,args in [('workstation',['--smoke-test']),('realtime',['--realtime-commands','--smoke-test']),
                       ('capture_help',['--realtime-capture-worker','--help']),('main_worker_help',['--acquisition-worker','--help']),

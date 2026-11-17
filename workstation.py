@@ -15,6 +15,7 @@ from neurostation_contract import (
     PRODUCT_VERSION,
     RELEASE_DATE,
     CaptureMode,
+    default_save_directory,
     default_user_channel_config_path,
     default_user_protocol_path,
 )
@@ -99,13 +100,24 @@ def build_diagnostics(gateway=None) -> dict:
     return report
 
 
-def main() -> int:
+def configure_storage_defaults() -> bool:
+    """Keep installed-user storage unless an isolated runtime is explicitly selected.
+
+    Existing environment overrides always win. No data or settings are migrated.
+    """
     from eeg_tools.runtime_bindings import runtime_config
-    branch_output = Path(runtime_config().get("output_root") or os.environ.get("NEUROSTATION_QUALITY_ROOT") or
-                         (Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "NeuroStationQualityUpgrade"))
-    os.environ.setdefault("NEUROSTATION_DATASETS", str(branch_output / "recordings"))
-    os.environ.setdefault("NEUROSTATION_SETTINGS", str(branch_output / "settings"))
-    os.environ.setdefault("NEUROSTATION_DIAGNOSTICS", str(branch_output / "diagnostics"))
+
+    isolated_root = runtime_config().get("output_root") or os.environ.get("NEUROSTATION_QUALITY_ROOT")
+    if isolated_root:
+        root = Path(isolated_root)
+        os.environ.setdefault("NEUROSTATION_DATASETS", str(root / "recordings"))
+        os.environ.setdefault("NEUROSTATION_SETTINGS", str(root / "settings"))
+        os.environ.setdefault("NEUROSTATION_DIAGNOSTICS", str(root / "diagnostics"))
+    return bool(isolated_root or os.environ.get("NEUROSTATION_RUNTIME_CONFIG"))
+
+
+def main() -> int:
+    isolated_runtime = configure_storage_defaults()
     _configure_bundled_native_libraries()
     if len(sys.argv) > 1 and sys.argv[1] == "--realtime-commands":
         from apps.realtime_commands import main as realtime_main
@@ -168,9 +180,9 @@ def main() -> int:
     gateway = DesktopGateway(
         protocol_path=protocol_path,
         channel_config_path=channel_config,
-        dataset_root=arguments.dataset_root or Path(os.environ["NEUROSTATION_DATASETS"]),
+        dataset_root=arguments.dataset_root or default_save_directory(),
     )
-    gateway.auto_import_default = False  # Branch never automatically copies personal recordings.
+    gateway.auto_import_default = False  # Never automatically copy personal recordings at startup.
     if arguments.diagnostics:
         report = build_diagnostics(gateway)
         report["root"] = str(ROOT)
@@ -200,7 +212,8 @@ def main() -> int:
         gateway=gateway,
         locale=arguments.language,
         persist_settings=not (arguments.smoke_test or arguments.quality_workflow_smoke),
-        settings=QSettings("NeuroStationQualityUpgrade", "NeuroStationQualityUpgrade"),
+        settings=(QSettings("NeuroStationQualityUpgrade", "NeuroStationQualityUpgrade")
+                  if isolated_runtime else QSettings("NeuroStation", "NeuroStation")),
         save_directory_override=arguments.dataset_root,
         initial_mode=CaptureMode.CYTON,
         initial_port=arguments.port,

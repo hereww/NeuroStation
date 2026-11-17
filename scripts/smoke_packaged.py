@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import argparse
 from pathlib import Path
 import json
 import subprocess
@@ -33,12 +34,18 @@ def packaged_entry() -> Path:
 
 
 def main() -> int:
-    entry = packaged_entry()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("entry", nargs="?", type=Path, default=packaged_entry())
+    entry = parser.parse_args().entry.resolve()
     if not entry.is_file():
         print(f"Packaged entry does not exist: {entry}", file=sys.stderr)
         return 2
     environment = os.environ.copy()
-    environment.setdefault("QT_QPA_PLATFORM", "offscreen")
+    environment["QT_QPA_PLATFORM"] = "offscreen"
+    for key in ("NEUROSTATION_RUNTIME_CONFIG", "NEUROSTATION_QUALITY_ROOT", "PYTHONPATH"):
+        environment.pop(key, None)
+    if sys.platform == "win32":
+        environment["PATH"] = os.environ["SystemRoot"] + "/System32;" + os.environ["SystemRoot"]
     if sys.platform == "darwin":
         # The macOS offscreen backend can abort inside the packaged Qt runtime;
         # minimal still avoids a WindowServer dependency for this smoke test.
@@ -53,6 +60,9 @@ def main() -> int:
                 )
     with tempfile.TemporaryDirectory(prefix="neurostation-smoke-") as directory:
         dataset_root = Path(directory) / "中文数据集"
+        environment["NEUROSTATION_SETTINGS"] = str(Path(directory) / "settings")
+        environment["NEUROSTATION_DIAGNOSTICS"] = str(Path(directory) / "diagnostics")
+        environment["NEUROSTATION_DATASETS"] = str(dataset_root)
         if sys.platform != "darwin":
             result = subprocess.run(
                 [

@@ -6,6 +6,26 @@ from workstation import build_diagnostics
 
 
 class WorkstationDiagnosticsTests(unittest.TestCase):
+    def test_formal_storage_preserves_legacy_defaults(self):
+        from unittest.mock import patch
+        import os
+        from workstation import configure_storage_defaults
+        from neurostation_contract import default_save_directory
+        from pathlib import Path
+        with patch.dict(os.environ, {"USERPROFILE": str(Path.home())}, clear=True):
+            self.assertFalse(configure_storage_defaults())
+            self.assertEqual((Path.home() / "Documents/NeuroStation/Datasets").resolve(), default_save_directory())
+            self.assertNotIn("NEUROSTATION_SETTINGS", os.environ)
+
+    def test_explicit_isolation_and_existing_overrides_are_preserved(self):
+        from unittest.mock import patch
+        import os
+        from workstation import configure_storage_defaults
+        with patch.dict(os.environ, {"NEUROSTATION_QUALITY_ROOT": "isolated", "NEUROSTATION_DATASETS": "existing"}, clear=True):
+            self.assertTrue(configure_storage_defaults())
+            self.assertEqual("existing", os.environ["NEUROSTATION_DATASETS"])
+            self.assertEqual(str(__import__("pathlib").Path("isolated/settings")), os.environ["NEUROSTATION_SETTINGS"])
+
     def test_sbom_generator_emits_cyclonedx_shape(self) -> None:
         from scripts.generate_sbom import build_sbom
         value = build_sbom()
