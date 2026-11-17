@@ -233,6 +233,30 @@ class QualityPublicationTests(unittest.TestCase):
         self.assertEqual((output / 'one').read_bytes(), (output / 'two').read_bytes())
         self.assertEqual(list(self.root.glob('.published.*')), [])
 
+    def test_posix_rename_conflict_preserves_winner_and_cleans_own_stage(self):
+        import errno
+        from eeg_tools.quality.evidence import publish_bundle
+        output = self.root / 'published'
+        def lose_race(stage, destination):
+            destination.mkdir()
+            (destination / 'winner').write_bytes(b'original')
+            raise OSError(errno.ENOTEMPTY, 'Directory not empty')
+        with patch.object(Path, 'rename', lose_race), self.assertRaises(FileExistsError):
+            publish_bundle(output, {'one': b'loser'})
+        self.assertEqual((output / 'winner').read_bytes(), b'original')
+        self.assertEqual(list(self.root.glob('.published.*')), [])
+
+    def test_unrelated_rename_error_is_not_hidden_as_conflict(self):
+        import errno
+        from eeg_tools.quality.evidence import publish_bundle
+        output = self.root / 'published'
+        with patch.object(Path, 'rename', side_effect=OSError(errno.EIO, 'I/O error')):
+            with self.assertRaises(OSError) as error:
+                publish_bundle(output, {'one': b'value'})
+        self.assertEqual(error.exception.errno, errno.EIO)
+        self.assertFalse(output.exists())
+        self.assertEqual(list(self.root.glob('.published.*')), [])
+
     def test_existing_destination_is_not_overwritten(self):
         from eeg_tools.quality.evidence import publish_bundle
         output = self.root / 'published'

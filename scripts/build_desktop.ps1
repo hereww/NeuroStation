@@ -68,14 +68,14 @@ try {
     }
     $dependencyCheckExit = 0
     try {
-        & $buildPython -c "import PySide6, nuitka, brainflow, numpy, scipy" 2>$null
+        & $buildPython -c "import PySide6, nuitka, brainflow, numpy, scipy; from importlib.metadata import version; assert version('Nuitka') == '4.2.1'" 2>$null
         $dependencyCheckExit = $LASTEXITCODE
     }
     catch {
         $dependencyCheckExit = 1
     }
     if ($dependencyCheckExit -ne 0) {
-        & $buildPython -m pip install "PySide6>=6.7" "Nuitka>=4.2,<5" "brainflow==5.22.2" "numpy>=2.0" "scipy>=1.14"
+        & $buildPython -m pip install "PySide6>=6.7" "Nuitka==4.2.1" "brainflow==5.22.2" "numpy>=2.0" "scipy>=1.14"
         if ($LASTEXITCODE -ne 0) {
             throw "Unable to install desktop build dependencies."
         }

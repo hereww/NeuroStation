@@ -124,7 +124,25 @@ class SignalTests(unittest.TestCase):
                       for t in bad.trials]
         a = b.evaluate(source, frequencies=TARGETS)
         c = b.evaluate(bad, frequencies=TARGETS)
-        self.assertEqual([r["prediction"] for r in a["rows"]], [r["prediction"] for r in c["rows"]])
+        for original, relabeled in zip(source.trials, bad.trials):
+            np.testing.assert_array_equal(original.eeg, relabeled.eeg)
+        self.assertEqual(len(a["rows"]), len(c["rows"]))
+        for original, relabeled in zip(a["rows"], c["rows"]):
+            left, right = original["prediction"], relabeled["prediction"]
+            self.assertEqual(left.keys(), right.keys())
+            self.assertEqual(left["predicted_frequency_hz"], right["predicted_frequency_hz"])
+            self.assertEqual(left["scores"].keys(), right["scores"].keys())
+            # LAPACK reductions may vary by a few ULPs across repeated Mac calls.
+            # Labels/decisions remain exact; only float64 score roundoff is allowed.
+            for key in left:
+                if key == "scores":
+                    np.testing.assert_allclose(list(left[key].values()), list(right[key].values()),
+                                               rtol=0, atol=32 * np.finfo(np.float64).eps)
+                elif key != "predicted_frequency_hz":
+                    np.testing.assert_allclose(left[key], right[key],
+                                               rtol=0, atol=32 * np.finfo(np.float64).eps)
+            for key in ("accepted", "command", "candidate_frequency_hz"):
+                self.assertEqual(original[key], relabeled[key])
         self.assertTrue(all(not r["accepted_label_match"] for r in c["rows"]))
 
 

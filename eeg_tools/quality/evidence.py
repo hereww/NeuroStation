@@ -5,6 +5,7 @@ Only a private sibling staging directory is written; source inputs are never edi
 """
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 from pathlib import Path
@@ -93,7 +94,15 @@ def publish_bundle(output, files, *, cancelled=None, validate=None):
         # Windows rename refuses an existing target; never replace a delivered report.
         if output.exists():
             raise FileExistsError(str(output))
-        stage.rename(output)
+        try:
+            stage.rename(output)
+        except OSError as exc:
+            # Another publisher may win after exists(). POSIX reports ENOTEMPTY
+            # for its completed directory, Windows reports EEXIST. Expose the
+            # same conflict without retrying or overwriting either result.
+            if exc.errno in (errno.EEXIST, errno.ENOTEMPTY):
+                raise FileExistsError(errno.EEXIST, 'bundle already published', str(output)) from exc
+            raise
     finally:
         # Remove only this invocation's exact staging files, never user/source trees.
         if stage.is_dir():

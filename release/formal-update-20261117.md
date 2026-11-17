@@ -76,3 +76,17 @@
   InstallCommander; the archive does not contain Contents/MacOS/processing-java.
 - Focused compatibility/numerical regression: 219 tests passed locally. Platform
   package results remain subject to the subsequent GitHub run.
+
+- Run 44046762036: Windows core and UI suites passed, then Nuitka 4.3.5
+  crashed internally while compiling the frozen v8 module. Build entrypoints now
+  pin Nuitka 4.2.1 and reject an incompatible cached build venv; the frozen module
+  is untouched. The next actual build determines acceptance of this pin.
+- POSIX concurrent publication now maps ENOTEMPTY/EEXIST to FileExistsError,
+  preserving the complete winner and cleaning only the losing staging directory.
+  Regression tests also require unrelated I/O failures to remain visible.
+- The relabeled-truth regression retains exact EEG/decision comparisons; repeated
+  LAPACK score reductions allow only 32 float64 eps absolute roundoff (no relative
+  tolerance), instead of requiring bit-identical dictionaries on Intel macOS.
+- After publication repair: local core suite ran 2,179 tests, zero failures/errors,
+  15 skips (local optional dependencies differ from clean CI); focused follow-up
+  suite: 45 passed. UI suite remains 154 passed. No hardware capture was performed.
