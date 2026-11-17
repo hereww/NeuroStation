@@ -20,7 +20,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        working-directory: ${{ runner.os == 'Windows' && 'C:/NeuroStation-ci' || github.workspace }}
+        working-directory: ${{ matrix.os == 'windows-latest' && 'C:/NeuroStation-ci' || github.workspace }}
     env:
       QT_QPA_PLATFORM: offscreen
       PYTHONUTF8: "1"

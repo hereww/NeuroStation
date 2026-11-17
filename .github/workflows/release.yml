@@ -19,7 +19,7 @@ jobs:
     runs-on: windows-latest
     defaults:
       run:
-        working-directory: ${{ runner.os == 'Windows' && 'C:/NeuroStation-ci' || github.workspace }}
+        working-directory: C:/NeuroStation-ci
     env:
       QT_QPA_PLATFORM: offscreen
       PYTHONUTF8: "1"
