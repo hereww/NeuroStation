@@ -129,10 +129,53 @@ class EyeSide(str, Enum):
         return "左眼" if self is EyeSide.LEFT else "右眼"
 
 
+class StimulusCondition(str, Enum):
+    """Spatial presentation, independent of measured gaze and frequency class."""
+
+    L_FIXED = "left"
+    R_FIXED = "right"
+    L_TO_R = "left_to_right"
+    R_TO_L = "right_to_left"
+
+    @property
+    def moving(self) -> bool:
+        return self in (self.L_TO_R, self.R_TO_L)
+
+    @property
+    def start_side(self) -> str:
+        return "left" if self in (self.L_FIXED, self.L_TO_R) else "right"
+
+    @property
+    def dataset_suffix(self) -> str:
+        return {self.L_FIXED: "左眼", self.R_FIXED: "右眼",
+                self.L_TO_R: "左到右", self.R_TO_L: "右到左"}[self]
+
+
+def resolve_stimulus_condition(eye_side: str, condition: str = "") -> StimulusCondition:
+    # eye_side is a legacy start-region field, never evidence of actual gaze.
+    try:
+        side = EyeSide(eye_side)
+        resolved = StimulusCondition(condition or side.value)
+    except ValueError as error:
+        raise ValueError("validation.eye_side") from error
+    if resolved.start_side != side.value:
+        raise ValueError("validation.stimulus_condition")
+    return resolved
+
+
+def stimulus_condition_value(record: Any) -> str:
+    value = getattr(record, "stimulus_condition", "") or getattr(record, "eye_side", "")
+    return str(getattr(value, "value", value))
+
+
+def dataset_name_for_condition(name: str, condition: StimulusCondition | str) -> str:
+    return f"{normalize_dataset_name_base(name)}_{StimulusCondition(condition).dataset_suffix}"
+
+
 def normalize_dataset_name_base(name: str) -> str:
     """Remove trailing eye suffixes and return the canonical base name."""
 
-    base = re.sub(r"(?:_(?:左眼|右眼))+$", "", str(name).strip())
+    base = re.sub(r"(?:_(?:左眼|右眼|左到右|右到左))+$", "", str(name).strip())
     if not base:
         raise ValueError("validation.identity")
     return base
@@ -198,8 +241,8 @@ class CaptureConfig:
     user_id: str = ""
     user_name: str = ""
     stimulus_seconds: int = 5
-    rest_seconds: int = 3
-    repetitions: int = 3
+    rest_seconds: int = 5
+    repetitions: int = 10
     # Use a factory rather than evaluating the path at import time. This keeps
     # NEUROSTATION_DATASETS and per-user home directories reliable in packaged
     # apps, test runners, and long-lived desktop processes.
@@ -211,6 +254,7 @@ class CaptureConfig:
     acknowledge_flicker_risk: bool = False
     channel_config: Path | None = None
     allow_draft_hardware_config: bool = False
+    stimulus_condition: StimulusCondition | str = ""
 
     def validate(self) -> None:
         if not self.participant.strip() or not self.name.strip():
@@ -232,10 +276,7 @@ class CaptureConfig:
             raise ValueError("validation.mode") from error
         if mode is not CaptureMode.CYTON:
             raise ValueError("validation.real_hardware_only")
-        try:
-            EyeSide(self.eye_side)
-        except ValueError as error:
-            raise ValueError("validation.eye_side") from error
+        resolve_stimulus_condition(self.eye_side, self.stimulus_condition)
         if not self.port.strip():
             raise ValueError("validation.port")
         if not self.acknowledge_flicker_risk:
@@ -263,7 +304,9 @@ class CaptureConfig:
 
     @property
     def dataset_name(self) -> str:
-        return dataset_name_for_eye(self.name, self.eye_side)
+        return dataset_name_for_condition(
+            self.name, resolve_stimulus_condition(self.eye_side, self.stimulus_condition)
+        )
 
 
 class Phase(str, Enum):
@@ -333,6 +376,7 @@ class Dataset:
     dropped_frame_count: int = 0
     flat_channel_count: int = 0
     deleted_at: str = ""
+    stimulus_condition: str = ""
 
     @property
     def sample_values(self) -> int:
@@ -360,6 +404,7 @@ class TaskSnapshot:
     screen_name: str = ""
     result: Dataset | None = None
     error: str = ""
+    stimulus_condition: str = ""
 
     @property
     def active(self) -> bool:

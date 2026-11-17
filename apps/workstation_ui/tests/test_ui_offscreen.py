@@ -66,6 +66,38 @@ class QtOffscreenTests(unittest.TestCase):
         self.gateway._active = acquisition
         return acquisition.snapshot
 
+    def test_ssvep_default_protocol_and_estimate_in_both_languages(self):
+        from PySide6.QtWidgets import QLabel
+
+        for locale in ("zh-CN", "en-US"):
+            with self.subTest(locale=locale):
+                self.window.change_language(locale)
+                page = self.window.pages["ssvep"]
+                self.assertEqual(5, page.stimulus.value())
+                self.assertEqual(5, page.rest.value())
+                self.assertEqual(10, page.repetitions.value())
+                self.assertIn("00:06:40", page.estimate.text())
+                self.assertIn("00:06:35", page.estimate.text())
+                self.assertIn("40", page.estimate.text())
+                expected = self.window.tr(
+                    "ssvep.defaults", stimulus=5, rest=5, repetitions=10, refresh=60,
+                )
+                self.assertIn(expected, [label.text() for label in page.findChildren(QLabel)])
+                self.assertFalse(page.acknowledge.isChecked())
+                self.assertFalse(page.allow_draft.isChecked())
+
+    def test_ssvep_parameter_edits_update_estimate_and_survive_language_change(self):
+        page = self.window.pages["ssvep"]
+        page.rest.setValue(3)
+        page.repetitions.setValue(3)
+        self.assertIn("00:01:38", page.estimate.text())
+        self.assertIn("00:01:33", page.estimate.text())
+        self.window.change_language("en-US")
+        page = self.window.pages["ssvep"]
+        self.assertEqual(3, page.rest.value())
+        self.assertEqual(3, page.repetitions.value())
+        self.assertIn("00:01:38", page.estimate.text())
+
     def test_formal_window_title_has_no_branch_badge(self):
         for locale in ("zh-CN", "en-US"):
             self.window.change_language(locale)

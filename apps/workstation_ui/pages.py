@@ -42,7 +42,9 @@ from neurostation_contract import (
     MEDICAL_OPTIONS,
     DeviceInfo,
     UserProfile,
-    dataset_name_for_eye,
+    dataset_name_for_condition,
+    StimulusCondition,
+    stimulus_condition_value,
     is_confirmed_position,
     normalize_dataset_display_name,
 )
@@ -1739,7 +1741,12 @@ class SSVEPPage(Page):
         self.layout.addWidget(action(tr("action.back_apps"), lambda: navigate("apps")))
         self.layout.addWidget(label(tr("ssvep.workflow_steps"), "estimate"))
         self.layout.addWidget(label(tr("ssvep.description"), "muted"))
-        self.layout.addWidget(label(tr("ssvep.defaults"), "muted"))
+        defaults = CaptureConfig()
+        self.layout.addWidget(label(tr(
+            "ssvep.defaults", stimulus=defaults.stimulus_seconds,
+            rest=defaults.rest_seconds, repetitions=defaults.repetitions,
+            refresh=defaults.refresh_rate,
+        ), "muted"))
         self.layout.addWidget(label(tr("ssvep.safety"), "notice"))
         section = Section(tr("ssvep.parameters"))
         form = QFormLayout()
@@ -1774,8 +1781,10 @@ class SSVEPPage(Page):
         self.eye_side.addItem(tr("field.eye_select"), "")
         self.eye_side.addItem(tr("eye.left"), "left")
         self.eye_side.addItem(tr("eye.right"), "right")
-        config_eye_side = getattr(config.eye_side, "value", config.eye_side)
-        if str(config_eye_side) in {"left", "right"}:
+        for condition in (StimulusCondition.L_TO_R, StimulusCondition.R_TO_L):
+            self.eye_side.addItem(tr("eye." + condition.value), condition.value)
+        config_eye_side = stimulus_condition_value(config)
+        if str(config_eye_side) in {c.value for c in StimulusCondition}:
             self.eye_side.setCurrentIndex(
                 max(0, self.eye_side.findData(str(config_eye_side)))
             )
@@ -1832,7 +1841,7 @@ class SSVEPPage(Page):
         section.layout.addWidget(self.estimate)
         section.layout.addWidget(label(tr("ssvep.formula"), "muted"))
         self.layout.addWidget(section)
-        selected_eye = str(config_eye_side) if str(config_eye_side) in {"left", "right"} else ""
+        selected_eye = str(config_eye_side) if str(config_eye_side) in {c.value for c in StimulusCondition} else ""
         self.stimulus_preview = StaticTargets(tr, eye_side=selected_eye)
         self.layout.addWidget(self.stimulus_preview)
         self.device_summary = KeyValues([(tr("device.channels"), "OpenBCI Cyton · AUTO · 8 CH / 250 Hz"),
@@ -1886,7 +1895,9 @@ class SSVEPPage(Page):
             stimulus_seconds=self.stimulus.value(), rest_seconds=self.rest.value(),
             repetitions=self.repetitions.value(), save_directory=Path(self.save.text()).expanduser(),
             mode=CaptureMode(self.mode.currentData()), port=self.port.text().strip(),
-            eye_side=str(self.eye_side.currentData() or ""),
+            eye_side=(StimulusCondition(self.eye_side.currentData()).start_side
+                      if self.eye_side.currentData() else ""),
+            stimulus_condition=str(self.eye_side.currentData() or ""),
             acknowledge_flicker_risk=self.acknowledge.isChecked(),
             channel_config=Path(channel_config).expanduser() if channel_config else None,
             allow_draft_hardware_config=self.allow_draft.isChecked())
@@ -1947,7 +1958,7 @@ class SSVEPPage(Page):
             self.dataset_preview.setText(self.tr("ssvep.dataset_name_pending"))
             return
         try:
-            generated = dataset_name_for_eye(base, eye_side)
+            generated = dataset_name_for_condition(base, eye_side)
         except ValueError:
             self.dataset_preview.setText(self.tr("ssvep.dataset_name_pending"))
             return
@@ -2093,7 +2104,7 @@ class TaskPage(Page):
 
     def update_snapshot(self, snapshot: TaskSnapshot, config: CaptureConfig):
         self.stimulus_preview.set_eye_side(
-            str(getattr(config.eye_side, "value", config.eye_side) or "")
+            stimulus_condition_value(config)
         )
         countdown = snapshot.phase == Phase.COUNTDOWN
         self.waveform.set_active(snapshot.active and config.mode is CaptureMode.CYTON)
@@ -2115,8 +2126,8 @@ class TaskPage(Page):
         for node, value in zip(self.stats.values, values):
             node.setText(value)
         eye_label = (
-            self.tr("eye." + str(getattr(config.eye_side, "value", config.eye_side)))
-            if str(getattr(config.eye_side, "value", config.eye_side)) in {"left", "right"}
+            self.tr("eye." + stimulus_condition_value(config))
+            if stimulus_condition_value(config) in {c.value for c in StimulusCondition}
             else self.tr("dataset_summary.unlabeled")
         )
         screen_text = (
@@ -2178,7 +2189,7 @@ class ResultPage(Page):
             self.layout.addWidget(self.quality_button)
         self.layout.addWidget(KeyValues([
             (tr("field.participant"), result.participant),
-            (tr("field.eye_side"), tr("eye." + result.eye_side) if result.eye_side in {"left", "right"} else tr("dataset_summary.unlabeled")),
+            (tr("field.eye_side"), tr("eye." + stimulus_condition_value(result)) if stimulus_condition_value(result) in {c.value for c in StimulusCondition} else tr("dataset_summary.unlabeled")),
             (tr("field.screen"), " · ".join(item for item in (str(result.screen_index), result.screen_name) if item) if result.screen_index is not None else tr("dataset_summary.unlabeled")),
             (tr("field.user_id"), result.user_id or tr("users.unlinked")),
             (tr("field.user_name"), result.user_name or tr("users.unlinked")),
@@ -2244,7 +2255,7 @@ class DatasetSummaryPage(Page):
         )
         session_rows = [
             (tr("dataset_summary.session"), result.name),
-            (tr("field.eye_side"), tr("eye." + result.eye_side) if result.eye_side in {"left", "right"} else tr("dataset_summary.unlabeled")),
+            (tr("field.eye_side"), tr("eye." + stimulus_condition_value(result)) if stimulus_condition_value(result) in {c.value for c in StimulusCondition} else tr("dataset_summary.unlabeled")),
             (tr("field.screen"), " · ".join(item for item in (str(result.screen_index), result.screen_name) if item) if result.screen_index is not None else tr("dataset_summary.unlabeled")),
             (tr("dataset_summary.source"), source_name),
             (tr("field.participant"), result.participant or tr("dataset_summary.unlabeled")),

@@ -11,6 +11,8 @@ import argparse
 import json
 from pathlib import Path
 
+from neurostation_contract import StimulusCondition
+
 from eeg_tools.config import ConfigError, validate_channel_config
 from eeg_tools.workstation.acquisition_worker import main as worker_main
 from eeg_tools.workstation.dataset import DatasetRepository
@@ -39,6 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--rest-seconds", type=float)
     parser.add_argument("--countdown-seconds", type=float)
     parser.add_argument("--eye-side", choices=("left", "right"))
+    parser.add_argument("--stimulus-condition", choices=tuple(c.value for c in StimulusCondition))
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--acknowledge-flicker-risk", action="store_true")
     parser.add_argument("--allow-draft-protocol", action="store_true")
@@ -93,6 +96,7 @@ def main(argv: list[str] | None = None) -> int:
         ("--stimulus-seconds", arguments.stimulus_seconds),
         ("--rest-seconds", arguments.rest_seconds),
         ("--countdown-seconds", arguments.countdown_seconds),
+        ("--stimulus-condition", arguments.stimulus_condition),
     )
     for flag, value in optional_values:
         if value is not None:

@@ -7,11 +7,17 @@ class GatewayContractTests(unittest.TestCase):
     def test_default_production_timing_and_counts(self):
         config = CaptureConfig()
         self.assertEqual(CaptureMode.CYTON, config.mode)
-        self.assertEqual(config.trials, 12)
-        self.assertEqual(config.recording_seconds, 93)
-        self.assertEqual(config.total_seconds, 98)
-        self.assertEqual(config.expected_events, 27)
-        self.assertEqual(format_duration(98), "00:01:38")
+        self.assertEqual(config.stimulus_seconds, 5)
+        self.assertEqual(config.rest_seconds, 5)
+        self.assertEqual(config.repetitions, 10)
+        self.assertEqual(config.trials, 40)
+        self.assertEqual(config.recording_seconds, 395)
+        self.assertEqual(config.total_seconds, 400)
+        self.assertEqual(config.expected_events, 83)
+        self.assertEqual(format_duration(config.total_seconds), "00:06:40")
+        self.assertEqual(format_duration(config.recording_seconds), "00:06:35")
+        self.assertFalse(config.acknowledge_flicker_risk)
+        self.assertFalse(config.allow_draft_hardware_config)
 
     def test_real_hardware_config_requires_identity_and_risk_acknowledgement(self):
         with self.assertRaisesRegex(ValueError, "validation.identity"):

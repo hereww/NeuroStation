@@ -323,6 +323,7 @@ class MetadataGateway:
             path=record.output_dir.resolve(),
             created_at=record.recorded_at or record.session_id,
             eye_side=record.eye_side,
+            stimulus_condition=record.stimulus_condition,
             screen_index=record.screen_index,
             screen_name=record.screen_name,
             simulated=record.simulated,

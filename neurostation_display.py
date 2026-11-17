@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from typing import Any
+import math
+
+from neurostation_contract import StimulusCondition
 
 
 CENTER_DIVIDER_WIDTH = 6
@@ -106,3 +109,66 @@ def resolve_monitor_screen(application: Any, stimulus_screen_index: int | None =
         if not overlaps:
             return screen
     return None
+
+
+def allow_stimulus_process_foreground(process_id: int | None) -> bool | None:
+    """Let the user-started acquisition child request focus on Windows.
+
+    This is an OS permission request, not evidence that its window is visible.
+    Do not simulate keyboard input or attach the operator's input thread.
+    """
+    import sys
+    if sys.platform != "win32":
+        return None
+    if type(process_id) is not int or not 0 < process_id < 0xFFFFFFFF:
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        allow = user32.AllowSetForegroundWindow
+        allow.argtypes = [wintypes.DWORD]
+        allow.restype = wintypes.BOOL
+        return bool(allow(process_id))
+    except (AttributeError, OSError):
+        return False
+
+
+def show_stimulus_fullscreen(window: Any, screen: Any) -> None:
+    """Keep the acquisition-owned stimulus above ordinary workstation windows.
+
+    Bind the screen before showing; geometry remains in Qt logical coordinates.
+    This function does not render or start a stimulus, open hardware, or change
+    which screen was selected by the validated display mapping.
+    """
+    from PySide6.QtCore import Qt
+    window.setFlags(window.flags() | Qt.WindowType.FramelessWindowHint
+                    | Qt.WindowType.WindowStaysOnTopHint)
+    window.setScreen(screen)
+    window.setGeometry(screen.geometry())
+    window.showFullScreen()
+    window.raise_()
+    window.requestActivate()
+
+
+def stimulus_geometry(x: int, y: int, width: int, height: int,
+                      condition: str, progress: float) -> dict[str, int]:
+    """One horizontal traversal, clamped at the endpoint; no wrap or bounce.
+
+    A moving rectangle retains the smaller half's width on odd-size displays.
+    Coordinates are in the caller's units (physical pixels in the GL renderer).
+    """
+    mode = StimulusCondition(condition)
+    if not math.isfinite(progress):
+        raise ValueError("motion progress must be finite")
+    left = eye_half_geometry(x, y, width, height, "left")
+    right = eye_half_geometry(x, y, width, height, "right")
+    if not mode.moving:
+        return left if mode.start_side == "left" else right
+    target_width = min(left["width"], right["width"])
+    start_x, end_x = left["x"], right["x"]
+    if mode is StimulusCondition.R_TO_L:
+        start_x, end_x = end_x, start_x
+    position = min(1.0, max(0.0, progress))
+    return {"x": round(start_x + (end_x - start_x) * position), "y": y,
+            "width": target_width, "height": height}

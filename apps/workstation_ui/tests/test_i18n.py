@@ -16,7 +16,7 @@ class TranslationTests(unittest.TestCase):
     def test_catalogs_have_matching_keys_and_valid_format_fields(self):
         tr = Translator()
         self.assertEqual(set(tr.catalogs["zh-CN"]), set(tr.catalogs["en-US"]))
-        self.assertIn("00:01:38", tr("ssvep.estimate", total="00:01:38", recording="00:01:33", trials=12))
+        self.assertIn("00:06:40", tr("ssvep.estimate", total="00:06:40", recording="00:06:35", trials=40))
 
     def test_ui_has_no_acquisition_core_imports(self):
         directory = Path(__file__).resolve().parents[1]

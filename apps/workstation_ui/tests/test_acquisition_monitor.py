@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from apps.workstation_ui.monitor_model import AcquisitionMonitorModel
 from neurostation_display import resolve_monitor_screen
@@ -137,6 +137,63 @@ class MonitorWindowTests(unittest.TestCase):
         self.application.processEvents()
         self.secondary.stop()
         self.temp.cleanup()
+
+    def test_monitor_is_independent_fullscreen_and_does_not_activate_over_stimulus(self):
+        from PySide6.QtCore import Qt
+        monitor = self.window.monitor_window
+        self.application.processEvents()
+        self.assertIsNone(monitor.parentWidget())
+        self.assertTrue(monitor.isFullScreen())
+        self.assertEqual(self.application.primaryScreen(), monitor.windowHandle().screen())
+        self.assertTrue(monitor.testAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating))
+        self.assertFalse(monitor.testAttribute(Qt.WidgetAttribute.WA_QuitOnClose))
+        self.assertTrue(monitor.quality_panel.isVisible())
+        self.assertEqual(self.window.styleSheet(), monitor.styleSheet())
+
+    def test_native_screen_is_realized_before_entering_fullscreen(self):
+        monitor = self.window.monitor_window
+        order = Mock()
+        with patch.object(monitor, "show", wraps=monitor.show) as normal, \
+             patch.object(monitor, "showFullScreen", wraps=monitor.showFullScreen) as fullscreen:
+            order.attach_mock(normal, "normal")
+            order.attach_mock(fullscreen, "fullscreen")
+            monitor.show_on_screen(self.application.primaryScreen())
+        names = [item[0] for item in order.mock_calls]
+        self.assertLess(names.index("normal"), names.index("fullscreen"))
+
+    def test_fullscreen_toggle_and_escape_do_not_stop_capture(self):
+        monitor = self.window.monitor_window
+        cancelled = []
+        monitor.cancel_requested.connect(lambda: cancelled.append(True))
+        monitor.fullscreen_button.click()
+        self.assertFalse(monitor.isFullScreen())
+        self.assertTrue(self.gateway.snapshot.active)
+        monitor.fullscreen_button.click()
+        self.assertTrue(monitor.isFullScreen())
+        monitor.escape_shortcut.activated.emit()
+        self.assertFalse(monitor.isFullScreen())
+        self.assertEqual([], cancelled)
+        self.assertTrue(self.gateway.snapshot.active)
+
+    def test_compact_monitor_keeps_quality_and_controls_accessible_at_720p(self):
+        from PySide6.QtCore import QRect
+        from PySide6.QtWidgets import QScrollArea
+        monitor = self.window.monitor_window
+        monitor.leave_fullscreen()
+        monitor.showNormal()
+        monitor.resize(1280, 720)
+        self.application.processEvents()
+        self.assertLessEqual(monitor.minimumSizeHint().height(), 720)
+        for widget in (monitor.tabs, monitor.progress, monitor.screen_label, monitor.fullscreen_button):
+            rect = QRect(widget.mapTo(monitor, widget.rect().topLeft()), widget.size())
+            self.assertTrue(monitor.rect().contains(rect), (widget, rect, monitor.rect()))
+        self.assertNotIsInstance(monitor.centralWidget(), QScrollArea)
+        self.assertTrue(monitor.quality_panel.isVisible())
+        self.assertEqual(0, monitor.quality_panel.table.verticalScrollBar().maximum())
+        monitor.tabs.setCurrentIndex(1)
+        self.application.processEvents()
+        self.assertTrue(monitor.waveform.isVisible())
+        self.assertTrue(monitor.table.isVisible())
 
     def test_one_reader_fans_out_identical_samples_even_with_task_page_hidden(self):
         payload = {"channel_names": ["CH1", "CH2"], "sample_rate_hz": 250, "samples": [[1, 2, 3], [4, 5, 6]]}

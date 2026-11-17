@@ -35,10 +35,10 @@
     }
   ],
   "trial": {
-    "pre_session_rest_s": 10,
-    "pre_trial_rest_s": 2,
+    "pre_session_rest_s": 0,
+    "pre_trial_rest_s": 0,
     "stimulus_s": 5,
-    "post_trial_rest_s": 3,
+    "post_trial_rest_s": 5,
     "repetitions": 10,
     "random_seed": 20260910
   },

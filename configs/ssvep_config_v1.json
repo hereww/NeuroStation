@@ -27,10 +27,10 @@
     "target_size_fraction_of_short_side": 0.18
   },
   "trial_protocol": {
-    "pre_session_rest_s": 10,
-    "pre_trial_rest_s": 2,
+    "pre_session_rest_s": 0,
+    "pre_trial_rest_s": 0,
     "stimulus_s": 5,
-    "post_trial_rest_s": 2,
+    "post_trial_rest_s": 5,
     "repetitions_per_frequency": 10,
     "order": "randomized_with_fixed_seed",
     "random_seed": 20260907

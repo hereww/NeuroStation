@@ -19,9 +19,9 @@ class SSVEPProtocolTests(unittest.TestCase):
         protocol = SSVEPProtocol.load(PROTOCOL_PATH)
         self.assertEqual((10, 12, 15, 20), protocol.frequencies_hz)
         self.assertEqual(40, protocol.trial_count)
-        self.assertEqual(407.0, protocol.recording_duration_s)
-        self.assertEqual(412.0, protocol.total_duration_s)
-        self.assertEqual(101_750, protocol.expected_samples_per_channel)
+        self.assertEqual(395.0, protocol.recording_duration_s)
+        self.assertEqual(400.0, protocol.total_duration_s)
+        self.assertEqual(98_750, protocol.expected_samples_per_channel)
         self.assertEqual(83, protocol.expected_event_count)
 
     def test_runtime_rest_override_omits_rest_after_the_last_trial(self) -> None:
@@ -29,7 +29,7 @@ class SSVEPProtocolTests(unittest.TestCase):
             repetitions=1, stimulus_s=5, rest_s=2
         )
         self.assertEqual(4, protocol.trial_count)
-        self.assertEqual(44.0, protocol.recording_duration_s)
+        self.assertEqual(26.0, protocol.recording_duration_s)
 
     def test_frequency_must_divide_display_refresh_rate(self) -> None:
         value = json.loads(PROTOCOL_PATH.read_text(encoding="utf-8"))

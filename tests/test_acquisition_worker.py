@@ -99,6 +99,15 @@ class AcquisitionWorkerTests(unittest.TestCase):
         self.assertEqual("left", command[eye_index + 1])
         session_index = command.index("--session-name")
         self.assertEqual("task", command[session_index + 1])
+        for flag, expected in (
+            ("--stimulus-seconds", "5"),
+            ("--rest-seconds", "5"),
+            ("--repetitions", "10"),
+        ):
+            with self.subTest(flag=flag):
+                self.assertEqual(expected, command[command.index(flag) + 1])
+        self.assertNotIn("--allow-draft-protocol", command)
+        self.assertNotIn("--allow-draft-channel-config", command)
 
     def test_learned_shadow_worker_is_optional_and_out_of_process(self) -> None:
         gateway = AcquisitionProcessGateway(

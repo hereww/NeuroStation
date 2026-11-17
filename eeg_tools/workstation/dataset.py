@@ -48,6 +48,7 @@ class DatasetRecord:
     user_name: str = ""
     user_link_status: str = "unlinked"
     deleted_at: str = ""
+    stimulus_condition: str = ""
 
 
 @dataclass(frozen=True)
@@ -405,6 +406,7 @@ class DatasetRepository:
                 event_count=int(value.get("event_count", 0)),
                 simulated=bool(value.get("simulated", False)),
                 eye_side=str(value.get("eye_side") or ""),
+                stimulus_condition=str(value.get("stimulus_condition") or ""),
                 screen_index=screen_index,
                 screen_name=screen_name,
                 source=source,

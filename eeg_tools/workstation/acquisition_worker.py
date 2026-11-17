@@ -32,7 +32,9 @@ from neurostation_contract import (
     PRODUCT_SEMVER,
     PRODUCT_VERSION,
     RELEASE_DATE,
-    dataset_name_for_eye,
+    dataset_name_for_condition,
+    StimulusCondition,
+    resolve_stimulus_condition,
     normalize_dataset_name_base,
 )
 
@@ -41,7 +43,9 @@ from .device_discovery import candidate_serial_ports
 from neurostation_display import (
     center_divider_geometry,
     eye_half_geometry,
+    stimulus_geometry,
     resolve_eye_regions,
+    show_stimulus_fullscreen,
     ssvep_frame_is_lit,
 )
 
@@ -182,6 +186,9 @@ def _create_stimulus_window(eye_side: str):
             self._swapped_generation = 0
             self.rendering_metadata: dict[str, Any] = {}
             self.condition_state = None
+            self.motion_condition = None
+            self.motion_progress = 0.0
+            self.painted_stimulus_geometry = {}
             self.condition_parameters = None
             self.target_index: int | None = None
             self.lit = False
@@ -264,7 +271,9 @@ def _create_stimulus_window(eye_side: str):
                 painter.end()
                 return
 
-            half = eye_half_geometry(0, 0, width, height, eye_side)
+            half = stimulus_geometry(0, 0, width, height,
+                                     self.motion_condition or eye_side, self.motion_progress)
+            self.painted_stimulus_geometry = dict(half)
             if self.lit or (self.message and self.message_flash):
                 self._gl.glEnable(0x0C11)  # GL_SCISSOR_TEST
                 self._gl.glScissor(half["x"], 0, half["width"], height)
@@ -296,6 +305,8 @@ def _create_stimulus_window(eye_side: str):
                 painter.end()
 
         def show_message(self, message: str, *, flash: bool = False) -> None:
+            self.motion_condition = None
+            self.motion_progress = 0.0
             self.condition_state = None
             self._state_generation += 1
             self.message = message
@@ -305,9 +316,26 @@ def _create_stimulus_window(eye_side: str):
             self.update()
 
         def show_target(self, target_index: int, lit: bool) -> int:
+            self.motion_condition = None
             self.condition_state = None
             self._state_generation += 1
             self.message = ""
+            self.target_index = target_index
+            self.lit = lit
+            self.update()
+            return self._state_generation
+
+        def show_motion_target(self, target_index: int, lit: bool,
+                               condition: str, progress: float) -> int:
+            mode = StimulusCondition(condition)
+            if not mode.moving or not math.isfinite(progress):
+                raise ValueError("invalid single-pass motion state")
+            self.condition_state = None
+            self.motion_condition = mode.value
+            self.motion_progress = min(1.0, max(0.0, progress))
+            self._state_generation += 1
+            self.message = ""
+            self.message_flash = False
             self.target_index = target_index
             self.lit = lit
             self.update()
@@ -329,11 +357,8 @@ def _create_stimulus_window(eye_side: str):
             return marks
 
     window = StimulusWindow()
-    window.setScreen(active["screen"])
-    window.setGeometry(active["screen"].geometry())
-    window.showFullScreen()
-    window.raise_()
-    window.requestActivate()
+    window.setTitle("NeuroStation · SSVEP")
+    show_stimulus_fullscreen(window, active["screen"])
     application.processEvents()
     rendering = window.rendering_metadata
     if not window.context() or not window.context().isValid() or not rendering.get("renderer"):
@@ -638,8 +663,29 @@ def _present_stimulus(
     on_gaze_mark: Callable[[int, float], None] | None = None,
     on_stimulus_onset: Callable[[float], None] | None = None,
     on_stimulus_offset: Callable[[float], None] | None = None,
+    stimulus_condition: str = "",
 ) -> None:
+    condition = resolve_stimulus_condition(eye_side, stimulus_condition)
     frame_total = max(1, round(duration_s * refresh_rate_hz))
+    if condition.moving and frame_total < 2:
+        raise ValueError("single-pass motion requires at least two stimulus frames")
+
+    def submit(lit: bool, position: float) -> int:
+        if condition.moving:
+            return window.show_motion_target(target_index, lit, condition.value, position)
+        return window.show_target(target_index, lit)
+
+    def spatial_fields(position: float, phase: str) -> dict[str, Any]:
+        return {
+            "stimulus_condition": condition.value,
+            "condition_code": condition.name,
+            "condition_label_source": "planned_condition_not_verified_gaze",
+            "motion_progress": position if condition.moving else "",
+            "presentation_phase": phase,
+            "rendered_geometry_px": json.dumps(
+                getattr(window, "painted_stimulus_geometry", {}), sort_keys=True),
+        }
+
     stimulus_started: float | None = None
     previous_actual: float | None = None
     frame_index = 0
@@ -652,10 +698,12 @@ def _present_stimulus(
             on_gaze_mark(marked_target_index, marked_at)
 
     while frame_index < frame_total:
+        _check_abort(cancel_file, window)
         drain_gaze_marks()
         previous_swap_count = window.frame_swapped_count
         lit = ssvep_frame_is_lit(frame_index, frequency_hz, refresh_rate_hz)
-        target_generation = window.show_target(target_index, lit)
+        position = frame_index / max(1, frame_total - 1)
+        target_generation = submit(lit, position)
         actual = _wait_for_frame_swap(
             application,
             window,
@@ -673,6 +721,7 @@ def _present_stimulus(
         dropped = max(0, frame_step - 1)
         frame_rows.append(
             {
+                **spatial_fields(position, "stimulus"),
                 "trial_index": trial_index,
                 "eye_side": eye_side,
                 "dataset_name_base": dataset_name_base,
@@ -708,7 +757,8 @@ def _present_stimulus(
         window=window,
     )
     previous_swap_count = window.frame_swapped_count
-    blank_generation = window.show_target(target_index, False)
+    _check_abort(cancel_file, window)
+    blank_generation = submit(False, 1.0)
     offset_actual = _wait_for_frame_swap(
         application,
         window,
@@ -721,6 +771,7 @@ def _present_stimulus(
     frame_step = 1 if interval is None else max(1, round(interval * refresh_rate_hz))
     frame_rows.append(
         {
+            **spatial_fields(1.0, "offset"),
             "trial_index": trial_index,
             "eye_side": eye_side,
             "dataset_name_base": dataset_name_base,
@@ -751,6 +802,12 @@ def _present_stimulus(
 def _write_frame_log(path: Path, rows: list[dict[str, Any]]) -> None:
     columns = (
         "trial_index",
+        "stimulus_condition",
+        "condition_code",
+        "condition_label_source",
+        "motion_progress",
+        "presentation_phase",
+        "rendered_geometry_px",
         "eye_side",
         "dataset_name_base",
         "dataset_name",
@@ -1034,6 +1091,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--rest-seconds", type=float)
     parser.add_argument("--countdown-seconds", type=float)
     parser.add_argument("--eye-side", choices=("left", "right"), required=True)
+    parser.add_argument("--stimulus-condition", choices=tuple(c.value for c in StimulusCondition), default="")
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--acknowledge-flicker-risk", action="store_true")
     parser.add_argument("--allow-draft-protocol", action="store_true")
@@ -1053,7 +1111,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("visual stimulus requires --acknowledge-flicker-risk")
     try:
         dataset_name_base = normalize_dataset_name_base(arguments.session_name)
-        dataset_name = dataset_name_for_eye(dataset_name_base, arguments.eye_side)
+        condition = resolve_stimulus_condition(arguments.eye_side, arguments.stimulus_condition)
+        if condition.moving and arguments.headless:
+            parser.error("moving visual acquisition cannot run headless")
+        dataset_name = dataset_name_for_condition(dataset_name_base, condition)
     except ValueError as error:
         parser.error(str(error))
     try:
@@ -1197,6 +1258,9 @@ def main(argv: list[str] | None = None) -> int:
                 "event_id": event_id,
                 "event_name": name,
                 "eye_side": arguments.eye_side,
+                "stimulus_condition": condition.value,
+                "condition_code": condition.name,
+                "condition_label_source": "planned_condition_not_verified_gaze",
                 "dataset_name_base": dataset_name_base,
                 "dataset_name": dataset_name,
                 "screen_index": selected_screen_index if selected_screen_index is not None else "",
@@ -1248,6 +1312,7 @@ def main(argv: list[str] | None = None) -> int:
             requested_serial_port=arguments.port if arguments.board == "cyton" else None,
             screen_index=selected_screen_index,
             eye_side=arguments.eye_side,
+            stimulus_condition=condition.value,
             dataset_name_base=dataset_name_base,
             dataset_name=dataset_name,
             display=display_metadata,
@@ -1269,6 +1334,9 @@ def main(argv: list[str] | None = None) -> int:
             display_metadata = {
                 "mode": "headless",
                 "eye_side": arguments.eye_side,
+                "stimulus_condition": condition.value,
+                "condition_code": condition.name,
+                "condition_label_source": "planned_condition_not_verified_gaze",
                 "active": None,
                 "inactive": None,
                 "left": None,
@@ -1294,6 +1362,9 @@ def main(argv: list[str] | None = None) -> int:
             display_metadata = {
                 "mode": "primary_screen_halves",
                 "eye_side": arguments.eye_side,
+                "stimulus_condition": condition.value,
+                "condition_code": condition.name,
+                "condition_label_source": "planned_condition_not_verified_gaze",
                 "active": selected_display,
                 "inactive": regions[inactive_side],
                 "active_region": {"geometry": regions[arguments.eye_side]["region_geometry"]},
@@ -1307,6 +1378,26 @@ def main(argv: list[str] | None = None) -> int:
                     "matched" if abs(refresh_rate - protocol.refresh_rate_hz) <= 1.0 else "mismatch"
                 ),
             }
+            if condition.moving:
+                # No half is permanently inactive during a traversal.
+                display_metadata["mode"] = "primary_screen_single_pass"
+                display_metadata["inactive"] = None
+                display_metadata["active_region"] = {"geometry": selected_display["geometry"]}
+                display_metadata["motion"] = {
+                    "mode": "linear_horizontal_once_per_trial",
+                    "implementation": "half_screen_single_pass_v1",
+                    "background_rgb": [0, 0, 0],
+                    "on_rgb": [1, 1, 1],
+                    "off_rgb": [0, 0, 0],
+                    "divider_width_physical_px": 6,
+                    "start_side": condition.start_side,
+                    "end_side": "right" if condition.start_side == "left" else "left",
+                    "reset": "blank_between_trials",
+                    "target_size": "smaller_half_screen_constant",
+                    "position_clock": "scheduled_frame_index",
+                    "endpoint": "last_scheduled_stimulus_frame",
+                    "optical_timing": "unverified",
+                }
             if refresh_rate <= 0 or abs(refresh_rate - protocol.refresh_rate_hz) > 1.0:
                 raise RuntimeError(
                     "visual stimulus refresh rate does not match the protocol "
@@ -1458,6 +1549,7 @@ def main(argv: list[str] | None = None) -> int:
                     cancel_file=cancel_file,
                     trial_index=trial.index,
                     eye_side=arguments.eye_side,
+                    stimulus_condition=condition.value,
                     screen_index=selected_screen_index or 0,
                     dataset_name_base=dataset_name_base,
                     dataset_name=dataset_name,
@@ -1607,11 +1699,17 @@ def main(argv: list[str] | None = None) -> int:
                 "rest_seconds": arguments.rest_seconds,
                 "countdown_seconds": arguments.countdown_seconds,
                 "eye_side": arguments.eye_side,
+                "stimulus_condition": condition.value,
+                "condition_code": condition.name,
+                "condition_label_source": "planned_condition_not_verified_gaze",
                 "dataset_name_base": dataset_name_base,
                 "dataset_name": dataset_name,
             },
             "provenance": protocol_provenance,
             "eye_side": arguments.eye_side,
+            "stimulus_condition": condition.value,
+            "condition_code": condition.name,
+            "condition_label_source": "planned_condition_not_verified_gaze",
             "dataset_name_base": dataset_name_base,
             "dataset_name": dataset_name,
             "display": display_metadata,
@@ -1661,6 +1759,9 @@ def main(argv: list[str] | None = None) -> int:
         "session_name": dataset_name,
         "dataset_name_base": dataset_name_base,
         "eye_side": arguments.eye_side,
+        "stimulus_condition": condition.value,
+        "condition_code": condition.name,
+        "condition_label_source": "planned_condition_not_verified_gaze",
         "user_id": arguments.user_id,
         "user_name": arguments.user_name,
         "user_link_status": "active" if arguments.user_id else "unlinked",

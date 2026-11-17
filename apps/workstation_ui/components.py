@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from .gateway import FREQUENCIES
+from neurostation_contract import StimulusCondition
 
 
 def label(text: str, role: str = "", wrap: bool = True) -> QLabel:
@@ -57,7 +58,7 @@ class Section(QFrame):
 
 
 class KeyValues(QWidget):
-    def __init__(self, rows: list[tuple[str, str]]):
+    def __init__(self, rows: list[tuple[str, str]], *, columns: int = 1):
         super().__init__()
         layout = QGridLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -65,11 +66,13 @@ class KeyValues(QWidget):
         layout.setVerticalSpacing(11)
         self.values: list[QLabel] = []
         for i, (key, value) in enumerate(rows):
-            layout.addWidget(label(key, "muted"), i, 0)
+            row, column = divmod(i, columns)
+            layout.addWidget(label(key, "muted"), row, column * 2)
             node = label(str(value))
-            layout.addWidget(node, i, 1)
+            layout.addWidget(node, row, column * 2 + 1)
             self.values.append(node)
-        layout.setColumnStretch(1, 1)
+        for column in range(columns):
+            layout.setColumnStretch(column * 2 + 1, 1)
 
 
 class AppTile(QToolButton):
@@ -93,7 +96,7 @@ class StaticTargets(Section):
     def __init__(self, tr, eye_side: str = ""):
         super().__init__(tr("ssvep.static"))
         self.setAccessibleName(tr("ssvep.static"))
-        self.eye_side = eye_side if eye_side in {"left", "right"} else ""
+        self.eye_side = eye_side if eye_side in {c.value for c in StimulusCondition} else ""
         self.display = _StaticHalfScreenDisplay(tr, self.eye_side)
         self.layout.addWidget(self.display)
         frequencies = " / ".join(f"{frequency} Hz" for frequency in FREQUENCIES)
@@ -101,7 +104,7 @@ class StaticTargets(Section):
         self.layout.addWidget(label(tr("ssvep.production"), "muted"))
 
     def set_eye_side(self, eye_side: str) -> None:
-        self.eye_side = eye_side if eye_side in {"left", "right"} else ""
+        self.eye_side = eye_side if eye_side in {c.value for c in StimulusCondition} else ""
         self.display.set_eye_side(self.eye_side)
 
 
@@ -141,6 +144,15 @@ class _StaticHalfScreenDisplay(QWidget):
         painter.drawText(left, Qt.AlignmentFlag.AlignCenter, self._tr("eye.left"))
         painter.setPen(QColor(25, 25, 25) if self._eye_side == "right" else QColor(190, 190, 190))
         painter.drawText(right, Qt.AlignmentFlag.AlignCenter, self._tr("eye.right"))
+        if self._eye_side in ("left_to_right", "right_to_left"):
+            # A static direction diagram only: no automatic motion or flicker.
+            painter.fillRect(display, QColor("black"))
+            start = left if self._eye_side == "left_to_right" else right
+            painter.fillRect(start, QColor(90, 90, 90))
+            painter.setPen(QColor("white"))
+            arrow = "→" if self._eye_side == "left_to_right" else "←"
+            painter.drawText(display, Qt.AlignmentFlag.AlignCenter,
+                             self._tr("eye." + self._eye_side) + "  " + arrow)
         painter.setPen(QColor(118, 125, 132))
         painter.drawRect(display.adjusted(0, 0, -1, -1))
 

@@ -20,12 +20,15 @@ import shutil
 import time
 from typing import Any
 
+from neurostation_display import allow_stimulus_process_foreground
 from neurostation_contract import (
     CaptureConfig,
     CaptureMode,
     Dataset,
     DeviceInfo,
     EyeSide,
+    resolve_stimulus_condition,
+    stimulus_condition_value,
     Phase,
     TaskSnapshot,
 )
@@ -270,6 +273,8 @@ class AcquisitionProcessGateway:
                 str(config.rest_seconds),
                 "--eye-side",
                 EyeSide(config.eye_side).value,
+                "--stimulus-condition",
+                resolve_stimulus_condition(config.eye_side, config.stimulus_condition).value,
                 "--status-file",
                 str(self._status_file),
                 "--cancel-file",
@@ -453,6 +458,7 @@ class AcquisitionProcessGateway:
             trial_count=protocol.trial_count,
             speed=1,
             eye_side=EyeSide(config.eye_side).value,
+            stimulus_condition=resolve_stimulus_condition(config.eye_side, config.stimulus_condition).value,
         )
         creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
         try:
@@ -467,6 +473,9 @@ class AcquisitionProcessGateway:
                     stderr=stderr_stream,
                     creationflags=creation_flags,
                 )
+                # Windows otherwise may leave a child process's full-screen
+                # window behind the desktop app that launched it.
+                allow_stimulus_process_foreground(getattr(self._process, "pid", None))
         except OSError as error:
             self._snapshot = TaskSnapshot(phase=Phase.FAILED, error=str(error))
             self._stop_learned_monitor()
@@ -686,6 +695,7 @@ class AcquisitionProcessGateway:
             event_count=int(value.get("event_count", 0)),
             speed=1,
             eye_side=str(value.get("eye_side") or EyeSide(self.config.eye_side).value),
+            stimulus_condition=str(value.get("stimulus_condition") or stimulus_condition_value(self.config)),
             screen_index=(
                 int(value["screen_index"])
                 if value.get("screen_index") is not None
@@ -771,6 +781,7 @@ class AcquisitionProcessGateway:
             path=output.resolve(),
             created_at=created_at,
             eye_side=str(session.get("eye_side") or ""),
+            stimulus_condition=str(session.get("stimulus_condition") or ""),
             screen_index=(
                 int(session["screen_index"])
                 if session.get("screen_index") is not None
