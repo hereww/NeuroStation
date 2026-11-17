@@ -38,6 +38,10 @@ $sourceItems = @(
     "configs",
     "eeg_tools",
     "neurostation_contract.py",
+    "neurostation_protocol_errors.py",
+    "neurostation_four_condition.py",
+    "neurostation_condition_render.py",
+    "neurostation_quality_report.py",
     "neurostation_signal.py",
     "neurostation_display.py",
     "analyze_ssvep_session.py",
@@ -87,6 +91,12 @@ try {
 
     Push-Location $stageRoot
     $pushedLocation = $true
+    # Fail on missing staged runtime modules BEFORE spending time compiling.
+    # Imports only: no QApplication, device connection, acquisition or flicker.
+    & $buildPython -c "import workstation; from apps.workstation_ui.app import MainWindow; from eeg_tools.workstation.desktop_gateway import DesktopGateway; from neurostation_condition_render import paint_condition_state"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Staged desktop runtime imports failed; check the sourceItems manifest."
+    }
     $arguments = @(
         $deployScript,
         "-c", (Join-Path $stageRoot "pysidedeploy.spec"),

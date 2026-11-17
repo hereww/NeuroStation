@@ -90,3 +90,11 @@
 - After publication repair: local core suite ran 2,179 tests, zero failures/errors,
   15 skips (local optional dependencies differ from clean CI); focused follow-up
   suite: 45 passed. UI suite remains 154 passed. No hardware capture was performed.
+
+- Run 44049385631: Linux and Intel macOS completed every configured check and
+  artifact upload successfully. Windows compiled successfully, then packaged UI
+  smoke found missing neurostation_protocol_errors: the hand-maintained Windows
+  staging list omitted four new shared root modules. All four are now staged and
+  declared in the Qt project. Staged runtime imports run before compilation, and
+  an AST regression verifies local root-import closure against both manifests.
+  No hardware/GUI is launched by this pre-compilation import check.

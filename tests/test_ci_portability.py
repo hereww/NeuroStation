@@ -1,5 +1,7 @@
 """Regression checks for clean CI checkout, never hardware acceptance."""
+import ast
 import hashlib
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -44,3 +46,33 @@ class PortableContractTests(unittest.TestCase):
                 self.assertIn('"$TEST_PYTHON" -m unittest discover -s tests -v', text)
                 self.assertNotIn("NEUROSTATION_VERIFY_HISTORICAL_EVIDENCE: ", text)
         self.assertNotIn("torch", (ROOT / "requirements.txt").read_text().lower())
+
+    def test_windows_stage_contains_every_imported_root_runtime_module(self):
+        build = (ROOT / "scripts/build_desktop.ps1").read_text(encoding="utf-8")
+        manifest = build.split("$sourceItems = @(", 1)[1].split("\n)", 1)[0]
+        staged = set(re.findall(r'"([^"\n]+)"', manifest))
+        project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        entries = project.split("[tool.pyside6-project]", 1)[1].split("files = [", 1)[1].split("]", 1)[0]
+        declared = set(ast.literal_eval("[" + entries + "]"))
+        sources = [ROOT / "workstation.py"]
+        for folder in ("apps", "eeg_tools"):
+            sources.extend(p for p in (ROOT / folder).rglob("*.py") if "tests" not in p.parts)
+        # Include all shared root modules too, to check their transitive imports.
+        sources.extend(ROOT.glob("neurostation_*.py"))
+        required = set()
+        for source in sources:
+            for node in ast.walk(ast.parse(source.read_text(encoding="utf-8-sig"))):
+                if isinstance(node, ast.Import):
+                    names = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
+                    names = [node.module]
+                else:
+                    continue
+                for name in names:
+                    root_module = name.split(".")[0] + ".py"
+                    if (ROOT / root_module).is_file():
+                        required.add(root_module)
+        self.assertTrue(required)
+        self.assertFalse(required - staged, f"Missing staged root modules: {required - staged}")
+        self.assertFalse(required - declared, f"Missing declared root modules: {required - declared}")
+        self.assertLess(build.index("Staged desktop runtime imports failed"), build.index("& $buildPython @arguments"))
