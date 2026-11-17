@@ -38,6 +38,8 @@ class PortableContractTests(unittest.TestCase):
                 self.assertIn("PYTHONUTF8:", text)
                 self.assertIn("Canonical temporary paths", text)
                 self.assertIn(".venv-ci-tests", text)
+                self.assertIn('"$TEST_PYTHON" -m pip check', text)
+                self.assertIn('"numpy==1.26.4" "scipy==1.14.1"', text)
                 self.assertIn('"$TEST_PYTHON" -m unittest discover -s tests -v', text)
                 self.assertNotIn("NEUROSTATION_VERIFY_HISTORICAL_EVIDENCE: ", text)
         self.assertNotIn("torch", (ROOT / "requirements.txt").read_text().lower())

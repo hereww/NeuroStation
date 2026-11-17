@@ -96,7 +96,8 @@ class ModelTests(unittest.TestCase):
             torch.set_default_dtype(old)
 
     def test_build_overrides_default_device(self):
-        old = torch.get_default_device()
+        # A zero-element tensor observes the default device on Torch 2.2 as well.
+        old = torch.empty(0).device
         try:
             torch.set_default_device("meta")
             model = core.build_model(CFG, 256)

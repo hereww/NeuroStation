@@ -59,8 +59,20 @@
   the hash of a later source revision. The historical document is unchanged.
 - The v4 artifact verifier now rejects Windows-style traversal/drive/ADS paths on
   POSIX too; native traversal and resolved containment checks remain active.
-- Validation at repair time: clean tracked-source core suite reached 2,171 tests
-  with only the release-workflow path expectation remaining; that expectation was
-  updated with the new C: workspace and retested along with new CI regression tests.
-  Full UI suite: 154 passed. Formal configuration check: ready, no warnings.
+- Validation: a fresh git archive ran 2,175 core tests with zero failures/errors
+  and 34 explicit skips; full UI suite: 154 passed; UI scale matrix passed;
+  formal configuration check: ready, no warnings. Both workflows pass actionlint.
+- The first full repaired CI run reduced Windows/Linux failures to one numeric
+  assertion: float64 means differed by 3.6e-15 / 5.3e-15, slightly above a fixed
+  3e-15 bound. The test now derives its roundoff bound from float64 epsilon and
+  signal DC scale. Production guards and protected-frequency tolerance are unchanged.
   GitHub build/package acceptance must be read from the new run, not inferred here.
+
+- Follow-up portability repair: Intel macOS resolves torch 2.2.2, NumPy 1.26.4
+  and SciPy 1.14.1 together; pip check rejects inconsistent environments. Legacy
+  Torch AMP queries still reject both CPU and CUDA autocast, with synthetic API
+  regression tests. Default-device tests retain the actual meta-to-CPU assertion.
+- Processing 4.2 macOS exports invoke its bundled JDK/Commander, matching upstream
+  InstallCommander; the archive does not contain Contents/MacOS/processing-java.
+- Focused compatibility/numerical regression: 219 tests passed locally. Platform
+  package results remain subject to the subsequent GitHub run.

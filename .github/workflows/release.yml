@@ -58,12 +58,14 @@ jobs:
           else
             TEST_PYTHON="$PWD/.venv-ci-tests/bin/python"
           fi
-          "$TEST_PYTHON" -m pip install -r requirements.txt
           if [ "$RUNNER_OS" = "macOS" ]; then
-            "$TEST_PYTHON" -m pip install "torch==2.2.2" "numpy<2"
+            # Resolve together: newer SciPy requires NumPy 2, incompatible with Intel Torch.
+            "$TEST_PYTHON" -m pip install -r requirements.txt "torch==2.2.2" "numpy==1.26.4" "scipy==1.14.1"
           else
+            "$TEST_PYTHON" -m pip install -r requirements.txt
             "$TEST_PYTHON" -m pip install "torch==2.6.0" --index-url https://download.pytorch.org/whl/cpu
           fi
+          "$TEST_PYTHON" -m pip check
           echo "TEST_PYTHON=$TEST_PYTHON" >> "$GITHUB_ENV"
 
       - name: Prepare OpenBCI GUI runtime

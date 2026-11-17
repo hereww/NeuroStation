@@ -66,7 +66,8 @@ case "$os_name" in
     ;;
 esac
 
-if [ ! -x "$processing_command" ]; then
+if { [ "$os_name" = "Linux" ] && [ ! -x "$processing_command" ]; } || \
+   { [ "$os_name" = "Darwin" ] && [ ! -d "$processing_root/Contents/Java" ]; }; then
   curl -L --fail --retry 3 -o "$archive" "$url"
   if [ "$os_name" = "Linux" ]; then
     tar -xzf "$archive" -C "$cache_root"
@@ -87,7 +88,30 @@ stage_root="$cache_root/stage-$(date +%Y%m%d%H%M%S)-$$"
 mkdir -p "$stage_root"
 cp -R "$source_root/OpenBCI_GUI" "$stage_root/OpenBCI_GUI"
 output="$stage_root/$output_name"
-"$processing_command" --force --sketch="$stage_root/OpenBCI_GUI" --output="$output" --variant="$variant" --export
+if [ "$os_name" = "Darwin" ]; then
+  # Processing 4.2 ships no processing-java executable on macOS. Its
+  # InstallCommander tool invokes this class using the bundled JDK and jars.
+  # See processing4/processing-1292-4.2/app/src/processing/app/tools/InstallCommander.java.
+  java_command=""
+  for candidate in "$processing_root"/Contents/PlugIns/*/Contents/Home/bin/java; do
+    if [ -x "$candidate" ]; then
+      java_command="$candidate"
+      break
+    fi
+  done
+  if [ -z "$java_command" ]; then
+    echo "Processing bundled Java runtime is missing: $processing_root" >&2
+    exit 2
+  fi
+  (
+    cd "$processing_root/Contents/Java"
+    "$java_command" -Djna.nosys=true -cp './*:core/library/*:modes/java/mode/*' \
+      processing.mode.java.Commander --force --sketch="$stage_root/OpenBCI_GUI" \
+      --output="$output" --variant="$variant" --export
+  )
+else
+  "$processing_command" --force --sketch="$stage_root/OpenBCI_GUI" --output="$output" --variant="$variant" --export
+fi
 
 runtime_root="$project_root/integrations/openbci_gui/runtime/$runtime_name"
 mkdir -p "$runtime_root"

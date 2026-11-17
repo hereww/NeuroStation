@@ -118,6 +118,18 @@ def inference_settings():
             'cudnn_deterministic': True, 'cudnn_benchmark': False}
 
 
+def _autocast_enabled(torch, device):
+    """Query both AMP contexts on current Torch and the Intel macOS 2.2 API."""
+    try:
+        return torch.is_autocast_enabled(device)
+    except TypeError:
+        # Torch 2.2 exposes CUDA through the no-argument query and CPU separately.
+        # Missing queries still raise: an unknown AMP state must not pass the gate.
+        if device == 'cuda':
+            return torch.is_autocast_enabled()
+        return torch.is_autocast_cpu_enabled()
+
+
 def configure_inference():
     # Set before importing Torch or touching CUDA, including model.to(cuda).
     previous = os.environ.get('CUBLAS_WORKSPACE_CONFIG')
@@ -126,7 +138,7 @@ def configure_inference():
             'CUDA already initialized without the frozen CUBLAS workspace setting')
     os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
     import torch
-    require(not torch.is_autocast_enabled('cuda') and not torch.is_autocast_enabled('cpu'),
+    require(not _autocast_enabled(torch, 'cuda') and not _autocast_enabled(torch, 'cpu'),
             'AMP context is forbidden for fixed evaluation')
     torch.set_num_threads(4)
     torch.use_deterministic_algorithms(True)

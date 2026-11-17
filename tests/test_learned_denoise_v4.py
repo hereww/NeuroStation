@@ -279,7 +279,13 @@ class ModelAndInferenceTests(unittest.TestCase):
         frequency = np.fft.rfftfreq(500, 1 / 250)
         protected = (frequency >= 8) & (frequency <= 40)
         for start in (0, 500):
-            np.testing.assert_allclose(result.denoised[start:start + 500].mean(0), signal[start:start + 500].mean(0), rtol=0, atol=3e-15)
+            expected_dc = signal[start:start + 500].mean(0)
+            # FFT/reduction implementations differ by a few float64 ULPs across
+            # NumPy versions/CPU platforms. Keep a scale-aware roundoff bound,
+            # not a signal-quality tolerance; the protected FFT gate stays fixed.
+            dc_roundoff = 8 * np.finfo(np.float64).eps * max(1.0, float(np.max(np.abs(expected_dc))))
+            np.testing.assert_allclose(result.denoised[start:start + 500].mean(0), expected_dc,
+                                       rtol=0, atol=dc_roundoff)
             np.testing.assert_allclose(np.fft.rfft(result.denoised[start:start + 500], axis=0)[protected],
                                        np.fft.rfft(signal[start:start + 500], axis=0)[protected], rtol=0, atol=5e-12)
         assert_bits(self, result.denoised[1000:], signal[1000:])

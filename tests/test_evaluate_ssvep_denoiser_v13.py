@@ -48,6 +48,32 @@ def gate_evidence():
     return public, synthetic, personal, contract, plan, metadata
 
 
+class AutocastCompatibilityTests(unittest.TestCase):
+    def test_modern_and_legacy_queries_preserve_both_amp_guards(self):
+        from types import SimpleNamespace
+        for legacy in (False, True):
+            for active in (None, 'cpu', 'cuda'):
+                with self.subTest(legacy=legacy, active=active):
+                    def query(*args):
+                        if legacy and args:
+                            raise TypeError('legacy query takes no arguments')
+                        return (args[0] if args else 'cuda') == active
+                    fake = SimpleNamespace(is_autocast_enabled=query,
+                                           is_autocast_cpu_enabled=lambda: active == 'cpu',
+                                           cuda=SimpleNamespace(is_initialized=lambda: False))
+                    for device in ('cpu', 'cuda'):
+                        self.assertEqual(ev._autocast_enabled(fake, device), device == active)
+                    if active is not None:
+                        with patch.dict(sys.modules, {'torch': fake}), patch.dict(os.environ), self.assertRaisesRegex(ValueError, 'AMP context is forbidden'):
+                            ev.configure_inference()
+
+    def test_missing_legacy_cpu_query_fails_closed(self):
+        from types import SimpleNamespace
+        fake = SimpleNamespace(is_autocast_enabled=lambda: False)
+        with self.assertRaises(AttributeError):
+            ev._autocast_enabled(fake, 'cpu')
+
+
 class NumericalAndGateTests(unittest.TestCase):
     def test_joint_ls_known_phase_trend_harmonics_and_wrap(self):
         t = np.arange(4096)[:, None]/250
