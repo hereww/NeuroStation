@@ -283,7 +283,7 @@ class MainWindow(QMainWindow):
                 self.restoreGeometry(geometry)
 
     def _build_shell(self):
-        self.setWindowTitle(self.tr("app.title") + " · Quality Upgrade 支线（未合并）")
+        self.setWindowTitle(self.tr("app.title"))
         application = QApplication.instance()
         dark = application.palette().color(QPalette.ColorRole.Window).lightness() < 128
         self.setStyleSheet(product_stylesheet(dark))

@@ -589,7 +589,7 @@
   "nav.quality": "Signal & quality",
   "quality.title": "Signal & quality",
   "quality.subtitle": "One quality engine, three explicit sources. Preview, replay and reports work without a device.",
-  "quality.entry_title": "Quality branch · Try the workflow",
+  "quality.entry_title": "Signal quality · Analysis and reports",
   "quality.entry_note": "New channel quality, raw/display traces, PSD, verified replay and session reports. The demo opens no device, stimulus or model.",
   "quality.entry_action": "Open signal & quality · Demo / Replay / Reports",
   "quality.dataset_entry": "Quality report & block replay",

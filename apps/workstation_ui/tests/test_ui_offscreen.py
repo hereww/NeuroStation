@@ -66,6 +66,13 @@ class QtOffscreenTests(unittest.TestCase):
         self.gateway._active = acquisition
         return acquisition.snapshot
 
+    def test_formal_window_title_has_no_branch_badge(self):
+        for locale in ("zh-CN", "en-US"):
+            self.window.change_language(locale)
+            self.assertEqual(self.window.tr("app.title"), self.window.windowTitle())
+            self.assertNotIn("Quality Upgrade", self.window.windowTitle())
+            self.assertNotIn("未合并", self.window.windowTitle())
+
     def test_four_condition_navigation_and_language_preserves_edits(self):
         self.window.pages["ssvep"].four_condition_button.click()
         self.assertEqual("ssvep_four_condition", self.window.current_page)
