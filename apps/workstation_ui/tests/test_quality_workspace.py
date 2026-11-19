@@ -59,14 +59,64 @@ class QualityWorkspaceUITests(unittest.TestCase):
     def test_visible_entry_without_capture_or_extra_reader(self):
         self.window.pages['apps'].quality_button.click()
         self.assertEqual(self.window.current_page, 'quality')
-        page = self.window.pages['quality']
+        check_page = self.window.pages['quality']
+        self.assertEqual(len(check_page.channel_labels), 8)
+        self.assertTrue(all(badge.property('state') == 'unknown' for badge in check_page.channel_labels))
+        check_page.details_button.click()
+        self.assertEqual(self.window.current_page, 'quality_details')
+        page = self.window.pages['quality_details']
         self.assertEqual(page.panel.table.rowCount(), 8)
         self.assertIsNone(page.panel.latest)
-        self.assertTrue(page.demo_button.isEnabled())
+        self.assertTrue(page.tabs.isHidden())
+        self.assertTrue(page.demo_button.isHidden())
+        page.mode_buttons['demo'].click()
+        self.assertTrue(page.demo_button.isVisible())
+        self.assertTrue(page.choose_button.isHidden())
         self.assertFalse(page.report_button.isEnabled())
-        page.live_button.click()
+        page.mode_buttons['live'].click()
         self.gateway.start_ssvep.assert_not_called()
         self.gateway.preflight_cyton.assert_not_called()
+
+    def test_channel_check_reuses_preflight_and_clears_results_on_port_change_or_failure(self):
+        def report(abnormal=()):
+            return {'status': 'warning' if abnormal else 'passed', 'selected_port': 'COM5',
+                    'checks': [{'name': 'channels', 'metrics': {'channels': [
+                        {'channel': i, 'status': 'warning' if i in abnormal else 'passed'}
+                        for i in range(1, 9)]}}]}
+
+        def wait_for_check():
+            deadline = time.monotonic() + 3
+            while self.window.preflight_thread is not None and time.monotonic() < deadline:
+                self.app.processEvents()
+                time.sleep(.005)
+            self.assertIsNone(self.window.preflight_thread)
+
+        self.gateway.preflight_cyton = Mock(side_effect=[report(), report((3, 8)), OSError('No device')])
+        self.window.navigate('quality')
+        check_page = self.window.pages['quality']
+        self.window.pages['ssvep'].port.setText('COM5')
+        check_page.check_button.click()
+        self.assertFalse(check_page.check_button.isEnabled())
+        self.assertTrue(all(badge.property('state') == 'unknown' for badge in check_page.channel_labels))
+        wait_for_check()
+        self.assertIn('8/8', check_page.summary.text())
+
+        self.window.pages['ssvep'].port.setText('COM6')
+        self.assertTrue(all(badge.property('state') == 'unknown' for badge in check_page.channel_labels))
+        self.window.pages['ssvep'].port.setText('COM5')
+        check_page.check_button.click()
+        wait_for_check()
+        self.assertIn('CH3, CH8', check_page.summary.text())
+        self.assertEqual(check_page.channel_labels[2].property('state'), 'warning')
+        self.assertEqual(check_page.channel_labels[0].property('state'), 'passed')
+
+        check_page.check_button.click()
+        wait_for_check()
+        self.assertIn('失败', check_page.summary.text())
+        self.assertTrue(all(badge.property('state') == 'unknown' for badge in check_page.channel_labels))
+        self.assertEqual(self.gateway.preflight_cyton.call_count, 3)
+        self.gateway.preflight_cyton.assert_called_with(port='COM5')
+        self.gateway.start_ssvep.assert_not_called()
 
     def test_full_delivery_workflow_with_both_languages_and_export(self):
         result = run_quality_workflow_smoke(self.window, self.root / 'workflow')
@@ -88,7 +138,7 @@ class QualityWorkspaceUITests(unittest.TestCase):
         self.c.use_live()
         self.app.processEvents()
         self.assertIsNone(self.c.latest)
-        self.assertIsNone(self.window.pages['quality'].panel.latest)
+        self.assertIsNone(self.window.pages['quality_details'].panel.latest)
 
     def test_language_switch_during_worker_keeps_controller_and_safe_shutdown(self):
         self.c.demo_options = {'seconds': 30, 'realtime': True}
@@ -96,7 +146,7 @@ class QualityWorkspaceUITests(unittest.TestCase):
         self.window.change_language('en-US')
         self.app.processEvents()
         self.assertIs(self.window.quality_controller, self.c)
-        self.assertIn('SYNTHETIC', self.window.pages['quality'].source.text())
+        self.assertIn('SYNTHETIC', self.window.pages['quality_details'].source.text())
         self.assertFalse(self.c.close())
         self.wait_idle()
         self.assertTrue(self.c.close())
@@ -118,13 +168,18 @@ class QualityWorkspaceUITests(unittest.TestCase):
         source.mkdir()
         (source / 'session.json').write_text('{"status":"aborted","trial_count":2}')
         self.window.open_dataset_quality(source)
-        self.assertEqual(self.window.current_page, 'quality')
-        self.c.start_replay(); self.wait_idle()
+        self.assertEqual(self.window.current_page, 'quality_details')
+        page = self.window.pages['quality_details']
+        self.assertFalse(page.replay_button.isEnabled())
+        self.assertTrue(page.report_button.isVisible())
+        self.assertEqual(page.tabs.currentIndex(), 1)
+        self.assertFalse(self.c.start_replay())
+        self.assertFalse(self.c.busy)
         self.assertEqual(self.c.phase, 'error')
-        self.assertIn('没有连续数据块', self.window.pages['quality'].status.text())
+        self.assertIn('没有连续数据块', self.window.pages['quality_details'].status.text())
         self.c.start_report(); self.wait_idle()
         self.assertEqual(self.c.phase, 'completed')
-        self.assertIn('旧会话', self.window.pages['quality'].report_view.toPlainText())
+        self.assertIn('旧会话', self.window.pages['quality_details'].report_view.toPlainText())
 
     def test_live_payload_uses_existing_reader_only_once(self):
         fixture = {'schema_version':2, 'stream_id':'x', 'processing_id':'p',
@@ -135,7 +190,26 @@ class QualityWorkspaceUITests(unittest.TestCase):
             'samples':[[1,2]], 'channel_names':['CH1'], 'sample_rate_hz':250})
         self.window._read_live_waveform()
         self.gateway.read_live_waveform.assert_called_once()
-        self.assertEqual(self.window.pages['quality'].panel.latest, fixture)
+        self.assertEqual(self.window.pages['quality_details'].panel.latest, fixture)
+
+    def test_sidebar_analysis_and_reselect_clear_previous_results(self):
+        from apps.workstation_ui.app import NAVIGATION
+        self.window.navigation.setCurrentRow(NAVIGATION.index('quality_details'))
+        self.assertEqual(self.window.current_page, 'quality_details')
+        page = self.window.pages['quality_details']
+        self.assertEqual(self.window.breadcrumb_title.text(), page.title_label.text())
+        self.c.start_demo()
+        self.wait_idle()
+        self.c.start_report()
+        self.wait_idle()
+        self.assertTrue(page.export_button.isVisible())
+        self.assertFalse(self.c.select_session(self.root / 'missing'))
+        self.assertIsNone(self.c.session)
+        self.assertIsNone(page.panel.latest)
+        self.assertTrue(page.tabs.isHidden())
+        self.assertFalse(page.export_button.isEnabled())
+        self.assertTrue(page.choose_button.isVisible())
+        self.assertEqual(self.c.progress, (0, 0))
 
     def test_new_source_clears_old_report_and_quality(self):
         self.c.start_demo(); self.wait_idle()
@@ -145,7 +219,7 @@ class QualityWorkspaceUITests(unittest.TestCase):
         self.c.start_demo(); self.wait_idle()
         self.assertNotEqual(first, self.c.session)
         self.assertIsNone(self.c.report)
-        self.assertFalse(self.window.pages['quality'].export_button.isEnabled())
+        self.assertFalse(self.window.pages['quality_details'].export_button.isEnabled())
 
     def test_recorded_monotonic_timestamp_not_treated_as_live_freshness(self):
         panel = QualityPanel(tr=Translator())
@@ -172,7 +246,7 @@ class QualityWorkspaceUITests(unittest.TestCase):
         self.assertEqual(self.c.phase, 'error')
         self.assertIsNone(self.c.report)
         self.assertIsNone(self.c.export_dir)
-        self.assertFalse(self.window.pages['quality'].export_button.isEnabled())
+        self.assertFalse(self.window.pages['quality_details'].export_button.isEnabled())
         self.assertTrue((previous / 'report.html').is_file())  # Never delete prior deliveries.
 
     def test_failed_export_retry_clears_old_location_but_retains_report(self):

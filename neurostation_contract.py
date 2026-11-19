@@ -14,13 +14,13 @@ from typing import Any
 
 
 PRODUCT_NAME = "NeuroStation"
-PRODUCT_VERSION = "1.05"
-PRODUCT_SEMVER = "1.0.5"
+PRODUCT_VERSION = "1.06"
+PRODUCT_SEMVER = "1.0.6"
 PRODUCT_DESCRIPTION = (
     "Windows-first EEG acquisition workstation for OpenBCI Cyton SSVEP capture, "
     "session metadata, quality reports, and dataset review."
 )
-RELEASE_DATE = "2026-11-17"
+RELEASE_DATE = "2026-11-19"
 
 
 FREQUENCIES = (10, 12, 15, 20)

@@ -1184,6 +1184,7 @@ class DevicesPage(Page):
     )
 
     calibration_test_requested = Signal(int)
+    calibration_preview_requested = Signal(int)
     calibration_test_stop_requested = Signal()
     calibration_save_requested = Signal(object)
 
@@ -1198,6 +1199,7 @@ class DevicesPage(Page):
         protocol_status="draft",
         channel_test_stop=None,
         device_info: DeviceInfo | None = None,
+        channel_preview=None,
     ):
         super().__init__(tr, tr("nav.devices"), tr("device.serial_note"))
         device_section = Section("OpenBCI Cyton · AUTO")
@@ -1304,6 +1306,7 @@ class DevicesPage(Page):
             position.setCurrentText(configured_position)
             if position.lineEdit() is not None:
                 position.lineEdit().setPlaceholderText(tr("device.calibration_position_placeholder"))
+            position.currentTextChanged.connect(lambda _text, i=index: self._clear_channel_test(i))
             position.currentTextChanged.connect(self._calibration_form_changed)
             self.position_boxes.append(position)
             self.calibration_table.setCellWidget(index, 2, position)
@@ -1349,7 +1352,9 @@ class DevicesPage(Page):
         auxiliary_form.addRow(tr("device.calibration_bias"), self.bias_position)
         auxiliary_form.addRow(tr("device.calibration_ground"), self.ground_position)
         calibration.layout.addLayout(auxiliary_form)
+        self.calibration_port.textChanged.connect(self._clear_channel_tests)
         for combo in (self.reference_position, self.bias_position, self.ground_position):
+            combo.currentTextChanged.connect(self._clear_channel_tests)
             combo.currentTextChanged.connect(self._calibration_form_changed)
 
         self.protocol_reviewed = QCheckBox(tr("device.protocol_reviewed"))
@@ -1375,6 +1380,8 @@ class DevicesPage(Page):
 
         if channel_test is not None:
             self.calibration_test_requested.connect(channel_test)
+        if channel_preview is not None:
+            self.calibration_preview_requested.connect(channel_preview)
         if channel_test_stop is not None:
             self.calibration_test_stop_requested.connect(channel_test_stop)
         if save_calibration is not None:
@@ -1389,7 +1396,7 @@ class DevicesPage(Page):
             self.calibration_test_stop_requested.emit()
             return
         index = int(self.calibration_channel_selector.currentData() or 0)
-        self._test_channel(index)
+        self.calibration_preview_requested.emit(index)
 
     def _select_calibration_channel(self, channel_index: int) -> None:
         try:
@@ -1484,6 +1491,14 @@ class DevicesPage(Page):
         if path:
             self.calibration_status.setText(self.tr("device.calibration_loaded", value=path))
 
+    def _clear_channel_test(self, index: int) -> None:
+        self._test_results[index] = None
+        self.test_statuses[index].setText(self.tr("device.calibration_not_tested"))
+
+    def _clear_channel_tests(self) -> None:
+        for index in range(len(self._test_results)):
+            self._clear_channel_test(index)
+
     def _calibration_form_changed(self, *_args) -> None:
         self._sync_head_map()
         self._selected_channel_changed(self.calibration_channel_selector.currentIndex())
@@ -1554,6 +1569,9 @@ class DevicesPage(Page):
             self._select_calibration_channel(int(channel_index))
         self.calibration_signal.set_active(busy)
         self.calibration_channel_selector.setEnabled(not busy)
+        for field in (self.calibration_port, *self.position_boxes, self.reference_position,
+                      self.bias_position, self.ground_position):
+            field.setEnabled(not busy)
         self.head_map.setEnabled(not busy)
         self.calibration_test_toggle.setEnabled(True)
         self.calibration_test_toggle.setText(
@@ -1576,6 +1594,9 @@ class DevicesPage(Page):
     def set_channel_test_result(self, channel_index: int, result: dict[str, Any]) -> None:
         if not 0 <= channel_index < len(self.test_statuses):
             return
+        selected_port = str(result.get("selected_port") or "").strip()
+        if selected_port and selected_port != self.calibration_port.text():
+            self.calibration_port.setText(selected_port)
         self._test_results[channel_index] = result
         status = str(result.get("status") or "failed")
         status_text = self.tr("device.calibration_status." + status)
@@ -1591,9 +1612,6 @@ class DevicesPage(Page):
         self.calibration_signal.set_active(False)
         self.calibration_signal.set_status(detail)
         self.calibration_signal_status.setText(detail)
-        selected_port = str(result.get("selected_port") or "").strip()
-        if selected_port:
-            self.calibration_port.setText(selected_port)
         self.calibration_status.setText(str(result.get("detail") or detail))
 
     def set_calibration_saved(self, result: dict[str, Any]) -> None:
@@ -1852,6 +1870,9 @@ class SSVEPPage(Page):
         self.layout.addWidget(label(tr("ssvep.countdown_note"), "muted"))
         self.start_button = action(tr("action.start_task"), self._start, True)
         self.start_button.setObjectName("startTaskButton")
+        self.channel_check_status = label('', 'muted')
+        self.channel_check_status.hide()
+        self.layout.addWidget(self.channel_check_status)
         self.layout.addWidget(self.start_button)
         for spin in (self.stimulus, self.rest, self.repetitions):
             spin.valueChanged.connect(self._update_estimate)
@@ -2064,6 +2085,9 @@ class TaskPage(Page):
         self.quality_notice.setVisible(False)
         self.layout.addWidget(self.quality_notice)
         self.countdown_section = Section(tr("task.prepare_note"))
+        self.channel_check_status = label('', 'muted')
+        self.channel_check_status.hide()
+        self.countdown_section.layout.addWidget(self.channel_check_status)
         self.countdown = label("5", "countdown")
         self.countdown.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.countdown.setMinimumHeight(130)

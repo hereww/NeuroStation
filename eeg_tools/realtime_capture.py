@@ -36,6 +36,7 @@ CHANNEL_NAMES = ("Fp1", "Fp2", "C3", "C4", "P7", "P8", "O1", "O2")
 SAMPLE_RATE = 250
 PREFLIGHT_MAX_AGE_S = 300.0
 POLL_S = 0.05
+RECORDING_OUTPUTS = ("session.json", "quality.json", "manifest.csv", "raw_brainflow.tsv", "raw_columns.tsv", "raw_blocks")
 LOG = logging.getLogger(__name__)
 
 
@@ -159,8 +160,7 @@ def run_preflight(
     stop = stop or StopController()
     emit = emit or NDJSONEmitter(sys.stdout, stop)
     started = wall_time()
-    if any((session_dir / name).exists() for name in
-           ("session.json", "quality.json", "manifest.csv", "raw_brainflow.tsv", "raw_columns.tsv")):
+    if any((session_dir / name).exists() for name in RECORDING_OUTPUTS):
         emit({"type": "error", "code": "session_exists",
               "message": "Cannot replace preflight evidence in an existing recording"})
         return 2
@@ -340,8 +340,7 @@ def run_capture(
     wait = wait or stop.event.wait
     session_dir = session_dir.resolve()
     session_dir.mkdir(parents=True, exist_ok=True)
-    output_names = ("session.json", "quality.json", "manifest.csv", "raw_brainflow.tsv", "raw_columns.tsv")
-    if any((session_dir / name).exists() for name in output_names):
+    if any((session_dir / name).exists() for name in RECORDING_OUTPUTS):
         emit({"type": "error", "code": "session_exists", "message": "Recording output already exists; choose a new session directory"})
         return 2
     # Exclusive reservation also serializes two captures targeting the same directory.

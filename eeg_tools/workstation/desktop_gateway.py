@@ -494,9 +494,11 @@ class DesktopGateway:
             not isinstance(tests, list)
             or len(tests) != 8
             or any(
-                not isinstance(item, dict) or str(item.get("status") or "") != "passed"
+                not isinstance(item, dict) or item.get("status") != "passed"
+                or type(item.get("channel")) is not int
                 for item in tests
             )
+            or {item["channel"] for item in tests} != set(range(1, 9))
         ):
             raise ValueError("validation.calibration_test_required")
         for key in ("reference", "bias", "ground"):

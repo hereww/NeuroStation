@@ -56,9 +56,15 @@ def run_quality_workflow_smoke(window, output):
     try:
         window.pages['apps'].quality_button.click()
         app.processEvents()
-        page = window.pages['quality']
         check('main_navigation', window.current_page == 'quality')
+        check_page = window.pages['quality']
+        check('startup_channel_view', len(check_page.channel_labels) == 8
+              and all(badge.property('state') == 'unknown' for badge in check_page.channel_labels))
+        check_page.details_button.click()
+        check('details_navigation', window.current_page == 'quality_details')
+        page = window.pages['quality_details']
         check('empty_state', page.panel.latest is None and not window.gateway.snapshot.active)
+        page.mode_buttons['demo'].click()
         page.demo_button.click()
         wait_idle()
         demo = controller.session
@@ -84,7 +90,7 @@ def run_quality_workflow_smoke(window, output):
         check('report_export', (Path(controller.export_dir) / 'report.html').is_file())
         window.change_language('en-US')
         app.processEvents()
-        check('english_view', window.tr('nav.quality') == 'Signal & quality' and window.pages['quality'].displayed_report is controller.report)
+        check('english_view', window.tr('nav.quality_details') == 'EEG signal analysis' and window.pages['quality_details'].displayed_report is controller.report)
         window.change_language('zh-CN')
         check('no_hardware_calls', not hardware_calls and not window.gateway.snapshot.active)
         summary = {'source_session': str(demo), 'replay': verification,

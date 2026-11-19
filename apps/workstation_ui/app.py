@@ -19,7 +19,7 @@ from .gateway import CaptureGateway, CaptureConfig, CaptureMode, Phase, Dataset
 from .i18n import Translator
 from .monitor import AcquisitionMonitorWindow
 from .v9_offline import V9OfflineController
-from .quality_workspace import QualityWorkspaceController, QualityWorkspacePage
+from .quality_workspace import ChannelCheckPage, QualityWorkspaceController, QualityWorkspacePage
 from neurostation_display import resolve_monitor_screen
 from .pages import (
     HomePage, DevicesPage, AppsPage, SSVEPPage, TaskPage,
@@ -40,19 +40,21 @@ class _PreflightWorker(QObject):
         try:
             report = self.gateway.preflight_cyton(port=self.port)
         except Exception as error:
-            self.finished.emit(error)
-            return
-        self.finished.emit(report)
+            report = {"status": "failed", "error": str(error)}
+        if not isinstance(report, dict):
+            report = {"status": "failed"}
+        self.finished.emit({"requested_port": self.port, **report})
 
 
 class _ChannelCalibrationWorker(QObject):
     finished = Signal(object)
     samples = Signal(object)
 
-    def __init__(self, gateway: CaptureGateway, channel_number: int, port: str):
+    def __init__(self, gateway: CaptureGateway, channel_number: int, port: str, seconds: float | None):
         super().__init__()
         self.gateway = gateway
         self.channel_number = channel_number
+        self.seconds = seconds
         self.port = port
         self.cancel_event = threading.Event()
 
@@ -68,7 +70,7 @@ class _ChannelCalibrationWorker(QObject):
         try:
             result = self.gateway.test_cyton_channel(
                 self.channel_number,
-                seconds=None,
+                seconds=self.seconds,
                 port=self.port,
                 sample_callback=self._emit_samples,
                 cancel_event=self.cancel_event,
@@ -98,7 +100,7 @@ class _ImportWorker(QObject):
 
 
 NAVIGATION = (
-    "home", "devices", "users", "apps", "quality", "datasets", "trash", "openbci",
+    "home", "devices", "users", "apps", "quality_details", "datasets", "trash", "openbci",
     "integrations", "diagnostics",
 )
 
@@ -160,6 +162,9 @@ def product_stylesheet(dark: bool) -> str:
         QLabel#notice, QLabel#qualitySourceBanner {{ background: {surface}; padding: 12px; border-left: 3px solid #b58b3a; }}
         QLabel#error {{ color: {'#f39393' if dark else '#b44242'}; }}
         QLabel#estimate {{ font-size: 15px; color: {accent}; }}
+        QLabel#channelCheckBadge {{ background: {surface}; border: 1px solid {line}; border-radius: 6px; padding: 9px 12px; color: {muted}; }}
+        QLabel#channelCheckBadge[state="passed"] {{ color: {'#9fdfbb' if dark else '#17633c'}; }}
+        QLabel#channelCheckBadge[state="warning"] {{ color: {'#ffbe82' if dark else '#9a4509'}; }}
         QLabel#countdown {{ font-size: 64px; color: {accent}; }}
         QLabel#staticTarget {{ background: {background}; border: 1px solid {line}; border-radius: 5px; font-size: 18px; }}
         QFrame#section {{ border: 1px solid {line}; border-radius: 6px; }}
@@ -247,6 +252,8 @@ class MainWindow(QMainWindow):
         self.import_worker: _ImportWorker | None = None
         self.preflight_thread: QThread | None = None
         self.preflight_worker: _PreflightWorker | None = None
+        self._channel_check_report: dict | None = None
+        self._close_after_workers = False
         self.channel_calibration_thread: QThread | None = None
         self.channel_calibration_worker: _ChannelCalibrationWorker | None = None
         self.quality_controller = QualityWorkspaceController(self)
@@ -300,7 +307,7 @@ class MainWindow(QMainWindow):
         chrome.addStretch()
         self.mode_banner_label = label("", "muted")
         chrome.addWidget(self.mode_banner_label)
-        language = QComboBox()
+        self.language_selector = language = QComboBox()
         language.addItem("简体中文", "zh-CN")
         language.addItem("English", "en-US")
         language.setCurrentIndex(0 if self.tr.locale == "zh-CN" else 1)
@@ -342,7 +349,8 @@ class MainWindow(QMainWindow):
         breadcrumb.setContentsMargins(20, 10, 20, 0)
         breadcrumb.addWidget(action(self.tr("app.workstation"), lambda: self.navigate("home")))
         breadcrumb.addWidget(label("/"))
-        breadcrumb.addWidget(action(self.tr("app.datasets"), lambda: self.navigate("datasets")))
+        self.breadcrumb_title = label("", "muted")
+        breadcrumb.addWidget(self.breadcrumb_title)
         breadcrumb.addStretch()
         content_layout.addLayout(breadcrumb)
         self.active_banner = QWidget()
@@ -370,12 +378,16 @@ class MainWindow(QMainWindow):
                 self._channel_config_value(),
                 self._protocol_status(),
                 channel_test_stop=self.stop_calibrate_cyton_channel,
+                channel_preview=lambda index: self.calibrate_cyton_channel(index, seconds=None),
                 device_info=self.gateway.device,
             ),
         )
         self._replace_page("users", self._build_users_page())
         self._replace_page("apps", AppsPage(self.tr, self.navigate, self.gateway.device))
-        self._replace_page("quality", QualityWorkspacePage(self.tr, self.quality_controller))
+        self._replace_page("quality", ChannelCheckPage(
+            self.tr, self.preflight_cyton, lambda: self.navigate("quality_details")))
+        self._replace_page("quality_details", QualityWorkspacePage(
+            self.tr, self.quality_controller, lambda: self.navigate("quality")))
         detail = SSVEPPage(self.tr, self.draft_config, self.navigate, self.gateway.users)
         detail.start_requested.connect(self.start_ssvep)
         detail.serial_scan_requested.connect(self.scan_serial_ports)
@@ -508,6 +520,11 @@ class MainWindow(QMainWindow):
         self.current_page = key
         self.stack.setCurrentWidget(self.screens[key])
         nav_key = "apps" if key in ("ssvep", "ssvep_four_condition", "task", "result") else key
+        if key == "quality":
+            nav_key = "apps"
+        elif key == "result" and self._showing_dataset_summary:
+            nav_key = "datasets"
+        self.breadcrumb_title.setText(self.pages[key].title_label.text())
         self.navigation.blockSignals(True)
         self.navigation.setCurrentRow(NAVIGATION.index(nav_key))
         self.navigation.blockSignals(False)
@@ -530,7 +547,7 @@ class MainWindow(QMainWindow):
             self.navigate(self.current_page)
 
     def change_language(self, locale: str):
-        if locale == self.tr.locale:
+        if locale == self.tr.locale or self.channel_calibration_thread is not None:
             return
         four_condition_draft = self.pages["ssvep_four_condition"].draft_state()
         self.draft_config = self.pages["ssvep"].config()
@@ -590,6 +607,9 @@ class MainWindow(QMainWindow):
         if self._analysis_busy():
             self.pages["ssvep"].error.setText(self.tr("v9.busy_mutation"))
             return
+        if not _preflight_ready and (self.gateway.snapshot.active or self.preflight_thread is not None
+                                     or self.channel_calibration_thread is not None):
+            return
         self._record(
             "capture",
             "ssvep start requested",
@@ -622,8 +642,10 @@ class MainWindow(QMainWindow):
         self._record("capture", "ssvep task started", mode=CaptureMode(config.mode).value)
 
     def preflight_cyton(self):
-        if self._analysis_busy() or self.preflight_thread is not None or self.channel_calibration_thread is not None:
+        if (self._analysis_busy() or self.gateway.snapshot.active or self.preflight_thread is not None
+                or self.channel_calibration_thread is not None):
             return
+        self._channel_check_report = None
         page = self.pages.get("devices")
         if page is not None and hasattr(page, "preflight_status"):
             page.preflight_status.setText(self.tr("device.preflight_running"))
@@ -670,7 +692,7 @@ class MainWindow(QMainWindow):
             return "unknown"
         return str(value.get("status") or "unknown") if isinstance(value, dict) else "unknown"
 
-    def calibrate_cyton_channel(self, channel_index: int):
+    def calibrate_cyton_channel(self, channel_index: int, *, seconds: float | None = 3.0):
         if self._analysis_busy() or self.gateway.snapshot.active or self.preflight_thread is not None:
             return
         if self.channel_calibration_thread is not None:
@@ -697,6 +719,7 @@ class MainWindow(QMainWindow):
             self.gateway,
             channel_index + 1,
             port,
+            seconds,
         )
         self.channel_calibration_worker.moveToThread(self.channel_calibration_thread)
         self.channel_calibration_thread.started.connect(self.channel_calibration_worker.run)
@@ -739,7 +762,11 @@ class MainWindow(QMainWindow):
                 "detail": self.tr("validation.calibration_result"),
                 "metrics": {},
             }
-        page.set_channel_test_result(index, result)
+        if (self.channel_calibration_worker is not None and self.channel_calibration_worker.seconds is None
+                and result.get("status") == "cancelled"):
+            page.calibration_status.setText(self.tr("device.calibration_status.cancelled"))
+        else:
+            page.set_channel_test_result(index, result)
         self._record(
             "hardware",
             "cyton channel calibration finished",
@@ -754,7 +781,10 @@ class MainWindow(QMainWindow):
         self.channel_calibration_thread = None
         self.channel_calibration_worker = None
         self._channel_calibration_index = None
-        self._update_controls()
+        if self._close_after_workers:
+            self.close()
+        else:
+            self._update_controls()
 
     def save_channel_calibration(self, calibration: dict):
         try:
@@ -778,11 +808,7 @@ class MainWindow(QMainWindow):
         self.draft_config = replace(self.draft_config, allow_draft_hardware_config=False)
         self._refresh_diagnostics()
 
-    def _preflight_finished(self, result):
-        if isinstance(result, Exception):
-            report = {"status": "failed", "error": str(result), "checks": []}
-        else:
-            report = result if isinstance(result, dict) else {"status": "failed", "error": ""}
+    def _preflight_finished(self, report: dict):
         self._record(
             "preflight",
             "cyton preflight finished",
@@ -859,6 +885,7 @@ class MainWindow(QMainWindow):
                 ports=selected_port,
                 selected=selected_port,
             ))
+        self._channel_check_report = report
         if page is not None and hasattr(page, "preflight_status"):
             page.preflight_status.setText(
                 self.tr("device.preflight_result", status=status_text, detail=detail)
@@ -945,7 +972,10 @@ class MainWindow(QMainWindow):
     def _preflight_thread_finished(self):
         self.preflight_thread = None
         self.preflight_worker = None
-        self._update_controls()
+        if self._close_after_workers:
+            self.close()
+        else:
+            self._update_controls()
 
     def scan_serial_ports(self):
         try:
@@ -1064,7 +1094,7 @@ class MainWindow(QMainWindow):
 
     def open_dataset_quality(self, path):
         if self.quality_controller.select_session(path):
-            self.navigate("quality")
+            self.navigate("quality_details")
 
     def show_dataset(self, result: Dataset):
         self.result = result
@@ -1113,13 +1143,14 @@ class MainWindow(QMainWindow):
         return callback(*args, **kwargs)
 
     def _update_quality_banner(self):
-        if getattr(self, "current_page", None) == "quality" and hasattr(self, "mode_banner_label"):
+        if getattr(self, "current_page", None) == "quality_details" and hasattr(self, "mode_banner_label"):
             self.mode_banner_label.setText(self.tr("quality.mode." + self.quality_controller.mode))
 
     def _update_controls(self):
         self.offline_controller.set_capture_busy(self._offline_capture_busy() or self.quality_controller.busy)
         self.quality_controller.set_capture_busy(self._offline_capture_busy() or self.offline_controller.busy)
         offline_busy = self._analysis_busy()
+        self.language_selector.setEnabled(self.channel_calibration_thread is None)
         for key in ("datasets", "trash"):
             page = self.pages.get(key)
             if page is not None:
@@ -1166,10 +1197,29 @@ class MainWindow(QMainWindow):
             f"{device_name}\n{device_port} · {device_channels} CH · {device_rate} Hz"
         )
         self.active_banner.setVisible(snapshot.active and self.current_page != "task")
-        self.pages["ssvep"].start_button.setEnabled(
-            not snapshot.active and self.preflight_thread is None and not offline_busy
-        )
-        self.pages["task"].update_snapshot(snapshot, self.gateway.config)
+        can_check = (not snapshot.active and self.preflight_thread is None
+                     and self.channel_calibration_thread is None and not offline_busy)
+        form = self.pages["ssvep"]
+        form.start_button.setEnabled(can_check)
+        check_page = self.pages["quality"]
+        check_page.check_button.setEnabled(can_check)
+        report = self._channel_check_report
+        checking = self.preflight_thread is not None and report is None
+        if report is not None:
+            port = self.gateway.config.port if snapshot.active else form.port.text()
+            port = port.strip().upper() or "AUTO"
+            checked_ports = {str(report.get(key) or "").strip().upper()
+                             for key in ("requested_port", "selected_port")}
+            if port not in checked_ports:
+                report = None
+        summary = check_page.render(report, running=checking)
+        form.channel_check_status.setText(summary)
+        form.channel_check_status.setVisible(mode == CaptureMode.CYTON and (report is not None or checking))
+        task = self.pages["task"]
+        task.update_snapshot(snapshot, self.gateway.config)
+        task.channel_check_status.setText(summary)
+        task.channel_check_status.setVisible(
+            snapshot.phase == Phase.COUNTDOWN and mode == CaptureMode.CYTON and report is not None)
         self._sync_acquisition_monitor(snapshot)
 
     def show_acquisition_monitor(self):
@@ -1277,8 +1327,18 @@ class MainWindow(QMainWindow):
         return samples
 
     def closeEvent(self, event):
+        if any(thread is not None for thread in (
+            self.preflight_thread, self.channel_calibration_thread, self.import_thread,
+        )):
+            self._pending_ssvep = None
+            self._close_after_workers = True
+            if self.channel_calibration_worker is not None:
+                self.channel_calibration_worker.request_stop()
+            event.ignore()
+            return
+        self._close_after_workers = False
         if not self.quality_controller.close():
-            self.navigate("quality")
+            self.navigate("quality_details")
             event.ignore()
             return
         if not self.offline_controller.close():
@@ -1287,17 +1347,6 @@ class MainWindow(QMainWindow):
         self._record("ui", "workstation window closing")
         self.timer.stop()
         self._dispose_acquisition_monitor()
-        if self.import_thread is not None:
-            self.import_thread.quit()
-            self.import_thread.wait(2000)
-        if self.preflight_thread is not None:
-            self.preflight_thread.quit()
-            self.preflight_thread.wait(4000)
-        if self.channel_calibration_worker is not None:
-            self.channel_calibration_worker.request_stop()
-        if self.channel_calibration_thread is not None:
-            self.channel_calibration_thread.quit()
-            self.channel_calibration_thread.wait(4000)
         self.gateway.cancel()
         close_gateway = getattr(self.gateway, "close", None)
         if callable(close_gateway):
@@ -1345,6 +1394,9 @@ class MainWindow(QMainWindow):
     def _import_thread_finished(self):
         self.import_thread = None
         self.import_worker = None
+        if self._close_after_workers:
+            self.close()
+            return
         self._update_controls()
         if self.current_page == "datasets":
             self.navigate("datasets")

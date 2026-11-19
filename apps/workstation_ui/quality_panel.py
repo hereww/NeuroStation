@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QCombo
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView)
 
 from .i18n import Translator
+from .quality_spectrum import SpectrumPanel
 
 
 def _finite(value):
@@ -65,6 +66,7 @@ def _display_payload_valid(result):
             return False
         frequency, power = psd.get('frequency_hz', []), psd.get('power_uv2_hz', [])
         if (not isinstance(frequency, list) or not all(_finite(x) and x >= 0 for x in frequency)
+                or any(right <= left for left, right in zip(frequency, frequency[1:]))
                 or not isinstance(power, list) or len(power) not in (0, len(channels))):
             return False
         if any(not isinstance(row, list) or len(row) != len(frequency)
@@ -78,17 +80,15 @@ class QualityPlot(QWidget):
         super().__init__(parent)
         self.tr = tr or Translator()
         self.setMinimumHeight(150)
-        self.raw, self.display, self.psd, self.frequency = [], [], None, None
+        self.raw, self.display = [], []
 
     def paintEvent(self, event):
         p = QPainter(self)
         p.fillRect(self.rect(), QColor('#111b29'))
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         width, height = self.width(), self.height()
-        wave_right = width * .65
         p.setPen(QColor('#d3deef'))
         p.drawText(8, 18, self.tr('quality.plot.raw'))
-        p.drawText(int(wave_right + 12), 18, 'PSD · Welch 8s / 4s / 50%')
         finite = [abs(v) for seq in (self.raw, self.display) for v in seq
                   if v is not None and math.isfinite(v)]
         scale = max(max(finite, default=1), 1)
@@ -109,27 +109,17 @@ class QualityPlot(QWidget):
             p.setPen(QPen(QColor(color), 1))
             p.drawPath(path)
 
-        draw(self.raw, '#97b7e8', 8, wave_right - 8, 40, height - 26, -scale, scale)
-        draw(self.display, '#3ce5bb', 8, wave_right - 8, 40, height - 26, -scale, scale)
+        draw(self.raw, '#97b7e8', 8, width - 8, 40, height - 26, -scale, scale)
+        draw(self.display, '#3ce5bb', 8, width - 8, 40, height - 26, -scale, scale)
         p.setPen(QColor('#d3deef'))
         p.drawText(8, height - 5, self.tr('quality.plot.legend', scale=f'{scale:.1f}'))
         if not self.raw:
             p.drawText(12, 80, self.tr('quality.plot.empty'))
-        if self.psd:
-            logs = [10 * math.log10(max(v, 1e-20)) if v is not None else None for v in self.psd]
-            limits = [value for value in logs if value is not None] or [0.]
-            draw(logs, '#f0b663', wave_right + 12, width - 12, 40, height - 26,
-                 min(limits) - 1, max(limits) + 1)
-            p.setPen(QColor('#d3deef'))
-            end = self.frequency[-1] if self.frequency else 0
-            p.drawText(int(wave_right + 12), height - 5, f'0 Hz                 {end:g} Hz · dB µV²/Hz')
-        else:
-            p.drawText(int(wave_right + 12), 80, self.tr('quality.plot.wait_psd'))
         p.end()
 
 
 class QualityPanel(QWidget):
-    def __init__(self, parent=None, tr=None):
+    def __init__(self, parent=None, tr=None, *, spectrum_first=False):
         super().__init__(parent)
         self.tr = tr or Translator()
         self.context, self.running = 'live', False
@@ -159,9 +149,12 @@ class QualityPanel(QWidget):
         self.table.verticalHeader().setVisible(False)
         self.table.setMinimumHeight(150)
         self.table.setMaximumHeight(300)
-        layout.addWidget(self.table)
         self.plot = QualityPlot(tr=self.tr)
-        layout.addWidget(self.plot)
+        self.spectrum = SpectrumPanel(self.tr)
+        views = ((self.spectrum, self.plot, self.table) if spectrum_first else
+                 (self.table, self.plot, self.spectrum))
+        for view in views:
+            layout.addWidget(view)
         self.details = QLabel()
         self.details.setTextFormat(Qt.TextFormat.PlainText)
         self.details.setWordWrap(True)
@@ -186,7 +179,8 @@ class QualityPanel(QWidget):
         self.status.setText(self.tr('quality.panel_empty'))
         self.dimensions.setText(self.tr('quality.dimensions_empty'))
         self.details.setText(self.tr('quality.panel_note'))
-        self.plot.raw, self.plot.display, self.plot.psd, self.plot.frequency = [], [], None, None
+        self.plot.raw, self.plot.display = [], []
+        self.spectrum.set_spectrum('', {}, None)
         self.plot.update()
 
     def set_context(self, context='live', running=False):
@@ -271,10 +265,12 @@ class QualityPanel(QWidget):
     def _plot(self):
         index = self.channel.currentIndex()
         if index < 0 or index >= len(self.raw):
+            self.plot.raw, self.plot.display = [], []
+            self.plot.update()
+            self.spectrum.set_spectrum('', {}, None)
             return
         self.plot.raw, self.plot.display = list(self.raw[index]), list(self.display[index])
         psd = (self.latest or {}).get('psd') or {}
         power = psd.get('power_uv2_hz', [])
-        self.plot.psd = power[index] if index < len(power) else None
-        self.plot.frequency = psd.get('frequency_hz')
+        self.spectrum.set_spectrum(self.channel.currentText(), psd, power[index] if index < len(power) else None)
         self.plot.update()

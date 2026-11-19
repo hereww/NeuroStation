@@ -191,9 +191,9 @@ class QtOffscreenTests(unittest.TestCase):
 
         started = []
         stopped = []
-        page.calibration_test_requested.disconnect()
+        page.calibration_preview_requested.disconnect()
         page.calibration_test_stop_requested.disconnect()
-        page.calibration_test_requested.connect(started.append)
+        page.calibration_preview_requested.connect(started.append)
         page.calibration_test_stop_requested.connect(lambda: stopped.append(True))
         page._select_calibration_channel(2)
         page.calibration_test_toggle.click()
@@ -218,6 +218,55 @@ class QtOffscreenTests(unittest.TestCase):
             },
         })
         self.assertIn("通过", page.test_statuses[2].text())
+
+    def test_row_assessment_then_close_during_continuous_preview(self):
+        import threading
+        import time
+
+        entered_preview = threading.Event()
+        calls = []
+        def test_channel(channel, seconds, port, sample_callback, cancel_event):
+            calls.append((channel, seconds))
+            if seconds is None:
+                entered_preview.set()
+                cancel_event.wait(2)
+                return {"channel": channel, "status": "cancelled"}
+            return {"channel": channel, "status": "passed", "selected_port": "COM5", "metrics": {
+                "finite_fraction": 1.0, "flat_fraction": 0.0, "saturation_fraction": 0.0}}
+
+        def wait_for_idle():
+            deadline = time.monotonic() + 3
+            while self.window.channel_calibration_thread is not None and time.monotonic() < deadline:
+                self.application.processEvents()
+                time.sleep(.005)
+            self.assertIsNone(self.window.channel_calibration_thread)
+
+        self.gateway.test_cyton_channel = test_channel
+        self.window.show()
+        self.window.navigate("devices")
+        page = self.window.pages["devices"]
+        page.test_buttons[2].click()
+        wait_for_idle()
+        self.assertEqual(page._test_results[2]["status"], "passed")
+        page.calibration_test_toggle.click()
+        self.assertTrue(entered_preview.wait(1))
+        self.assertFalse(self.window.language_selector.isEnabled())
+        self.assertFalse(self.window.close())
+        wait_for_idle()
+        self.assertFalse(self.window.isVisible())
+        self.assertEqual(calls, [(3, 3.0), (3, None)])
+        self.assertEqual(page._test_results[2]["status"], "passed")
+
+    def test_editing_calibration_invalidates_affected_results(self):
+        page = self.window.pages["devices"]
+        result = {"status": "passed", "selected_port": "COM5"}
+        page.set_channel_test_result(0, dict(result, channel=1))
+        page.set_channel_test_result(1, dict(result, channel=2))
+        page.position_boxes[1].setCurrentText("Cz")
+        self.assertIsNotNone(page._test_results[0])
+        self.assertIsNone(page._test_results[1])
+        page.calibration_port.setText("COM6")
+        self.assertEqual(page._test_results, [None] * 8)
 
     def test_device_connection_status_updates_after_cyton_handshake(self):
         from dataclasses import replace
@@ -345,7 +394,9 @@ class QtOffscreenTests(unittest.TestCase):
         self.gateway.preflight_cyton = lambda port="AUTO": {
             "status": "passed",
             "selected_port": port,
-            "checks": [],
+            "checks": [{"name": "channels", "status": "passed", "metrics": {
+                "channels": [{"channel": i, "status": "passed"} for i in range(1, 9)],
+            }}],
         }
         self.gateway.start_ssvep = self._stub_start
         config = CaptureConfig(
@@ -366,6 +417,9 @@ class QtOffscreenTests(unittest.TestCase):
         self.assertEqual("COM5", self.start_calls[0][0].port)
         self.assertEqual(1, self.start_calls[0][1])
         self.assertEqual(Phase.COUNTDOWN, self.gateway.snapshot.phase)
+        self.assertIn("8/8", self.window.pages["task"].channel_check_status.text())
+        self.assertFalse(self.window.pages["task"].channel_check_status.isHidden())
+        self.assertFalse(self.window.pages["quality"].check_button.isEnabled())
 
     def test_cyton_failed_preflight_blocks_worker_routing(self):
         from apps.workstation_ui.gateway import CaptureConfig, CaptureMode

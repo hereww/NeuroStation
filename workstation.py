@@ -162,7 +162,7 @@ def main() -> int:
         default="AUTO",
         help="Cyton serial port (default: AUTO)",
     )
-    parser.add_argument("--quality-page", action="store_true", help="Open the signal and quality workspace without starting acquisition")
+    parser.add_argument("--quality-page", action="store_true", help="Open the Cyton channel check without starting acquisition")
     parser.add_argument("--quality-workflow-smoke", type=Path, help="Run the synthetic demo/replay/report GUI workflow into a fresh output folder, then exit")
     arguments = parser.parse_args()
     from eeg_tools.workstation.desktop_gateway import DesktopGateway

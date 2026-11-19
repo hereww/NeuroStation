@@ -128,7 +128,9 @@ def run_cyton_preflight(
         def record_chunk(chunk: Any) -> None:
             if getattr(chunk, "ndim", 0) != 2 or int(chunk.shape[1]) <= 0:
                 return
-            chunks.append(chunk)
+            # Continuous preview ends by cancellation and never scores a window.
+            if seconds is not None:
+                chunks.append(chunk)
             if sample_callback is None:
                 return
             try:
@@ -316,28 +318,30 @@ def run_cyton_preflight(
                 packet_metrics,
             ))
         channel_metrics = []
-        quality_warning = False
         warning_channels: list[int] = []
         for channel_number, index in enumerate(eeg_channels, start=1):
             values = data[index, :]
             finite = values[np.isfinite(values)]
+            finite_fraction = float(len(finite) / len(values))
             differences = np.diff(finite)
             flat_fraction = float(np.mean(np.abs(differences) < 1e-9)) if len(differences) else 1.0
             saturation_fraction = (
-                float(np.mean(finite <= -187000.0)) if len(finite) else 0.0
+                float(np.mean(np.abs(finite) >= 187000.0)) if len(finite) else 0.0
             )
-            if flat_fraction >= 0.95 or saturation_fraction >= 0.95:
-                quality_warning = True
+            abnormal = finite_fraction < 0.99 or flat_fraction >= 0.95 or saturation_fraction >= 0.95
+            if abnormal:
                 warning_channels.append(channel_number)
             channel_metrics.append({
                 "channel": channel_number,
+                "status": "warning" if abnormal else "passed",
                 "flat_fraction": flat_fraction,
                 "saturation_fraction": saturation_fraction,
-                "finite_fraction": float(np.mean(np.isfinite(values))),
+                "finite_fraction": finite_fraction,
             })
         checks.append(PreflightCheck(
-            "channels", "warning" if quality_warning else "passed",
-            "At least one channel appears mostly flat or saturated." if quality_warning else "Channel samples are finite and changing.",
+            "channels", "warning" if warning_channels else "passed",
+            "At least one channel appears mostly flat, saturated, or has too many invalid samples."
+            if warning_channels else "Channel samples are finite and changing.",
             {
                 "channel_count": len(eeg_channels),
                 "warning_channels": warning_channels,

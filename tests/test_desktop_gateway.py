@@ -118,6 +118,11 @@ class DesktopGatewayTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "validation.calibration_test_required"):
                     gateway.save_channel_calibration(invalid)
 
+                duplicate = calibration_payload()
+                duplicate["tests"][0] = duplicate["tests"][1].copy()
+                with self.assertRaisesRegex(ValueError, "validation.calibration_test_required"):
+                    gateway.save_channel_calibration(duplicate)
+
                 invalid_position = calibration_payload()
                 invalid_position["channels"][0]["electrode_position"] = "unspecified"
                 with self.assertRaisesRegex(ValueError, "validation.calibration_missing"):
@@ -177,11 +182,21 @@ class DesktopGatewayTests(unittest.TestCase):
                 }
             ],
         }
+        self.assertEqual("passed", gateway.test_cyton_channel(1, port="COM5")["status"])
         result = gateway.test_cyton_channel(2, port="COM5")
         self.assertEqual("passed", result["status"])
         self.assertEqual(2, result["channel"])
         self.assertEqual("COM5", result["selected_port"])
         self.assertEqual(0.02, result["metrics"]["flat_fraction"])
+        report = result["report"]
+        channel = report["checks"][0]["metrics"]["channels"][0]
+        with patch.object(gateway, "preflight_cyton", return_value=report):
+            for invalid in (None, "", float("nan"), -0.01, 1.01, 1.0):
+                with self.subTest(invalid=invalid):
+                    channel["saturation_fraction"] = invalid
+                    self.assertEqual("failed", gateway.test_cyton_channel(1)["status"])
+            del channel["saturation_fraction"]
+            self.assertEqual("failed", gateway.test_cyton_channel(1)["status"])
 
 
 if __name__ == "__main__":

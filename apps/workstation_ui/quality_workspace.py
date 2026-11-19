@@ -14,9 +14,10 @@ import threading
 from PySide6.QtCore import QObject, QThread, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QWidget, QHBoxLayout, QProgressBar, QFileDialog,
-                               QTabWidget, QTextBrowser)
+                               QTabWidget, QTextBrowser, QGridLayout, QRadioButton,
+                               QVBoxLayout, QStackedWidget)
 
-from .components import Page, action, label
+from .components import Page, Section, action, label
 from .quality_panel import QualityPanel
 from neurostation_quality_report import render_report_html
 
@@ -73,6 +74,7 @@ class QualityWorkspaceController(QObject):
         self.phase = 'idle'
         self.job = None
         self.session = None
+        self.has_blocks = False
         self.latest = None
         self.report = None
         self.verification = None
@@ -106,18 +108,36 @@ class QualityWorkspaceController(QObject):
             self.changed.emit()
 
     def use_live(self):
+        return self._reset_source('live', 'quality.waiting_live')
+
+    def select_mode(self, mode):
+        if mode == self.mode:
+            return True
+        if mode not in ('live', 'replay', 'demo') or self.capture_busy:
+            return False
+        message = {'live': 'quality.waiting_live', 'replay': 'quality.choose_hint',
+                   'demo': 'quality.demo_hint'}[mode]
+        return self._reset_source(mode, message)
+
+    def _reset_source(self, mode, message, session=None):
         if self.busy:
             return False
-        self.mode, self.phase = 'live', 'idle'
-        self.latest = self.session = self.report = self.verification = self.export_dir = None
-        self.message = 'quality.waiting_live'
+        self.mode, self.phase, self.job = mode, 'idle', None
+        self.session = session
+        self.has_blocks = session is not None and (session / 'raw_blocks' / 'blocks.jsonl').is_file()
+        self.latest = self.report = self.verification = self.export_dir = None
+        self.skipped, self.progress = 0, (0, 0)
+        self.message = 'quality.error.legacy_no_blocks' if session and not self.has_blocks else message
         self.changed.emit()
         return True
 
     def accept_live(self, result):
         if self.mode == 'live' and isinstance(result, dict) and result.get('schema_version') == 2:
+            first_block = self.latest is None
             self.latest = result
             self.quality_received.emit(result)
+            if first_block:
+                self.changed.emit()
 
     def select_session(self, selected):
         if self.busy or self.capture_busy:
@@ -127,25 +147,23 @@ class QualityWorkspaceController(QObject):
             path = path.parent
         if not path.is_dir() or not any((path / name).is_file() for name in
                                        ('session.json', 'events.tsv', 'raw_blocks/blocks.jsonl')):
-            self.message = 'quality.error.not_session'
-            self.changed.emit()
+            self._reset_source('replay', 'quality.error.not_session')
             return False
-        self.session, self.mode, self.phase = path, 'replay', 'idle'
-        self.latest = self.report = self.verification = self.export_dir = None
-        self.message = 'quality.session_selected'
-        self.progress = (0, 0)
-        self.changed.emit()
-        return True
+        return self._reset_source('replay', 'quality.session_selected', path)
 
     def start_demo(self):
         if self.busy or self.capture_busy:
             return False
-        self.mode, self.session = 'demo', None
+        self.mode, self.session, self.has_blocks = 'demo', None, False
         self.latest = self.report = self.verification = self.export_dir = None
         return self._start('demo', self.demo_options)
 
     def start_replay(self):
         if self.busy or self.capture_busy or self.session is None:
+            return False
+        if not self.has_blocks:
+            self.phase, self.message = 'error', 'quality.error.legacy_no_blocks'
+            self.changed.emit()
             return False
         self.mode = 'replay'
         self.latest = self.verification = None
@@ -209,6 +227,7 @@ class QualityWorkspaceController(QObject):
         result = reply.get('result')
         if result and result.get('kind') == 'demo':
             self.session = Path(result['session_dir'])
+            self.has_blocks = (self.session / 'raw_blocks' / 'blocks.jsonl').is_file()
         if reply.get('cancelled'):
             self.phase, self.message = 'cancelled', 'quality.cancelled'
         elif 'error' in reply:
@@ -245,40 +264,119 @@ class QualityWorkspaceController(QObject):
         return True
 
 
+class ChannelCheckPage(Page):
+    """Show the shared Cyton preflight result without starting a live reader."""
+
+    def __init__(self, tr, run_check, open_details):
+        super().__init__(tr, tr('quality.entry_title'), tr('channel_check.subtitle'))
+        section = Section(tr('channel_check.title'))
+        self.summary = label('', 'sectionTitle')
+        section.layout.addWidget(self.summary)
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(8)
+        self.channel_labels = []
+        for index in range(8):
+            badge = label('')
+            badge.setObjectName('channelCheckBadge')
+            self.channel_labels.append(badge)
+            grid.addWidget(badge, index // 2, index % 2)
+        section.layout.addLayout(grid)
+        self.layout.addWidget(section)
+        self.check_button = action(tr('channel_check.run'), run_check, True)
+        self.details_button = action(tr('channel_check.details'), open_details)
+        actions = QHBoxLayout()
+        actions.addWidget(self.check_button)
+        actions.addWidget(self.details_button)
+        actions.addStretch()
+        self.layout.addLayout(actions)
+        self.layout.addStretch()
+        self.render(None)
+
+    def render(self, report, *, running=False):
+        states = {}
+        status = None if report is None else report.get('status')
+        if not running and status in ('passed', 'warning', 'degraded'):
+            for check in report.get('checks') or ():
+                if check.get('name') == 'channels':
+                    metrics = check.get('metrics') or {}
+                    states = {
+                        row['channel']: row['status']
+                        for row in metrics.get('channels', ())
+                        if row.get('channel') and row.get('status') in ('passed', 'warning')
+                    }
+                    break
+        for channel, badge in enumerate(self.channel_labels, 1):
+            state = states.get(channel, 'unknown')
+            badge.setText(f'CH{channel}  ·  {self.tr("channel_check." + state)}')
+            if badge.property('state') != state:
+                badge.setProperty('state', state)
+                badge.style().unpolish(badge)
+                badge.style().polish(badge)
+        flagged = ', '.join(f'CH{i}' for i in range(1, 9) if states.get(i) == 'warning')
+        if running:
+            key = 'running'
+        elif report is None:
+            key = 'idle'
+        elif status == 'failed':
+            key = 'failed'
+        elif flagged:
+            key = 'flagged'
+        elif status == 'degraded':
+            key = 'review'
+        elif all(states.get(i) == 'passed' for i in range(1, 9)):
+            key = 'all_passed'
+        else:
+            key = 'incomplete'
+        self.summary.setText(self.tr('channel_check.' + key, channels=flagged))
+        return self.summary.text()
+
+
 class QualityWorkspacePage(Page):
-    def __init__(self, tr, controller):
+    def __init__(self, tr, controller, back_to_check):
         super().__init__(tr, tr('quality.title'), tr('quality.subtitle'))
         self.controller = controller
         self.context_key = None
         self.displayed_report = None
-        self.source = label('', 'notice')
-        self.source.setObjectName('qualitySourceBanner')
-        self.layout.addWidget(self.source)
-        controls = QHBoxLayout()
-        self.live_button = action(tr('quality.live'), controller.use_live)
+        source_box = Section(tr('quality.data_source'))
+        sources = QHBoxLayout()
+        self.mode_buttons = {}
+        for mode in ('live', 'replay', 'demo'):
+            button = QRadioButton(tr('quality.option.' + mode))
+            button.clicked.connect(lambda _checked, selected=mode: controller.select_mode(selected))
+            self.mode_buttons[mode] = button
+            sources.addWidget(button)
+        sources.addStretch()
+        source_box.layout.addLayout(sources)
+        self.source = label('', 'muted')
+        source_box.layout.addWidget(self.source)
+        tools = QHBoxLayout()
+        self.choose_button = action(tr('quality.choose'), self.choose_session, True)
         self.demo_button = action(tr('quality.demo'), controller.start_demo, True)
-        self.choose_button = action(tr('quality.choose'), self.choose_session)
-        self.replay_button = action(tr('quality.replay'), controller.start_replay)
+        self.replay_button = action(tr('quality.replay'), controller.start_replay, True)
         self.stop_button = action(tr('quality.stop'), controller.cancel)
-        for name in ('live', 'demo', 'choose', 'replay', 'stop'):
-            button = getattr(self, name + '_button')
-            button.setObjectName('quality' + name.title() + 'Button')
-            controls.addWidget(button)
-        self.layout.addLayout(controls)
+        for button in (self.choose_button, self.demo_button, self.replay_button, self.stop_button):
+            tools.addWidget(button)
+        tools.addStretch()
+        source_box.layout.addLayout(tools)
         self.path = label('', 'path')
-        self.layout.addWidget(self.path)
+        source_box.layout.addWidget(self.path)
+        self.layout.addWidget(source_box)
         self.status = label('')
         self.status.setObjectName('qualityJobStatus')
         self.layout.addWidget(self.status)
         self.progress = QProgressBar()
         self.layout.addWidget(self.progress)
         self.tabs = QTabWidget()
-        self.panel = QualityPanel(tr=tr)
+        self.signal_view = QStackedWidget()
+        self.signal_empty = label(tr('quality.signal_empty'), 'muted')
+        self.signal_view.addWidget(self.signal_empty)
+        self.panel = QualityPanel(tr=tr, spectrum_first=True)
         self.panel.table.setMinimumHeight(275)
-        self.panel.plot.setMinimumHeight(190)
-        self.tabs.addTab(self.panel, tr('quality.signal_tab'))
+        self.panel.plot.setMinimumHeight(120)
+        self.signal_view.addWidget(self.panel)
+        self.tabs.addTab(self.signal_view, tr('quality.signal_tab'))
         report_widget = QWidget()
-        from PySide6.QtWidgets import QVBoxLayout
         report_layout = QVBoxLayout(report_widget)
         report_layout.addWidget(label(tr('quality.report_note'), 'muted'))
         row = QHBoxLayout()
@@ -289,7 +387,8 @@ class QualityWorkspacePage(Page):
             row.addWidget(button)
         report_layout.addLayout(row)
         self.report_view = QTextBrowser()
-        self.report_view.setMinimumHeight(420)
+        self.report_view.setMinimumHeight(240)
+        self.report_view.setPlainText(tr('quality.report_empty'))
         self.report_view.setOpenLinks(False)
         self.report_view.setOpenExternalLinks(False)
         report_layout.addWidget(self.report_view)
@@ -298,11 +397,14 @@ class QualityWorkspacePage(Page):
         self.verification_label = label('', 'muted')
         self.layout.addWidget(self.verification_label)
         self.layout.addWidget(label(tr('quality.safety'), 'muted'))
+        footer = QHBoxLayout()
+        footer.addWidget(action(tr('channel_check.back'), back_to_check))
+        footer.addStretch()
+        self.layout.addLayout(footer)
+        self.layout.addStretch()
         controller.changed.connect(self.refresh)
         controller.quality_received.connect(self.receive_quality)
         self.refresh()
-        if controller.latest:
-            self.panel.update_quality(controller.latest)
 
     def choose_session(self):
         path = QFileDialog.getExistingDirectory(self, self.tr('quality.choose'))
@@ -324,19 +426,32 @@ class QualityWorkspacePage(Page):
         self.panel.set_context(self.controller.mode,
                                self.controller.busy and self.controller.phase == 'running' and self.controller.job in ('demo', 'replay'))
         self.panel.update_quality(result)
+        self.signal_view.setCurrentWidget(self.panel)
 
     def refresh(self):
         c = self.controller
-        key = c.mode
-        if key != self.context_key or c.latest is None:
+        key = c.mode, c.session
+        new_source = key != self.context_key
+        if new_source or (c.latest is None and self.panel.latest is not None):
             self.panel.clear()
             self.context_key = key
-            if c.latest:
+            if c.latest is not None:
                 self.panel.update_quality(c.latest)
+        self.mode_buttons[c.mode].setChecked(True)
         self.panel.set_context(c.mode, c.busy and c.phase == 'running' and c.job in ('demo', 'replay'))
         self.source.setText(self.tr('quality.source.' + c.mode))
-        self.path.setText(self.tr('quality.selected_path', path=str(c.session)) if c.session else self.tr('quality.no_session'))
+        self.path.setVisible(c.session is not None)
+        if c.session:
+            self.path.setText(self.tr('quality.selected_path', path=str(c.session)))
+        self.signal_view.setCurrentWidget(self.panel if c.latest is not None else self.signal_empty)
+        self.tabs.setVisible(c.latest is not None or c.session is not None)
+        self.tabs.setTabEnabled(1, c.session is not None)
+        self.tabs.setTabEnabled(0, c.session is None or c.has_blocks or c.latest is not None)
+        if new_source or (c.job in ('demo', 'replay') and c.busy and c.latest is None):
+            self.tabs.setCurrentIndex(0 if self.tabs.isTabEnabled(0) else 1)
         message = self.tr(c.message)
+        if c.mode == 'live' and c.latest is not None and c.message == 'quality.waiting_live':
+            message = ''  # Freshness and quality are shown alongside the signal.
         if c.capture_busy:
             message = self.tr('quality.capture_busy') + '\n' + message
         if c.skipped:
@@ -345,10 +460,18 @@ class QualityWorkspacePage(Page):
             message += '\n' + self.tr('quality.exported', path=c.export_dir)
         self.status.setText(message)
         enabled = not c.busy and not c.capture_busy
-        self.live_button.setEnabled(not c.busy)
+        self.status.setVisible(bool(message.strip()))
+        for button in self.mode_buttons.values():
+            button.setEnabled(enabled)
+        self.choose_button.setVisible(c.mode == 'replay')
+        self.demo_button.setVisible(c.mode == 'demo' and not c.busy)
+        self.replay_button.setVisible(c.session is not None and c.has_blocks and not c.busy)
+        self.stop_button.setVisible(c.busy)
+        self.export_button.setVisible(c.report is not None)
+        self.folder_button.setVisible(c.report is not None)
         self.demo_button.setEnabled(enabled)
         self.choose_button.setEnabled(enabled)
-        self.replay_button.setEnabled(enabled and c.session is not None)
+        self.replay_button.setEnabled(enabled and c.has_blocks)
         self.report_button.setEnabled(enabled and c.session is not None)
         self.export_button.setEnabled(enabled and c.report is not None)
         self.folder_button.setEnabled(c.report is not None)
@@ -356,7 +479,8 @@ class QualityWorkspacePage(Page):
         done, total = c.progress
         self.progress.setRange(0, total or (0 if c.busy else 1))
         self.progress.setValue(done)
-        self.progress.setVisible(c.busy or total > 0)
+        self.progress.setVisible(c.busy)
+        self.verification_label.setVisible(c.verification is not None or c.latest is not None)
         if c.verification:
             v = c.verification
             self.verification_label.setText(self.tr('quality.verification',
@@ -374,4 +498,3 @@ class QualityWorkspacePage(Page):
                 self.tabs.setCurrentIndex(1)
             else:
                 self.report_view.setPlainText(self.tr('quality.report_empty'))
-                self.tabs.setCurrentIndex(0)

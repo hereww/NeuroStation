@@ -65,8 +65,8 @@ def main():
     run(args, env)
     (output / "dist/workstation").rename(artifact)
     shutil.copytree(runtime, artifact / "_internal/integrations/openbci_gui/runtime/windows")
-    shutil.copy2(ROOT / "release/NeuroStation-1.05-Windows-x64.md", artifact / "RELEASE_NOTES.md")
-    shutil.copy2(ROOT / "release/NeuroStation-1.05-Windows-x64.md", artifact / "UPDATE_NOTES.md")
+    shutil.copy2(ROOT / f"release/NeuroStation-{PRODUCT_VERSION}-Windows-x64.md", artifact / "RELEASE_NOTES.md")
+    shutil.copy2(ROOT / f"release/NeuroStation-{PRODUCT_VERSION}-Windows-x64.md", artifact / "UPDATE_NOTES.md")
     run([sys.executable, "-B", ROOT / "scripts/generate_sbom.py", "-o", artifact / "SBOM.json"], env)
     (artifact / "VERSION.txt").write_text(
         f"NeuroStation\nVersion: {PRODUCT_VERSION}\nSemantic version: {PRODUCT_SEMVER}\n"
@@ -87,7 +87,7 @@ def main():
     changed = [p for p, digest in sources.items() if not (ROOT / p).is_file() or hashlib.sha256((ROOT / p).read_bytes()).hexdigest() != digest]
     if changed:
         raise RuntimeError(f"source changed during build: {changed}")
-    archive = output / f"NeuroStation-{PRODUCT_VERSION}-Windows-x64-20261117.zip"
+    archive = output / f"NeuroStation-{PRODUCT_VERSION}-Windows-x64.zip"
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as z:
         for f in artifact.rglob("*"):
             if f.is_file():

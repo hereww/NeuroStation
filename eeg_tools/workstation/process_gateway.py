@@ -385,9 +385,17 @@ class AcquisitionProcessGateway:
                 "metrics": {},
                 "detail": "Selected channel metrics were not returned.",
             }
-        flat_fraction = float(selected.get("flat_fraction", 1.0) or 1.0)
-        saturation_fraction = float(selected.get("saturation_fraction", 1.0) or 1.0)
-        finite_fraction = float(selected.get("finite_fraction", 0.0) or 0.0)
+        try:
+            flat_fraction, saturation_fraction, finite_fraction = (
+                float(selected[key]) for key in ("flat_fraction", "saturation_fraction", "finite_fraction")
+            )
+            if not all(0.0 <= value <= 1.0 for value in (flat_fraction, saturation_fraction, finite_fraction)):
+                raise ValueError("Invalid channel fraction")
+        except (KeyError, TypeError, ValueError, OverflowError):
+            return {
+                "status": "failed", "channel": int(channel_number), "report": report, "metrics": {},
+                "detail": "Selected channel metrics are missing or invalid.",
+            }
         if finite_fraction < 0.99 or flat_fraction >= 0.95 or saturation_fraction >= 0.95:
             channel_status = "failed"
             detail = "Channel is mostly flat, saturated, or contains invalid samples."

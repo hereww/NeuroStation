@@ -60,6 +60,9 @@ def run_demo(root, publish, cancel: threading.Event, *, seconds=30, realtime=Tru
     """
     if not 1 <= seconds <= 120:
         raise ValueError('demo length must be between 1 and 120 seconds')
+    # (Hz, peak µV) per synthetic channel, before the scripted artifacts.
+    tones = [((2, 10), (6, 8), (10, 18), (20, 9), (38, 5))]
+    tones.extend(((hz, 25),) for hz in (2, 6, 10, 20, 38, 12, 24))
     session = new_output(root, 'demos')
     session.mkdir()
     metadata = {
@@ -67,6 +70,8 @@ def run_demo(root, publish, cancel: threading.Event, *, seconds=30, realtime=Tru
         'data_origin': 'synthetic_demo', 'simulated': True, 'status': 'recording',
         'sampling_rate_hz': 250, 'trial_count': 0, 'physical_electrodes_verified': False,
         'hardware_opened': False, 'stimulus_started': False, 'model_used': False,
+        'synthetic_tones_hz_peak_uv': {f'CH{i+1}': [*components, (50, 3)]
+                                       for i, components in enumerate(tones)},
         'scenario': 'CH2 flat at 5-9s and 24-27s; CH3 spike at 16s; CH4 missing at 18s',
     }
     atomic_json(session / 'session.json', metadata)
@@ -74,7 +79,7 @@ def run_demo(root, publish, cancel: threading.Event, *, seconds=30, realtime=Tru
     recorder = BlockRecorder(session / 'raw_blocks', session_id=metadata['session_id'],
                              channel_names=names, eeg_rows=list(range(1, 9)),
                              package_row=0, timestamp_row=9,
-                             configuration_id='synthetic-demo-not-hardware-v1')
+                             configuration_id='synthetic-demo-multiband-v2')
     sink = None
     state = 'aborted'
     total = int(seconds * 250)
@@ -87,8 +92,10 @@ def run_demo(root, publish, cancel: threading.Event, *, seconds=30, realtime=Tru
             count = min(50, total - start)
             index = start + np.arange(count)
             t = index / 250
-            eeg = np.array([25 * np.sin(2 * np.pi * (9 + c * .5) * t + c * .2)
-                            + 3 * np.sin(2 * np.pi * 50 * t) for c in range(8)])
+            mains = 3 * np.sin(2 * np.pi * 50 * t)
+            eeg = np.array([mains + sum(amp * np.sin(2 * np.pi * hz * t + c * .2)
+                                        for hz, amp in components)
+                            for c, components in enumerate(tones)])
             eeg[1, ((t >= 5) & (t < 9)) | ((t >= 24) & (t < 27))] = 0
             eeg[2, index == 4000] = 650
             eeg[3, index == 4500] = np.nan

@@ -201,6 +201,50 @@ class RealtimeCaptureTests(unittest.TestCase):
                 self.assertEqual(board.releases, 1)
                 self.assertEqual(code, 0 if not failure else 2)
 
+    def test_continuous_preview_releases_delivered_chunks_before_stop(self):
+        import weakref
+
+        refs = []
+        retained = []
+        board = FakeBoard()
+        def read():
+            retained.append(sum(ref() is not None for ref in refs))
+            block = samples(25, 25 * len(refs))
+            refs.append(weakref.ref(block))
+            return block
+
+        counts = []
+        def preview(payload):
+            counts.append(payload["sample_count"])
+            if len(counts) == 4:
+                self.stop.request()
+
+        board.get_board_data = read
+        report = run_cyton_preflight("COM5", seconds=None, board_shim=FakeShim,
+            board_ids=type("Ids", (), {"CYTON_BOARD": 0}), params=object(),
+            prepare_board=lambda *_: (board, "COM5", []), sleep_fn=lambda _: None,
+            sample_callback=preview, cancel_event=self.stop.event)
+        self.assertEqual(report.status, "cancelled")
+        self.assertEqual(counts, [25] * 4)
+        self.assertEqual(retained, [0] * 4)
+        self.assertEqual((board.stops, board.releases), (1, 1))
+
+    def test_shared_preflight_flags_flat_saturated_and_nonfinite_channels(self):
+        data = samples(750)
+        data[2] = 0
+        data[4] += 187000
+        data[6] -= 188000
+        data[8, :50] = np.nan
+        board = FakeBoard([data])
+        report = run_cyton_preflight("COM5", board_shim=FakeShim,
+            board_ids=type("Ids", (), {"CYTON_BOARD": 0}), params=object(),
+            prepare_board=lambda *_: (board, "COM5", []), sleep_fn=lambda _: None)
+        channels = next(check for check in report.checks if check.name == "channels")
+        self.assertEqual(report.status, "warning")
+        self.assertEqual(channels.metrics["warning_channels"], [2, 4, 6, 8])
+        self.assertEqual([row["status"] for row in channels.metrics["channels"]], ["passed", "warning"] * 4)
+        self.assertEqual(board.releases, 1)
+
     def test_invalid_config_preflight_is_saved_with_actual_hash_without_hardware(self):
         value = json.loads(self.config.read_text(encoding="utf-8"))
         value["channels"][0]["electrode_position"] = ""
@@ -563,6 +607,22 @@ class RealtimeCaptureTests(unittest.TestCase):
         self.assertEqual(path.read_text(), "precious raw\n")
         self.assertFalse((self.session / "session.json").exists())
         self.assertEqual(board.calls, [])
+
+    def test_raw_blocks_alone_protect_recoverable_recording(self):
+        self.preflight()
+        preflight = (self.session / "preflight.json").read_bytes()
+        raw = self.session / "raw_blocks"
+        raw.mkdir()
+        (raw / "blocks.jsonl").write_bytes(b"existing journal")
+        runner = Mock()
+        board = FakeBoard()
+        self.assertEqual(self.preflight(runner=runner), 2)
+        self.assertEqual(self.run_board(board), 2)
+        runner.assert_not_called()
+        self.assertEqual(board.calls, [])
+        self.assertEqual((self.session / "preflight.json").read_bytes(), preflight)
+        self.assertEqual((raw / "blocks.jsonl").read_bytes(), b"existing journal")
+        self.assertEqual({p.name for p in self.session.iterdir()}, {"preflight.json", "raw_blocks"})
 
     def test_preflight_cannot_rewrite_historical_recording_evidence(self):
         self.preflight()
