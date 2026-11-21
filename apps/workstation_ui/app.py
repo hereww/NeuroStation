@@ -165,6 +165,8 @@ def product_stylesheet(dark: bool) -> str:
         QLabel#channelCheckBadge {{ background: {surface}; border: 1px solid {line}; border-radius: 6px; padding: 9px 12px; color: {muted}; }}
         QLabel#channelCheckBadge[state="passed"] {{ color: {'#9fdfbb' if dark else '#17633c'}; }}
         QLabel#channelCheckBadge[state="warning"] {{ color: {'#ffbe82' if dark else '#9a4509'}; }}
+        QLabel#channelGuideChannel {{ background: {surface}; border-radius: 4px; padding: 2px 5px; font-weight: 600; }}
+        QLabel#channelGuideChannel[selected="true"] {{ background: {active}; color: {accent}; }}
         QLabel#countdown {{ font-size: 64px; color: {accent}; }}
         QLabel#staticTarget {{ background: {background}; border: 1px solid {line}; border-radius: 5px; font-size: 18px; }}
         QFrame#section {{ border: 1px solid {line}; border-radius: 6px; }}

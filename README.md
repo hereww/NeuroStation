@@ -5,12 +5,12 @@
 
 NeuroStation 是一个面向科研与教学技术验证的跨平台脑电采集工作站。项目把 PySide6 桌面界面、BrainFlow 采集 worker、SSVEP 刺激流程、OpenBCI Cyton 接入、会话文件和数据集浏览整合在同一套工作流中。
 
-当前源码版本为 **NeuroStation 1.06（语义版本 1.0.6）**。Windows 10/11 x64 可构建无需 Python 环境的 standalone portable 包；Linux 和 macOS 主要用于源码测试与平台构建验收。
+当前源码版本为 **NeuroStation 1.07（语义版本 1.0.7）**。Windows 10/11 x64 可构建无需 Python 环境的 standalone portable 包；Linux 和 macOS 主要用于源码测试与平台构建验收。
 
 ## 下载与版本边界
 
 - [查看线上发布版本](https://github.com/hereww/NeuroStation/releases)
-- [查看 NeuroStation 1.06 构建说明](release/NeuroStation-1.06-Windows-x64.md)
+- [查看 NeuroStation 1.07 构建说明](release/NeuroStation-1.07-Windows-x64.md)
 - [查看完整验收清单](docs/验收清单.md)
 - [查看跨平台方案](docs/跨平台脑电采集工作站方案.md)
 
@@ -21,6 +21,11 @@ Windows 包是可直接解压运行的目录，不是 MSI 安装器，也不包�
 后续开发及发布统一使用正式版本和正式协议（`status: formal`），不再使用 MVP 草稿状态，默认正常采集不依赖“仅技术验证”选项。通道模板只表示待填写的接线信息，不作为默认采集配置；未完成通道表、硬件预检失败和未确认光敏风险仍会阻止采集。
 
 构建脚本会先运行 `scripts/validate_release_configs.py`，检查所有内置采集协议为正式状态、默认通道表完整、配置无 MVP/DRAFT 标记。发现草稿或不完整默认配置会直接终止构建。旧会话和旧配置的读取兼容性保留；正式协议状态不等同于会话质量、实际硬件或临床有效性已经验收。
+
+### 1.07 更新内容
+
+- 「设备 → 头部通道定位与实时信号」新增通道解读，随当前电极配置更新，选中通道后高亮对应说明。
+- 中文和英文界面均支持通道解读，并根据窗口宽度自动调整布局。
 
 ### 1.06 更新内容
 
@@ -77,7 +82,7 @@ Windows 包是可直接解压运行的目录，不是 MSI 安装器，也不包�
 
 ### 使用 Windows 发布包
 
-1. 构建或下载对应版本的 Windows x64 ZIP，解压 `NeuroStation-1.06-Windows-x64.zip`。
+1. 构建或下载对应版本的 Windows x64 ZIP，解压 `NeuroStation-1.07-Windows-x64.zip`。
 2. 运行 `NeuroStation.dist\workstation.exe`。
 3. 首次使用先连接 Cyton USB dongle，选择采集用户并完成硬件预检。
 4. 需要查看运行环境时执行：
@@ -272,7 +277,7 @@ python scripts\smoke_packaged.py
 构建会把源码复制到 ASCII 路径的临时 stage，使用 Qt 官方 `pyside6-deploy`/Nuitka 构建，再把产物复制回 `dist/`。Windows 输出包括：
 
 - `dist\NeuroStation.dist\`：可运行目录；
-- `dist\NeuroStation-1.06-Windows-x64.zip`：发布归档。
+- `dist\NeuroStation-1.07-Windows-x64.zip`：发布归档。
 
 GitHub Actions 的职责分工如下：
 

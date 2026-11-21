@@ -233,18 +233,10 @@ class HeadElectrodeMap(QWidget):
             side,
         )
 
-    def _channel_site(self, channel_index: int) -> str:
-        assignment = self._assignments[channel_index].strip()
-        if assignment.casefold() in {name.casefold() for name in self.SITE_COORDS}:
-            return next(
-                name for name in self.SITE_COORDS
-                if name.casefold() == assignment.casefold()
-            )
-        if channel_index < len(self._channel_names):
-            default = self._channel_names[channel_index]
-            if default in self.SITE_COORDS:
-                return default
-        return "Cz"
+    @classmethod
+    def canonical_site(cls, position: str) -> str | None:
+        normalized = position.strip().casefold()
+        return next((site for site in cls.SITE_COORDS if site.casefold() == normalized), None)
 
     def mousePressEvent(self, event) -> None:
         if event.button() != Qt.MouseButton.LeftButton:
@@ -295,7 +287,8 @@ class HeadElectrodeMap(QWidget):
         painter.drawText(8, self.height() - 7, self._hint_text)
 
         points = self._site_points()
-        active_sites = {self._channel_site(index) for index in range(len(self._channel_names))}
+        channel_sites = [self.canonical_site(position) for position in self._assignments]
+        active_sites = set(channel_sites)
         # Keep extra anatomical sites available as click targets without
         # changing the OpenBCI-like eight-channel visual at rest.
         for name, (x, y) in points.items():
@@ -305,8 +298,9 @@ class HeadElectrodeMap(QWidget):
             painter.setBrush(surface)
             painter.drawEllipse(int(x - 4), int(y - 4), 8, 8)
 
-        for channel_index in range(len(self._channel_names)):
-            name = self._channel_site(channel_index)
+        for channel_index, name in enumerate(channel_sites):
+            if name is None:
+                continue
             x, y = points[name]
             selected = channel_index == self._selected_channel
             color = QColor(*CHANNEL_COLORS[channel_index % len(CHANNEL_COLORS)])

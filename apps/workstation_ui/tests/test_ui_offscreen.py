@@ -161,6 +161,63 @@ class QtOffscreenTests(unittest.TestCase):
         page.channel.setText(str(channel_path))
         self.assertEqual(channel_path, page.config().channel_config)
 
+    def test_channel_guide_follows_head_map_selection_and_electrode_edits(self):
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtTest import QTest
+
+        self.window.navigate("devices")
+        self.window.show()
+        self.application.processEvents()
+        page = self.window.pages["devices"]
+        guide = page.channel_guide
+        self.assertEqual(
+            [f"CH{index} · {site}" for index, site in enumerate(page.DEFAULT_CHANNEL_POSITIONS, 1)],
+            [channel.text() for channel in guide.channel_labels],
+        )
+        self.assertTrue(guide.channel_labels[0].property("selected"))
+        x, y = page.head_map._site_points()["Fp2"]
+        QTest.mouseClick(page.head_map, Qt.MouseButton.LeftButton, pos=QPoint(round(x), round(y)))
+        self.assertEqual(1, page.calibration_channel_selector.currentIndex())
+        self.assertTrue(guide.channel_labels[1].property("selected"))
+        self.assertFalse(guide.channel_labels[0].property("selected"))
+        page.position_boxes[1].setCurrentText(" oz ")
+        self.assertEqual("CH2 · Oz", guide.channel_labels[1].text())
+        self.assertEqual(self.window.tr("device.channel_guide.Oz"), guide.descriptions[1].text())
+        page.position_boxes[1].setCurrentText("custom site")
+        self.assertIn("custom site", guide.descriptions[1].text())
+        page.position_boxes[1].setCurrentText("")
+        self.assertEqual(self.window.tr("device.channel_guide.unassigned_detail"), guide.descriptions[1].text())
+
+    def test_channel_guide_reflows_with_viewport_in_both_languages(self):
+        from PySide6.QtTest import QTest
+        from PySide6.QtWidgets import QLabel
+
+        self.window.navigate("devices")
+        self.window.show()
+        for locale, title in (("zh-CN", "通道解读"), ("en-US", "Channel guide")):
+            with self.subTest(locale=locale):
+                self.window.change_language(locale)
+                page = self.window.pages["devices"]
+                guide = page.channel_guide
+                signal_panel = page.calibration_signal.parentWidget()
+                map_panel = guide.parentWidget()
+                self.assertEqual(title, guide.findChild(QLabel, "sectionTitle").text())
+                for site in page.ELECTRODE_POSITIONS:
+                    key = f"device.channel_guide.{site}"
+                    self.assertIn(key, self.window.tr.catalogs[locale])
+                self.window.resize(1800, 1000)
+                QTest.qWait(20)
+                self.assertLess(page.head_map.geometry().right(), guide.geometry().left())
+                self.assertLess(map_panel.geometry().right(), signal_panel.geometry().left())
+                self.window.resize(1180, 850)
+                QTest.qWait(20)
+                self.assertLess(page.head_map.geometry().right(), guide.geometry().left())
+                self.assertLess(map_panel.geometry().bottom(), signal_panel.geometry().top())
+                self.window.resize(750, 850)
+                QTest.qWait(20)
+                self.assertLess(page.head_map.geometry().bottom(), guide.geometry().top())
+                self.assertLess(map_panel.geometry().bottom(), signal_panel.geometry().top())
+
     def test_device_page_has_one_test_action_per_channel(self):
         self.window.navigate("devices")
         page = self.window.pages["devices"]

@@ -13,12 +13,12 @@ import shutil
 import sys
 from typing import Any
 
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, QProcess, Signal, Qt, QUrl
+from PySide6.QtCore import QAbstractTableModel, QEvent, QModelIndex, QProcess, QTimer, Signal, Qt, QUrl
 from PySide6.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QLineEdit,
+    QApplication, QWidget, QBoxLayout, QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QLineEdit, QLabel,
     QSpinBox, QComboBox, QCheckBox, QFileDialog, QProgressBar, QStyle,
     QAbstractItemView, QHeaderView, QTableView, QTableWidget, QTableWidgetItem,
-    QDialog, QDialogButtonBox, QInputDialog, QMessageBox, QTextEdit, QPushButton, QMenu,
+    QDialog, QDialogButtonBox, QInputDialog, QMessageBox, QTextEdit, QPushButton, QMenu, QScrollArea,
 )
 from PySide6.QtGui import QDesktopServices
 
@@ -1170,6 +1170,68 @@ class HomePage(Page):
         self.device_status.setText(_device_connection_text(self.tr, device))
 
 
+class ChannelGuide(Section):
+    """Explain the scalp sites in the current calibration map."""
+
+    def __init__(self, tr):
+        super().__init__(tr("device.channel_guide.title"))
+        self.tr = tr
+        self.setMinimumWidth(310)
+        self.layout.setSpacing(8)
+        self.channel_labels: list[QLabel] = []
+        self.descriptions: list[QLabel] = []
+        self._selected: int | None = None
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(5)
+        grid.setColumnStretch(1, 1)
+        for index in range(len(CHANNEL_NAMES)):
+            channel = label("", "channelGuideChannel", wrap=False)
+            description = label("")
+            grid.addWidget(channel, index, 0, Qt.AlignmentFlag.AlignTop)
+            grid.addWidget(description, index, 1)
+            self.channel_labels.append(channel)
+            self.descriptions.append(description)
+        self.layout.addLayout(grid)
+        self.layout.addWidget(label(tr("device.channel_guide.note"), "muted"))
+        self.layout.addStretch()
+
+    def set_positions(self, positions: list[str]) -> None:
+        for index, (channel, description, position) in enumerate(
+            zip(self.channel_labels, self.descriptions, positions), start=1
+        ):
+            position = position.strip()
+            site = HeadElectrodeMap.canonical_site(position)
+            if site is not None:
+                site_label = site
+                text = self.tr(f"device.channel_guide.{site}")
+            elif is_confirmed_position(position):
+                site_label = self.tr("device.channel_guide.custom")
+                text = self.tr("device.channel_guide.unknown", position=position)
+            else:
+                site_label = self.tr("device.channel_guide.unassigned")
+                text = self.tr("device.channel_guide.unassigned_detail")
+            channel.setText(f"CH{index} · {site_label}")
+            description.setText(text)
+
+    def select_channel(self, index: int) -> None:
+        if index == self._selected or not 0 <= index < len(self.channel_labels):
+            return
+        for current in (self._selected, index):
+            if current is None:
+                continue
+            channel = self.channel_labels[current]
+            selected = current == index
+            channel.setProperty("selected", selected)
+            channel.setAccessibleDescription(
+                self.tr("device.calibration_selected_channel") if selected else ""
+            )
+            channel.style().unpolish(channel)
+            channel.style().polish(channel)
+            channel.update()
+        self._selected = index
+
+
 class DevicesPage(Page):
     DEFAULT_CHANNEL_POSITIONS = ("Fp1", "Fp2", "C3", "C4", "P7", "P8", "O1", "O2")
     DEFAULT_REFERENCE_POSITION = "ear_clip"
@@ -1233,14 +1295,23 @@ class DevicesPage(Page):
         port_form.addRow(tr("device.calibration_port"), self.calibration_port)
         calibration.layout.addLayout(port_form)
 
-        visual = Section(tr("device.calibration_visual_title"))
+        visual = self._calibration_visual = Section(tr("device.calibration_visual_title"))
         visual.layout.addWidget(label(tr("device.calibration_visual_note"), "muted"))
-        visual_row = QHBoxLayout()
+        self._calibration_visual_layout = QVBoxLayout()
+        self._calibration_visual_layout.setSpacing(12)
+        self._map_guide_panel = QWidget()
+        self._map_guide_layout = QVBoxLayout(self._map_guide_panel)
+        self._map_guide_layout.setContentsMargins(0, 0, 0, 0)
+        self._map_guide_layout.setSpacing(12)
         self.head_map = HeadElectrodeMap()
         self.head_map.set_hint_text(tr("device.calibration_map_hint"))
         self.head_map.position_clicked.connect(self._assign_map_position)
         self.head_map.channel_clicked.connect(self._select_calibration_channel)
-        visual_row.addWidget(self.head_map, 1)
+        self.head_map.setMaximumHeight(365)
+        self._map_guide_layout.addWidget(self.head_map, 1)
+        self.channel_guide = ChannelGuide(tr)
+        self._map_guide_layout.addWidget(self.channel_guide, 2)
+        self._calibration_visual_layout.addWidget(self._map_guide_panel, 3)
         signal_panel = QWidget()
         signal_layout = QVBoxLayout(signal_panel)
         signal_layout.setContentsMargins(0, 0, 0, 0)
@@ -1265,8 +1336,8 @@ class DevicesPage(Page):
         signal_layout.addWidget(self.calibration_test_toggle)
         self.calibration_signal_status = label(tr("device.calibration_signal_idle"), "muted")
         signal_layout.addWidget(self.calibration_signal_status)
-        visual_row.addWidget(signal_panel, 1)
-        visual.layout.addLayout(visual_row)
+        self._calibration_visual_layout.addWidget(signal_panel, 2)
+        visual.layout.addLayout(self._calibration_visual_layout)
         calibration.layout.addWidget(visual)
 
         self.calibration_table = QTableWidget(8, 5)
@@ -1321,7 +1392,8 @@ class DevicesPage(Page):
             self.calibration_table.setCellWidget(index, 4, test_button)
             self.calibration_table.setRowHeight(index, 38)
         calibration.layout.addWidget(self.calibration_table)
-        self._sync_head_map()
+        self._sync_channel_positions()
+        self._selected_channel_changed(self.calibration_channel_selector.currentIndex())
 
         auxiliary_form = QFormLayout()
         self.reference_position = self._editable_choice(
@@ -1387,6 +1459,48 @@ class DevicesPage(Page):
         if save_calibration is not None:
             self.calibration_save_requested.connect(save_calibration)
 
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        viewport = self.parentWidget()
+        if viewport is not None and isinstance(viewport.parentWidget(), QScrollArea):
+            viewport.installEventFilter(self)
+            self._arrange_calibration(viewport.width())
+        else:
+            self._arrange_calibration(self.width())
+
+    def eventFilter(self, watched, event) -> bool:
+        if watched is self.parentWidget() and event.type() == QEvent.Type.Resize:
+            # Let QScrollArea finish sizing its content before changing its layout.
+            QTimer.singleShot(0, self, self._arrange_for_viewport)
+        return super().eventFilter(watched, event)
+
+    def _arrange_for_viewport(self) -> None:
+        viewport = self.parentWidget()
+        if viewport is not None:
+            self._arrange_calibration(viewport.width())
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if self.parentWidget() is None:
+            self._arrange_calibration(event.size().width())
+
+    def _arrange_calibration(self, width: int) -> None:
+        horizontal = QBoxLayout.Direction.LeftToRight
+        vertical = QBoxLayout.Direction.TopToBottom
+        overview_direction = horizontal if width >= 1160 else vertical
+        map_direction = horizontal if width >= 780 else vertical
+        if (self._calibration_visual_layout.direction() == overview_direction
+                and self._map_guide_layout.direction() == map_direction):
+            return
+        self._map_guide_layout.setDirection(map_direction)
+        self._calibration_visual_layout.setDirection(overview_direction)
+        self._map_guide_panel.updateGeometry()
+        self._calibration_visual.updateGeometry()
+        viewport = self.parentWidget()
+        scroll_area = viewport.parentWidget() if viewport is not None else None
+        if isinstance(scroll_area, QScrollArea):
+            QApplication.postEvent(scroll_area, QEvent(QEvent.Type.LayoutRequest))
+
     def _test_channel(self, channel_index: int) -> None:
         self._select_calibration_channel(channel_index)
         self.calibration_test_requested.emit(channel_index)
@@ -1413,8 +1527,9 @@ class DevicesPage(Page):
     def _selected_channel_changed(self, index: int) -> None:
         index = int(index)
         self.head_map.set_selected_channel(index)
+        self.channel_guide.select_channel(index)
         position = ""
-        if hasattr(self, "position_boxes") and index < len(self.position_boxes):
+        if 0 <= index < len(self.position_boxes):
             position = self.position_boxes[index].currentText().strip()
         suffix = f" · {position}" if position else ""
         self.calibration_signal.set_channel(f"CH{index + 1}{suffix}")
@@ -1433,9 +1548,10 @@ class DevicesPage(Page):
             )
         )
 
-    def _sync_head_map(self) -> None:
-        if hasattr(self, "head_map"):
-            self.head_map.set_assignments([box.currentText() for box in self.position_boxes])
+    def _sync_channel_positions(self) -> None:
+        positions = [box.currentText() for box in self.position_boxes]
+        self.head_map.set_assignments(positions)
+        self.channel_guide.set_positions(positions)
 
     def append_channel_calibration_samples(self, payload: dict[str, Any]) -> None:
         if not isinstance(payload, dict):
@@ -1500,7 +1616,7 @@ class DevicesPage(Page):
             self._clear_channel_test(index)
 
     def _calibration_form_changed(self, *_args) -> None:
-        self._sync_head_map()
+        self._sync_channel_positions()
         self._selected_channel_changed(self.calibration_channel_selector.currentIndex())
 
     def _save_calibration(self) -> None:
