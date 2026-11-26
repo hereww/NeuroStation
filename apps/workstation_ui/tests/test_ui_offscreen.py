@@ -356,6 +356,8 @@ class QtOffscreenTests(unittest.TestCase):
         self.assertEqual(self.window.tr("device.channel_guide.unassigned_detail"), guide.descriptions[1].text())
 
     def test_channel_guide_reflows_with_viewport_in_both_languages(self):
+        from time import monotonic
+
         from PySide6.QtTest import QTest
         from PySide6.QtWidgets import QLabel
 
@@ -372,18 +374,37 @@ class QtOffscreenTests(unittest.TestCase):
                 for site in page.ELECTRODE_POSITIONS:
                     key = f"device.channel_guide.{site}"
                     self.assertIn(key, self.window.tr.catalogs[locale])
-                self.window.resize(1800, 1000)
-                QTest.qWait(20)
-                self.assertLess(page.head_map.geometry().right(), guide.geometry().left())
-                self.assertLess(map_panel.geometry().right(), signal_panel.geometry().left())
-                self.window.resize(1180, 850)
-                QTest.qWait(20)
-                self.assertLess(page.head_map.geometry().right(), guide.geometry().left())
-                self.assertLess(map_panel.geometry().bottom(), signal_panel.geometry().top())
-                self.window.resize(750, 850)
-                QTest.qWait(20)
-                self.assertLess(page.head_map.geometry().bottom(), guide.geometry().top())
-                self.assertLess(map_panel.geometry().bottom(), signal_panel.geometry().top())
+                def is_before(first, second, horizontal):
+                    a, b = first.geometry(), second.geometry()
+                    if not first.isVisible() or not second.isVisible() or a.isEmpty() or b.isEmpty():
+                        return False
+                    return a.right() < b.left() if horizontal else a.bottom() < b.top()
+
+                for width, height, map_horizontal, overview_horizontal in (
+                    (1800, 1000, True, True),
+                    (1180, 850, True, False),
+                    (750, 850, False, False),
+                    (1800, 1000, True, True),
+                ):
+                    with self.subTest(width=width):
+                        self.window.resize(width, height)
+                        # Resizing the viewport queues reflow and Qt's geometry update.
+                        # Wait for the geometry itself on slower offscreen runners.
+                        deadline = monotonic() + 2
+                        while monotonic() < deadline and not (
+                            is_before(page.head_map, guide, map_horizontal)
+                            and is_before(map_panel, signal_panel, overview_horizontal)
+                        ):
+                            QTest.qWait(10)
+                        viewport_width = self.window.screens["devices"].viewport().width()
+                        self.assertTrue(
+                            is_before(page.head_map, guide, map_horizontal),
+                            f"Viewport {viewport_width}: {page.head_map.geometry()} and {guide.geometry()}",
+                        )
+                        self.assertTrue(
+                            is_before(map_panel, signal_panel, overview_horizontal),
+                            f"Viewport {viewport_width}: {map_panel.geometry()} and {signal_panel.geometry()}",
+                        )
 
     def test_device_page_has_one_test_action_per_channel(self):
         self.window.navigate("devices")
