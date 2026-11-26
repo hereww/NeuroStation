@@ -17,7 +17,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from neurostation_contract import PRODUCT_VERSION, PRODUCT_SEMVER
+from neurostation_contract import PRODUCT_VERSION, PRODUCT_SEMVER, CONTINUOUS_SSVEP_METHOD
 
 
 def run(args, env):
@@ -38,6 +38,9 @@ def main():
     env = dict(os.environ, PYTHONUTF8="1", PYTHONDONTWRITEBYTECODE="1")
     for key in ("NEUROSTATION_RUNTIME_CONFIG", "NEUROSTATION_QUALITY_ROOT"):
         env.pop(key, None)
+    gpu_runtime = Path(sys.prefix) / "ssvep-directml"
+    if gpu_runtime.is_dir():
+        env['PYTHONPATH'] = os.pathsep.join(filter(None, (str(gpu_runtime), env.get('PYTHONPATH'))))
     # Do not resolve unrelated toolchain DLLs through inherited PATH.
     base = subprocess.check_output([sys.executable, "-c", "import sys; print(sys.base_prefix)"], text=True).strip()
     env["PATH"] = os.pathsep.join([str(Path(sys.executable).parent), base, os.environ["SystemRoot"] + "/System32", os.environ["SystemRoot"]])
@@ -53,6 +56,9 @@ def main():
             "--distpath", output / "dist", "--workpath", output / "work", "--specpath", output,
             "--paths", ROOT, "--hidden-import", "eeg_tools.quality.preview",
             "--collect-all", "brainflow", "--collect-data", "scipy"]
+    if gpu_runtime.is_dir():
+        args.extend(["--paths", gpu_runtime])
+    args.extend(["--collect-binaries", "onnxruntime"])
     for module in ("torch", "matplotlib", "pandas", "pytest", "tkinter", "IPython"):
         args.extend(["--exclude-module", module])
     for source, target in (("configs", "configs"), ("assets", "assets"),
@@ -75,6 +81,8 @@ def main():
     # No environment or user-path overrides in the installed launcher.
     (artifact / "Start-NeuroStation.cmd").write_text(
         '@echo off\r\nstart "" "%~dp0workstation.exe" %*\r\n', encoding="ascii")
+    (artifact / "Start-EEG-Processing.cmd").write_text(
+        '@echo off\nstart "" "%~dp0workstation.exe" --processing-page %*\n', encoding="ascii")
     manifest = {"source_commit": info, "source_files": sources,
                 "source_dirty": bool(subprocess.check_output(["git", "status", "--porcelain", "--untracked-files=no"], cwd=ROOT).strip()),
                 "version": PRODUCT_VERSION, "built_at": datetime.now(timezone.utc).isoformat(),
@@ -84,6 +92,12 @@ def main():
     run([sys.executable, "-B", ROOT / "scripts/verify_quality_package.py", "--artifact", artifact,
          "--entry-name", "workstation.exe", "--output", output / "verification"], env)
     run([sys.executable, "-B", ROOT / "scripts/smoke_packaged.py", artifact / "workstation.exe"], env)
+    gpu_env = {k: v for k, v in env.items() if k != 'PYTHONPATH'}
+    gpu_check = subprocess.run([str(artifact / 'workstation.exe'), '--ssvep-model', 'check', CONTINUOUS_SSVEP_METHOD],
+                               cwd=artifact, env=gpu_env, capture_output=True, timeout=90)
+    (output / 'verification/ssvep-gpu.json').write_bytes(gpu_check.stdout)
+    if gpu_check.returncode:
+        raise RuntimeError(f'Packaged GPU check failed: {gpu_check.stdout!r} {gpu_check.stderr!r}')
     changed = [p for p, digest in sources.items() if not (ROOT / p).is_file() or hashlib.sha256((ROOT / p).read_bytes()).hexdigest() != digest]
     if changed:
         raise RuntimeError(f"source changed during build: {changed}")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from array import array
 import csv
 from dataclasses import asdict
 from datetime import datetime
@@ -15,6 +16,7 @@ import sys
 import time
 from typing import Any, Callable
 
+from eeg_tools.workstation.dataset import detect_signal_types
 from eeg_tools.config import ConfigError, validate_channel_config
 from eeg_tools.session_files import (
     format_raw_number,
@@ -30,6 +32,7 @@ from neurostation_contract import (
     PRODUCT_DESCRIPTION,
     PRODUCT_NAME,
     PRODUCT_SEMVER,
+    CONTINUOUS_SSVEP_METHOD,
     PRODUCT_VERSION,
     RELEASE_DATE,
     dataset_name_for_condition,
@@ -884,6 +887,46 @@ def _frame_timing_summary(
     return summary
 
 
+class _ChannelTotals:
+    """Exact session aggregates across blocks, retaining only one EEG value per channel."""
+    def __init__(self):
+        self.samples = self.finite = self.flat = 0
+        self.sum_squares = 0.0
+        self.last = None
+
+    def add(self, values):
+        import numpy as np
+
+        self.samples += len(values)
+        finite = values[np.isfinite(values)]
+        if len(finite):
+            if self.last is not None:
+                self.flat += int(abs(finite[0] - self.last) < 1e-9)
+            self.flat += int(np.count_nonzero(np.abs(np.diff(finite)) < 1e-9))
+            self.sum_squares += float(np.square(finite).sum())
+            self.finite += len(finite)
+            self.last = finite[-1]
+
+    def summary(self):
+        return {"finite_fraction": self.finite / self.samples if self.samples else 0.0,
+                "flat_fraction": self.flat / (self.finite - 1) if self.finite > 1 else 1.0,
+                "rms": math.sqrt(self.sum_squares / self.finite) if self.finite else None}
+
+
+class _SessionTiming:
+    """Keep device time and marker rows for event alignment without retaining EEG."""
+    def __init__(self, eeg_rows, marker_row, timestamp_row):
+        self.eeg_rows, self.marker_row, self.timestamp_row = eeg_rows, marker_row, timestamp_row
+        self.channels = [_ChannelTotals() for _ in eeg_rows]
+        self.markers, self.timestamps = array('d'), array('d')
+
+    def add(self, block):
+        self.markers.frombytes(block[self.marker_row].tobytes())
+        self.timestamps.frombytes(block[self.timestamp_row].tobytes())
+        for stats, row in zip(self.channels, self.eeg_rows):
+            stats.add(block[row])
+
+
 def _build_quality_report(
     *,
     raw_data: Any,
@@ -891,6 +934,7 @@ def _build_quality_report(
     frame_rows: list[dict[str, Any]],
     recording_status: str,
     error: str | None,
+    timing: _SessionTiming | None = None,
 ) -> dict[str, Any]:
     """Summarize acquisition integrity without altering the raw stream."""
 
@@ -923,6 +967,9 @@ def _build_quality_report(
         if sample_count and raw_data.shape[0] > timestamp_channel
         else np.empty(0)
     )
+    if timing is not None:
+        sample_count = len(timing.timestamps)
+        timestamp_values = np.asarray(timing.timestamps)
     finite_timestamps = timestamp_values[np.isfinite(timestamp_values)]
     timestamp_diffs = np.diff(finite_timestamps)
     positive_diffs = timestamp_diffs[timestamp_diffs > 0]
@@ -933,23 +980,13 @@ def _build_quality_report(
     )
     per_channel: dict[str, dict[str, float | None]] = {}
     for channel_number, channel_index in enumerate(eeg_channels, start=1):
-        if sample_count and channel_index < raw_data.shape[0]:
-            values = raw_data[channel_index, :]
-            finite = values[np.isfinite(values)]
-            differences = np.diff(finite)
-            per_channel[f"CH{channel_number}"] = {
-                "finite_fraction": float(np.mean(np.isfinite(values))),
-                "flat_fraction": float(np.mean(np.abs(differences) < 1e-9))
-                if len(differences)
-                else 1.0,
-                "rms": float(np.sqrt(np.mean(np.square(finite)))) if len(finite) else None,
-            }
+        if timing is not None:
+            stats = timing.channels[channel_number - 1]
         else:
-            per_channel[f"CH{channel_number}"] = {
-                "finite_fraction": 0.0,
-                "flat_fraction": 1.0,
-                "rms": None,
-            }
+            stats = _ChannelTotals()
+            if sample_count and channel_index < raw_data.shape[0]:
+                stats.add(raw_data[channel_index, :])
+        per_channel[f"CH{channel_number}"] = stats.summary()
     dropped_frames = sum(int(row.get("dropped_since_previous", 0)) for row in frame_rows)
     return {
         "schema_version": 1,
@@ -974,28 +1011,11 @@ def _build_quality_report(
 
 
 def _annotate_event_samples(
-    events: list[dict[str, Any]], raw_data: Any, board_id: int | None
+    events: list[dict[str, Any]], marker_values, timestamps
 ) -> None:
     """Attach the first matching marker sample and device time to each event."""
-
-    if board_id is None or getattr(raw_data, "ndim", 0) != 2 or raw_data.size == 0:
-        return
     import numpy as np
-    from brainflow.board_shim import BoardShim
 
-    try:
-        marker_channel = int(BoardShim.get_marker_channel(board_id))
-        timestamp_channel = int(BoardShim.get_timestamp_channel(board_id))
-    except Exception:
-        return
-    if marker_channel >= raw_data.shape[0]:
-        return
-    marker_values = raw_data[marker_channel, :]
-    timestamps = (
-        raw_data[timestamp_channel, :]
-        if timestamp_channel < raw_data.shape[0]
-        else np.full(raw_data.shape[1], np.nan)
-    )
     used_by_marker: dict[int, int] = {}
     session_start_time: float | None = None
     for event in events:
@@ -1099,12 +1119,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--status-file", type=Path)
     parser.add_argument("--cancel-file", type=Path)
     parser.add_argument("--preflight-file", type=Path)
+    parser.add_argument("--no-raw-eeg", dest="save_raw_eeg", action="store_false",
+                        help="Save real-time results without raw waveform files")
+    parser.add_argument("--continuous-ssvep", action="store_true")
+    parser.add_argument("--realtime-model-id", default=CONTINUOUS_SSVEP_METHOD)
+    parser.add_argument("--continuous-ssvep-model", type=Path, help="Personal frozen_models.json from replay")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     arguments = parser.parse_args(argv)
+    if not (arguments.save_raw_eeg or arguments.continuous_ssvep):
+        parser.error("Select raw EEG or continuous SSVEP results")
     if arguments.countdown_seconds is not None and arguments.countdown_seconds < 0:
         parser.error("--countdown-seconds must be non-negative")
     if not arguments.headless and not arguments.acknowledge_flicker_risk:
@@ -1125,6 +1152,22 @@ def main(argv: list[str] | None = None) -> int:
         )
     except SSVEPProtocolError as error:
         parser.error(str(error))
+    live_gate = None
+    live_detector = None
+    live_consumer = None
+    prepared_model = None
+    if arguments.continuous_ssvep_model and not arguments.continuous_ssvep:
+        parser.error("--continuous-ssvep-model requires --continuous-ssvep")
+    if arguments.continuous_ssvep:
+        from eeg_tools.live_ssvep import FREQUENCIES, Gate, LiveSSVEP, load_personal_gate
+        if sorted(f for _, f in protocol.targets) != list(FREQUENCIES):
+            parser.error("Continuous SSVEP requires the 10/12/15/20 Hz protocol")
+        try:
+            if arguments.continuous_ssvep_model and arguments.realtime_model_id != CONTINUOUS_SSVEP_METHOD:
+                raise ValueError('Personal CCA calibration requires Continuous CCA v3')
+            live_gate = load_personal_gate(arguments.continuous_ssvep_model, arguments.participant) if arguments.continuous_ssvep_model else Gate()
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            parser.error(str(error))
     protocol_source = json.loads(arguments.protocol.read_text(encoding="utf-8"))
     preflight_report: dict[str, Any] | None = None
     if arguments.preflight_file is not None and arguments.preflight_file.is_file():
@@ -1195,6 +1238,7 @@ def main(argv: list[str] | None = None) -> int:
     live_waveform_writer: _LiveWaveformWriter | None = None
     capture_owner = recorder = raw_handle = quality_sink = quality_consumer = None
     column_definitions = None
+    timing = None
     completed_trials = 0
     status = "error"
     error_message: str | None = None
@@ -1326,6 +1370,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         emit("preparing")
+        if live_gate is not None:
+            from eeg_tools.ssvep_gpu import load_detector
+            prepared_model = load_detector(arguments.realtime_model_id, live_gate)
         board, selected_port, _port_failures = _prepare_cyton_board(
             board_id, params, arguments.port
         )
@@ -1410,7 +1457,7 @@ def main(argv: list[str] | None = None) -> int:
         if board is not None:
             board.start_stream()
             streaming = True
-            if live_waveform_path is not None:
+            if arguments.save_raw_eeg and live_waveform_path is not None:
                 live_waveform_writer = _LiveWaveformWriter(
                     live_waveform_path, board, int(board_id)
                 )
@@ -1418,11 +1465,17 @@ def main(argv: list[str] | None = None) -> int:
             from eeg_tools.session_files import brainflow_column_definitions
             eeg_rows = tuple(BoardShim.get_eeg_channels(board_id))
             column_definitions = brainflow_column_definitions(int(board_id), int(BoardShim.get_num_rows(board_id)), sampling_rate_hz=int(BoardShim.get_sampling_rate(board_id)))
-            raw_handle = (session_dir / "raw_brainflow.tsv").open("x", encoding="utf-8", newline="")
-            raw_writer = csv.writer(raw_handle, delimiter="\t", lineterminator="\n")
-            raw_writer.writerow([row["column_name"] for row in column_definitions])
-            raw_handle.flush()
-            recorder = BlockRecorder(session_dir / "raw_blocks", session_id=session_id,
+            raw_writer = None
+            if arguments.save_raw_eeg:
+                raw_handle = (session_dir / "raw_brainflow.tsv").open("x", encoding="utf-8", newline="")
+                raw_writer = csv.writer(raw_handle, delimiter="\t", lineterminator="\n")
+                raw_writer.writerow([row["column_name"] for row in column_definitions])
+                raw_handle.flush()
+            else:
+                timing = _SessionTiming(eeg_rows, BoardShim.get_marker_channel(board_id),
+                                        BoardShim.get_timestamp_channel(board_id))
+            block_dir = "raw_blocks" if arguments.save_raw_eeg else "signal_processing"
+            recorder = BlockRecorder(session_dir / block_dir, session_id=session_id, retain_raw=arguments.save_raw_eeg,
                                      channel_names=[str(c.get("electrode_position") or c["name"]) for c in (channel_config or {}).get("channels", [])] or [f"eeg_ch{i+1}" for i in range(len(eeg_rows))],
                                      eeg_rows=eeg_rows, package_row=int(BoardShim.get_package_num_channel(board_id)),
                                      timestamp_row=int(BoardShim.get_timestamp_channel(board_id)),
@@ -1432,9 +1485,17 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 quality_sink = QualitySink(recorder.directory, eeg_rows, recorder.channels,
                                            sample_rate=int(BoardShim.get_sampling_rate(board_id)),
+                                           include_waveform=arguments.save_raw_eeg,
                                            live_path=status_file.parent / "quality-live.json" if status_file else None)
             except Exception as quality_error:
                 recorder.consumer_errors.append({"error": str(quality_error), "phase": "quality_initialize"})
+            if live_gate is not None:
+                if recorder.sample_rate != 250 or len(eeg_rows) != 8:
+                    raise ValueError("Continuous SSVEP requires eight native 250 Hz channels")
+                live_detector = LiveSSVEP(session_dir, eeg_rows, recorder.package_row, recorder.timestamp_row,
+                                          live_gate, status_file.parent / "ssvep-live.json" if status_file else None,
+                                          prepared=prepared_model)
+
             def consume_block(data, record):
                 error = None
                 if quality_sink is not None:
@@ -1449,7 +1510,17 @@ def main(argv: list[str] | None = None) -> int:
                 if quality_sink is None:
                     raise RuntimeError("quality unavailable; raw recording continues")
             quality_consumer = AsyncConsumer(recorder, consume_block)
-            capture_owner = AcquisitionOwner(board, recorder, quality_consumer)
+            if live_detector is not None:
+                live_consumer = AsyncConsumer(recorder, live_detector.consume, max_pending=64, purpose="ssvep")
+
+            def dispatch(data, record):
+                if timing is not None:
+                    timing.add(data)
+                if live_consumer is not None:
+                    live_consumer(data, record)
+                return quality_consumer(data, record)
+
+            capture_owner = AcquisitionOwner(board, recorder, dispatch)
             capture_owner.start()
             acquisition_started = time.perf_counter()
             add_event(
@@ -1647,6 +1718,9 @@ def main(argv: list[str] | None = None) -> int:
             # Never close or read files while the sole capture owner can still write.
             raise RuntimeError("Capture owner remains active; recording requires offline recovery")
         quality_stopped = quality_consumer is None or quality_consumer.close()
+        live_stopped = live_consumer is None or live_consumer.close(timeout=10)
+        if live_detector is not None and live_stopped:
+            live_detector.file.close()
         if live_waveform_writer is not None and quality_stopped:
             live_waveform_writer.close()
         if recorder is not None:
@@ -1657,26 +1731,46 @@ def main(argv: list[str] | None = None) -> int:
                     except Exception as quality_error:
                         recorder.consumer_errors.append({"error": str(quality_error), "phase": "quality_close"})
                 recorder.close("completed" if status == "completed" else status, quality_complete=quality_stopped)
-                from eeg_tools.streaming import materialize_verified
-                raw_data = materialize_verified(recorder.directory)
+                if arguments.save_raw_eeg:
+                    from eeg_tools.streaming import materialize_verified
+                    raw_data = materialize_verified(recorder.directory)
             except Exception as exc:
                 error_message = f"recording_seal: {exc}"
                 status, exit_code = "error", 1
         if raw_handle is not None:
             raw_handle.close()
 
-    _annotate_event_samples(events, raw_data, board_id)
     raw_path = session_dir / "raw_brainflow.tsv"
     sample_rate_hz = 0 if board_id is None else int(BoardShim.get_sampling_rate(board_id))
-    if column_definitions is None:
-        column_definitions = write_brainflow_tsv(raw_path, raw_data, board_id, sampling_rate_hz=sample_rate_hz)
-    if raw_data.size and board_id is not None:
-        from eeg_tools.quality.events import associate_events
-        write_json(session_dir / "event_associations_v2.json", associate_events(
-            events, raw_data[int(BoardShim.get_marker_channel(board_id))],
-            raw_data[int(BoardShim.get_timestamp_channel(board_id))]))
     columns_path = session_dir / "raw_columns.tsv"
-    write_column_definitions(columns_path, column_definitions)
+    if arguments.save_raw_eeg:
+        if column_definitions is None:
+            column_definitions = write_brainflow_tsv(raw_path, raw_data, board_id, sampling_rate_hz=sample_rate_hz)
+        write_column_definitions(columns_path, column_definitions)
+    markers = timestamps = None
+    if timing is not None:
+        markers, timestamps = np.asarray(timing.markers), np.asarray(timing.timestamps)
+    elif raw_data.size and board_id is not None:
+        markers = raw_data[int(BoardShim.get_marker_channel(board_id))]
+        timestamps = raw_data[int(BoardShim.get_timestamp_channel(board_id))]
+    associations_path = session_dir / "event_associations_v2.json"
+    if markers is not None and len(markers):
+        from eeg_tools.quality.events import associate_events
+        _annotate_event_samples(events, markers, timestamps)
+        write_json(associations_path, associate_events(events, markers, timestamps))
+    sample_count = len(timing.timestamps) if timing is not None else int(raw_data.shape[1])
+    live_metadata = None
+    if live_detector is not None:
+        live_metadata = (live_detector.metadata(sample_count) if live_stopped
+                         else {"complete": False, "error": "ssvep_shutdown_timeout", "model": live_detector.model})
+        if live_consumer is not None:
+            queue_status = live_consumer.status
+            live_metadata["processing_queue"] = queue_status
+            if queue_status["dropped"] or queue_status["completed"] != queue_status["submitted"]:
+                live_metadata["complete"] = False
+    if live_metadata and not live_metadata["complete"] and status == "completed":
+        error_message = "Incomplete real-time SSVEP output. See continuous_ssvep in session.json."
+        status, exit_code = "error", 1
     events_path = session_dir / "events.tsv"
     write_events(events_path, events)
     frames_path = session_dir / "frame_timing.tsv"
@@ -1717,7 +1811,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     quality_path = session_dir / "quality.json"
     quality_report = _build_quality_report(
-        raw_data=raw_data,
+        raw_data=raw_data, timing=timing,
         board_id=board_id,
         frame_rows=frame_rows,
         recording_status=status,
@@ -1731,9 +1825,9 @@ def main(argv: list[str] | None = None) -> int:
     quality_report["graphics"] = display_metadata.get("rendering", {})
     write_json(quality_path, quality_report)
     output_files = [
-        raw_path,
-        columns_path,
+        *([raw_path, columns_path] if arguments.save_raw_eeg else []),
         events_path,
+        *([associations_path] if associations_path.is_file() else []),
         frames_path,
         protocol_path,
         source_config_path,
@@ -1744,7 +1838,6 @@ def main(argv: list[str] | None = None) -> int:
         write_json(channels_path, channel_config)
         output_files.append(channels_path)
 
-    sample_count = int(raw_data.shape[1]) if raw_data.ndim == 2 else 0
     acquisition_duration = (
         max(0.0, time.perf_counter() - acquisition_started)
         if acquisition_started is not None
@@ -1788,6 +1881,11 @@ def main(argv: list[str] | None = None) -> int:
         "completed_trials": completed_trials,
         "trial_count": protocol.trial_count,
         "recorded_samples_per_channel": sample_count,
+        "save_raw_eeg": arguments.save_raw_eeg,
+        "requested_continuous_ssvep": arguments.continuous_ssvep,
+        "requested_realtime_model_id": arguments.realtime_model_id if arguments.continuous_ssvep else None,
+        "realtime_model": prepared_model[1] if prepared_model is not None else None,
+        "signal_types": detect_signal_types(session_dir, {}),
         "event_count": len(events),
         "frame_count": len(frame_rows),
         "simulated": False,
@@ -1810,9 +1908,13 @@ def main(argv: list[str] | None = None) -> int:
             "description": PRODUCT_DESCRIPTION,
         },
     }
-    if recorder is not None:
+    if recorder is not None and arguments.save_raw_eeg and (recorder.directory / "seal.json").is_file():
         session_value["raw_blocks_v2"] = {"path": "raw_blocks", "journal_sha256": sha256(recorder.directory / "blocks.jsonl"),
                                          "seal_sha256": sha256(recorder.directory / "seal.json"), "watermarks": recorder.watermarks}
+    if live_detector is not None:
+        session_value["continuous_ssvep"] = live_metadata
+        if live_stopped:
+            output_files.append(live_detector.path)
     write_json(session_path, session_value)
     output_files.append(session_path)
     if preflight_report is not None:

@@ -133,7 +133,11 @@ class OpenBCIImportUiTests(unittest.TestCase):
             file_table = window.pages["result"].findChild(QTableWidget, "datasetFilesTable")
             self.assertIsNotNone(session_table)
             self.assertIsNotNone(file_table)
-            self.assertEqual(16, session_table.rowCount())
+            session_fields = {
+                session_table.item(row, 0).text(): session_table.item(row, 1).text()
+                for row in range(session_table.rowCount())
+            }
+            self.assertEqual("原始脑电", session_fields["信号类型"])
             denoising_table = window.pages["result"].findChild(QTableWidget, "denoisingMetricsTable")
             self.assertIsNotNone(denoising_table)
             self.assertEqual(3, denoising_table.rowCount())

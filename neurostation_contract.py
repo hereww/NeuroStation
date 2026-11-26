@@ -16,6 +16,7 @@ from typing import Any
 PRODUCT_NAME = "NeuroStation"
 PRODUCT_VERSION = "1.07"
 PRODUCT_SEMVER = "1.0.7"
+CONTINUOUS_SSVEP_METHOD = "continuous_cca_coherent_v3"
 PRODUCT_DESCRIPTION = (
     "Windows-first EEG acquisition workstation for OpenBCI Cyton SSVEP capture, "
     "session metadata, quality reports, and dataset review."
@@ -255,8 +256,14 @@ class CaptureConfig:
     channel_config: Path | None = None
     allow_draft_hardware_config: bool = False
     stimulus_condition: StimulusCondition | str = ""
+    continuous_ssvep: bool = False
+    continuous_ssvep_model: Path | None = None
+    save_raw_eeg: bool = True
+    realtime_model_id: str = CONTINUOUS_SSVEP_METHOD
 
     def validate(self) -> None:
+        if not (self.save_raw_eeg or self.continuous_ssvep):
+            raise ValueError("validation.signal_outputs")
         if not self.participant.strip() or not self.name.strip():
             raise ValueError("validation.identity")
         for value, low, high in (
@@ -377,6 +384,7 @@ class Dataset:
     flat_channel_count: int = 0
     deleted_at: str = ""
     stimulus_condition: str = ""
+    signal_types: tuple[str, ...] = ()
 
     @property
     def sample_values(self) -> int:

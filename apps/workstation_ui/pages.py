@@ -37,6 +37,9 @@ from .components import (
 )
 from .gateway import CaptureConfig, CaptureMode, TaskSnapshot, Phase, Dataset, format_duration
 from .v9_offline import V9OfflinePanel
+from .ssvep_models import populate_models
+from neurostation_models import BUILTIN
+from .ssvep_replay import ReplayPanel
 from neurostation_contract import (
     GENDERS,
     MEDICAL_OPTIONS,
@@ -1844,6 +1847,7 @@ class AppsPage(Page):
         grid.setSpacing(18)
         entries = [
             ("apps.ssvep", "apps.ssvep_note", QStyle.StandardPixmap.SP_ComputerIcon, lambda: navigate("ssvep")),
+            ("nav.processing", "ssvep.processing_note", QStyle.StandardPixmap.SP_FileDialogDetailedView, lambda: navigate("processing")),
             ("apps.rest", "apps.rest_note", QStyle.StandardPixmap.SP_MediaPlay, None),
             ("apps.motor", "apps.soon", QStyle.StandardPixmap.SP_DialogApplyButton, None),
             ("apps.p300", "apps.soon", QStyle.StandardPixmap.SP_MediaVolume, None),
@@ -1963,6 +1967,30 @@ class SSVEPPage(Page):
             form.addRow(tr(key), widget)
         form.addRow(label(tr("ssvep.step_device"), "sectionTitle"), QWidget())
         form.addRow("", self.channel_manual)
+        self.save_raw = QCheckBox(tr("signals.raw_eeg"))
+        self.save_raw.setChecked(config.save_raw_eeg)
+        self.continuous = QCheckBox(tr("ssvep.continuous"))
+        self.continuous.setChecked(config.continuous_ssvep)
+        self.realtime_model = QComboBox()
+        populate_models(self.realtime_model, config.realtime_model_id)
+        self.continuous.toggled.connect(self.realtime_model.setEnabled)
+        self.realtime_model.setEnabled(self.continuous.isChecked())
+        self.continuous_model = QLineEdit(str(config.continuous_ssvep_model or ""))
+        self.continuous_model.setPlaceholderText(tr("ssvep.continuous_default"))
+        model_picker = QWidget()
+        model_layout = QHBoxLayout(model_picker)
+        model_layout.setContentsMargins(0, 0, 0, 0)
+        model_layout.addWidget(self.continuous_model, 1)
+        model_layout.addWidget(action(tr("action.browse"), self._choose_continuous_model))
+        self.gate_picker = model_picker
+        self.continuous.toggled.connect(self._update_gate_picker)
+        self.realtime_model.currentIndexChanged.connect(self._update_gate_picker)
+        self._update_gate_picker()
+        form.addRow(tr("signals.outputs"), self.save_raw)
+        form.addRow("", self.continuous)
+        form.addRow("", label(tr("signals.hint"), "muted"))
+        form.addRow(tr("models.live_model"), self.realtime_model)
+        form.addRow(tr("ssvep.personal_gate"), model_picker)
         form.addRow("", self.acknowledge)
         form.addRow("", self.allow_draft)
         section.layout.addWidget(label(tr("ssvep.step_protocol"), "sectionTitle"))
@@ -2037,7 +2065,13 @@ class SSVEPPage(Page):
             stimulus_condition=str(self.eye_side.currentData() or ""),
             acknowledge_flicker_risk=self.acknowledge.isChecked(),
             channel_config=Path(channel_config).expanduser() if channel_config else None,
-            allow_draft_hardware_config=self.allow_draft.isChecked())
+            allow_draft_hardware_config=self.allow_draft.isChecked(),
+            save_raw_eeg=self.save_raw.isChecked(),
+            continuous_ssvep=self.continuous.isChecked(),
+            realtime_model_id=self.realtime_model.currentData(),
+            continuous_ssvep_model=(Path(self.continuous_model.text().strip())
+                                    if self.continuous.isChecked() and self.realtime_model.currentData() == BUILTIN
+                                    and self.continuous_model.text().strip() else None))
 
     def set_users(self, users, selected_id: str = ""):
         if not selected_id:
@@ -2107,6 +2141,18 @@ class SSVEPPage(Page):
         path = QFileDialog.getExistingDirectory(self, self.tr("field.save"), self.save.text())
         if path:
             self.save.setText(path)
+
+    def refresh_realtime_models(self, selected):
+        populate_models(self.realtime_model, selected)
+        self._update_gate_picker()
+
+    def _update_gate_picker(self):
+        self.gate_picker.setEnabled(self.continuous.isChecked() and self.realtime_model.currentData() == BUILTIN)
+
+    def _choose_continuous_model(self):
+        path, _ = QFileDialog.getOpenFileName(self, self.tr("ssvep.personal_gate"), self.continuous_model.text(), "JSON (*.json)")
+        if path:
+            self.continuous_model.setText(path)
 
     def _choose_channel_config(self):
         path, _selected = QFileDialog.getOpenFileName(
@@ -2197,6 +2243,9 @@ class TaskPage(Page):
         self.layout.addLayout(task_actions)
         self.monitor_notice = label(tr("monitor.no_screen"), "muted")
         self.layout.addWidget(self.monitor_notice)
+        self.ssvep_prediction = label("", "notice")
+        self.ssvep_prediction.hide()
+        self.layout.addWidget(self.ssvep_prediction)
         self.quality_notice = label("", "notice")
         self.quality_notice.setVisible(False)
         self.layout.addWidget(self.quality_notice)
@@ -2247,6 +2296,7 @@ class TaskPage(Page):
             stimulus_condition_value(config)
         )
         countdown = snapshot.phase == Phase.COUNTDOWN
+        self.ssvep_prediction.setVisible(snapshot.active and config.continuous_ssvep)
         self.waveform.set_active(snapshot.active and config.mode is CaptureMode.CYTON)
         self.title_label.setText("SSVEP · "+self.tr("task.preparing" if countdown else "task.running"))
         self.countdown_section.setVisible(countdown)
@@ -2291,7 +2341,7 @@ class TaskPage(Page):
 
 
 class ResultPage(Page):
-    def __init__(self, tr, result: Dataset, navigate, offline_controller=None, quality_callback=None):
+    def __init__(self, tr, result: Dataset, navigate, offline_controller=None, quality_callback=None, replay_controller=None):
         title_key = {
             "completed": "result.title",
             "aborted": "result.aborted_title",
@@ -2352,8 +2402,11 @@ class ResultPage(Page):
         self.v9_panel = V9OfflinePanel(
             tr, result.path, offline_controller,
             native=(not result.imported and not result.simulated
-                    and result.source == CaptureMode.CYTON and not result.deleted_at),
+                    and result.source == CaptureMode.CYTON and not result.deleted_at
+                    and result.signal_types != ("realtime_ssvep",)),
         )
+        if replay_controller is not None and self.v9_panel.native:
+            self.layout.addWidget(ReplayPanel(tr, result.path, replay_controller))
         self.layout.addWidget(self.v9_panel)
         denoising = _denoising_section(tr, result)
         if denoising is not None:
@@ -2374,8 +2427,12 @@ class ResultPage(Page):
         self.layout.addStretch()
 
 
+def _signal_type_text(tr, dataset: Dataset) -> str:
+    return " · ".join(tr("signals." + key) for key in dataset.signal_types) or tr("signals.empty")
+
+
 class DatasetSummaryPage(Page):
-    def __init__(self, tr, result: Dataset, navigate, offline_controller=None, quality_callback=None):
+    def __init__(self, tr, result: Dataset, navigate, offline_controller=None, quality_callback=None, replay_controller=None):
         super().__init__(tr, tr("dataset_summary.title"), result.name)
         self._result_path = result.path
         if quality_callback is not None:
@@ -2398,6 +2455,7 @@ class DatasetSummaryPage(Page):
             (tr("field.eye_side"), tr("eye." + stimulus_condition_value(result)) if stimulus_condition_value(result) in {c.value for c in StimulusCondition} else tr("dataset_summary.unlabeled")),
             (tr("field.screen"), " · ".join(item for item in (str(result.screen_index), result.screen_name) if item) if result.screen_index is not None else tr("dataset_summary.unlabeled")),
             (tr("dataset_summary.source"), source_name),
+            (tr("signals.type"), _signal_type_text(tr, result)),
             (tr("field.participant"), result.participant or tr("dataset_summary.unlabeled")),
             (tr("dataset_summary.markers"), tr("dataset_summary.no_markers") if result.imported else str(result.event_count)),
             (tr("result.channels"), str(result.channel_count)),
@@ -2441,8 +2499,11 @@ class DatasetSummaryPage(Page):
         self.v9_panel = V9OfflinePanel(
             tr, result.path, offline_controller,
             native=(not result.imported and not result.simulated
-                    and result.source == CaptureMode.CYTON and not result.deleted_at),
+                    and result.source == CaptureMode.CYTON and not result.deleted_at
+                    and result.signal_types != ("realtime_ssvep",)),
         )
+        if replay_controller is not None and self.v9_panel.native:
+            self.layout.addWidget(ReplayPanel(tr, result.path, replay_controller))
         self.layout.addWidget(self.v9_panel)
         denoising = _denoising_section(tr, result)
         if denoising is not None:
@@ -2519,11 +2580,11 @@ class DatasetSummaryPage(Page):
 
 
 class _DatasetCollectionPage(Page):
-    filter_changed = Signal(str, str, str)
+    filter_changed = Signal(str, str, str, str)
 
     def __init__(self, tr, title: str, subtitle: str, datasets: tuple[Dataset, ...],
                  latest: str | None, show_result, navigate, *, trashed: bool = False,
-                 search_text: str = "", source_value: str = "", status_value: str = "",
+                 search_text: str = "", source_value: str = "", status_value: str = "", signal_value: str = "",
                  status_text: str = "", callbacks: dict[str, Any] | None = None):
         super().__init__(tr, title, subtitle)
         self._callbacks = callbacks or {}
@@ -2561,6 +2622,12 @@ class _DatasetCollectionPage(Page):
             self.status_filter.setCurrentIndex(status_index)
         self.status_filter.currentIndexChanged.connect(self._apply_filters)
         filters.addWidget(self.status_filter, 1)
+        self.signal_filter = QComboBox()
+        for key in ("all", "raw_eeg", "realtime_ssvep", "both"):
+            self.signal_filter.addItem(tr("signals." + key), "" if key == "all" else key)
+        self.signal_filter.setCurrentIndex(max(0, self.signal_filter.findData(signal_value)))
+        self.signal_filter.currentIndexChanged.connect(self._apply_filters)
+        filters.addWidget(self.signal_filter, 1)
         self.layout.addLayout(filters)
         self.status = label(status_text, "muted")
         self.status.setVisible(bool(status_text))
@@ -2614,8 +2681,15 @@ class _DatasetCollectionPage(Page):
                 self._records_widgets.append(item)
 
     def _matches(self, dataset: Dataset, query: str, source: str, status: str) -> bool:
+        selected = self.signal_filter.currentData()
+        if selected == "both":
+            if not {"raw_eeg", "realtime_ssvep"}.issubset(dataset.signal_types):
+                return False
+        elif selected and selected not in dataset.signal_types:
+            return False
         haystack = " ".join(
             (
+                _signal_type_text(self.tr, dataset),
                 dataset.id,
                 dataset.name,
                 dataset.participant,
@@ -2647,6 +2721,7 @@ class _DatasetCollectionPage(Page):
         summary.addWidget(label(source_label, "muted"))
         summary.addWidget(label("·", "muted"))
         summary.addWidget(label(status_label, "muted"))
+        summary.addWidget(label(_signal_type_text(self.tr, dataset), "muted"))
         summary.addStretch()
         item.layout.addLayout(summary)
 
@@ -2811,6 +2886,7 @@ class _DatasetCollectionPage(Page):
             self.search.text(),
             str(self.source_filter.currentData() or ""),
             str(self.status_filter.currentData() or ""),
+            str(self.signal_filter.currentData() or ""),
         )
         self._render_records()
 
@@ -2827,14 +2903,14 @@ class DatasetsPage(_DatasetCollectionPage):
 
     def __init__(self, tr, datasets: tuple[Dataset, ...], latest: str | None, show_result, navigate,
                  import_busy: bool = False, import_status: str = "", import_directory: str = "",
-                 search_text: str = "", source_value: str = "", status_value: str = "",
+                 search_text: str = "", source_value: str = "", status_value: str = "", signal_value: str = "",
                  callbacks: dict[str, Any] | None = None):
         self._import_busy = import_busy
         self.import_directory = import_directory
         super().__init__(
             tr, tr("app.datasets"), tr("datasets.subtitle"), datasets, latest,
             show_result, navigate, search_text=search_text, source_value=source_value,
-            status_value=status_value, status_text=import_status, callbacks=callbacks,
+            signal_value=signal_value, status_value=status_value, status_text=import_status, callbacks=callbacks,
         )
 
     def _build_header_controls(self, controls: QHBoxLayout):
@@ -2847,12 +2923,12 @@ class DatasetsPage(_DatasetCollectionPage):
 
 class DatasetTrashPage(_DatasetCollectionPage):
     def __init__(self, tr, datasets: tuple[Dataset, ...], navigate,
-                 search_text: str = "", source_value: str = "", status_value: str = "",
+                 search_text: str = "", source_value: str = "", status_value: str = "", signal_value: str = "",
                  callbacks: dict[str, Any] | None = None):
         super().__init__(
             tr, tr("datasets.trash"), tr("datasets.trash_subtitle"), datasets, None,
             None, navigate, trashed=True, search_text=search_text, source_value=source_value,
-            status_value=status_value, callbacks=callbacks,
+            signal_value=signal_value, status_value=status_value, callbacks=callbacks,
         )
         self.setObjectName("datasetTrashPage")
 

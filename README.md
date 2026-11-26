@@ -80,6 +80,22 @@ Windows 包是可直接解压运行的目录，不是 MSI 安装器，也不包�
 
 ## 快速启动
 
+### 工作台内的 SSVEP 脑电处理
+
+在工作台左侧选择 **脑电处理**，也可以通过 Windows 包的 `Start-EEG-Processing.cmd` 或源码命令 `python workstation.py --processing-page` 直接打开。
+
+- **处理已有记录**。选择平台采集的 250 Hz、8 通道、10 / 12 / 15 / 20 Hz 四频记录，点击“免校准处理并导出”。也可以选择同一参与者较早的独立校准场，导出两套参数的逐窗判定。完成后点“打开处理结果文件夹”，本场 `derived/continuous_*` 下的 `processing_manifest.json` 说明字段、判定状态及样本对齐方式。逐窗 TSV 包含各频率证据值和窗口质量。已有的 `events.tsv`、`frame_timing.tsv` 在判定结束后原样附入文件夹，可供外部 AI 评估。缺少这两份文件也可处理当前场次。
+- **实时处理**。点击“进入实时采集设置”，选择参与者。在“实时模型（本机 GPU）”选择本场模型。内置 Continuous CCA v3 可使用默认阈值，也可加载本人历史场次的 `frozen_models.json`。此入口只打开配置页，正式开始仍使用原有采集流程。开始后任务页和监视窗显示连续判定，场次目录保存 `continuous_ssvep_predictions.tsv`。
+- **采集保存选项**。在「应用 → SSVEP → 保存内容」勾选原始脑电、实时判定或两项。默认仅保存原始脑电。双选时，`continuous_ssvep_predictions.tsv` 的 `end_sample` 对应同一场次 `raw_brainflow.tsv` 的零基 `sample_index`，实验标记使用相同的样本坐标。仅实时的场次可供外部评估，重新运行离线信号处理需要原始脑电。数据集列表可按信号类型筛选，选择「原始和实时均有」即可找到配对场次。
+
+左侧 **模型** 页可检查本机 GPU、导入模型，或将所选模型用于下一场 SSVEP 采集。任务页和监视窗显示实际模型、版本、显卡和判定。场次 `session.json` 的 `realtime_model` 记录模型 ID、SHA-256、执行提供程序和 GPU。实时模式启动前用本机 GPU 预热模型，初始化失败会结束启动并报告原因。原始采集独立运行。
+
+Windows 版使用 DirectML。内置模型的 CCA 投影和长短窗频谱计算在 GPU，滤波、数据连续性检查与判定门控在 CPU。Windows 正式包内置运行库。源码环境可用 `python -m pip install --target .venv/ssvep-directml onnxruntime-directml==1.24.4 --no-deps` 为已有工作站环境单独添加 GPU 运行库。
+
+**接入其他模型**。在“模型”页导入包含全部权重的 `.onnx` 文件。当前四频接口接收 `eeg`，类型 float32，形状 `[1,8,500]`，按采集通道顺序输入最近 2 秒、250 Hz 的原始微伏值。输出 `scores` 为 float32 `[1,4]`，依次为 10、12、15、20 Hz 的 0–1 证据值。ONNX `metadata_props` 填写 `neurostation.name`、`neurostation.version` 和 `neurostation.contract=neurostation.ssvep.eeg-uv.8x500.250hz.10-12-15-20.v1`。模型页在本机运行后再加入库。相同文件重复导入复用同一条记录，新权重以新的文件指纹区分。
+
+内置模型连续检测每 0.2 秒更新一次，用 2 秒短窗和 4 秒相干累积识别目标。启动或断流恢复时已经稳定存在的同频成分会作为背景扣除，正在持续的刺激也可能漏检。旧版个人参数需要在本版使用历史场次重新生成。
+
 ### 使用 Windows 发布包
 
 1. 构建或下载对应版本的 Windows x64 ZIP，解压 `NeuroStation-1.07-Windows-x64.zip`。

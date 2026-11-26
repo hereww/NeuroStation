@@ -1,6 +1,7 @@
 """Optional real-Qt smoke tests; automatically skipped when PySide6 is absent."""
 
 import importlib.util
+import json
 import math
 import os
 from pathlib import Path
@@ -65,6 +66,172 @@ class QtOffscreenTests(unittest.TestCase):
         )
         self.gateway._active = acquisition
         return acquisition.snapshot
+
+    def test_models_module_applies_selection_and_displays_actual_gpu(self):
+        from dataclasses import replace
+        from unittest.mock import patch
+        from neurostation_models import BUILTIN, Model, model_by_id
+        from apps.workstation_ui.gateway import CaptureMode
+
+        form = self.window.pages['ssvep']
+        imported = Model('a' * 64, 'Fixture model', 'v2', 'a' * 64, Path(self.temp.name))
+        with patch('apps.workstation_ui.ssvep_models.list_models', return_value=[model_by_id(BUILTIN), imported]):
+            self.window.navigate('models')
+            models = self.window.pages['models']
+            for key in (imported.id, BUILTIN, imported.id):
+                models.combo.setCurrentIndex(models.combo.findData(key))
+                models.use.click()
+                self.assertEqual(self.window.current_page, 'ssvep')
+                self.assertEqual(form.config().realtime_model_id, key)
+                self.assertTrue(form.continuous.isChecked())
+                self.assertTrue(form.save_raw.isChecked())
+                self.assertEqual(form.gate_picker.isEnabled(), key == BUILTIN)
+                self.window.navigate('models')
+            config = replace(form.config(), mode=CaptureMode.CYTON)
+            self._stub_start(config)
+            actual = dict(state='no_target', end_sample=499, model=dict(name='Actual GPU model', version='v2', device='Fixture GPU'))
+            with patch.object(self.gateway, 'read_live_ssvep', return_value=actual):
+                self.window._pump_live_samples()
+            self.assertIn('Actual GPU model · v2 · Fixture GPU', self.window.pages['task'].ssvep_prediction.text())
+
+    def test_processing_opens_live_configuration_without_starting_capture(self):
+        self.gateway.start_ssvep = self._stub_start
+        self.window.navigate('processing')
+        module = self.window.pages['processing']
+        self.assertFalse(module.panel.baseline_button.isEnabled())
+        self.assertFalse(module.panel.run_button.isEnabled())
+        module.configure_button.click()
+        self.assertEqual(self.window.current_page, 'ssvep')
+        form = self.window.pages['ssvep']
+        self.assertTrue(form.config().continuous_ssvep)
+        self.assertFalse(form.acknowledge.isChecked())
+        self.assertFalse(self.gateway.snapshot.active)
+        self.assertEqual(self.start_calls, [])
+        form.continuous_model.setText('old_model.json')
+        form.continuous.setChecked(False)
+        self.assertIsNone(form.config().continuous_ssvep_model)
+
+    def test_capture_outputs_route_to_worker_and_filter_paired_sessions(self):
+        from dataclasses import replace
+        from neurostation_contract import Dataset, CaptureMode
+        form = self.window.pages['ssvep']
+        self.assertTrue(form.save_raw.isChecked())
+        self.assertFalse(form.continuous.isChecked())
+        acq = self.gateway._acquisition
+        acq._status_file = Path(self.temp.name)/'status.json'
+        acq._cancel_file = Path(self.temp.name)/'cancel'
+        for raw, live in ((True, False), (False, True), (True, True), (False, False)):
+            form.save_raw.setChecked(raw)
+            form.continuous.setChecked(live)
+            config = replace(form.config(), participant='fixture', eye_side='left', acknowledge_flicker_risk=True)
+            if not (raw or live):
+                with self.assertRaisesRegex(ValueError, 'validation.signal_outputs'):
+                    config.validate()
+                continue
+            command = acq._command(config)
+            self.assertEqual('--no-raw-eeg' in command, not raw)
+            self.assertEqual('--continuous-ssvep' in command, live)
+        self.window.navigate('datasets')
+        page = self.window.pages['datasets']
+        item = Dataset(id='fixture', name='fixture', participant='p', protocol='ssvep',
+                       recording_seconds=3, preparation_seconds=0, demo_seconds=0, trials=1,
+                       samples_per_channel=750, event_count=0, path=Path(self.temp.name), created_at='',
+                       source=CaptureMode.CYTON)
+        for selected, expected in [('raw_eeg', (True,False,True)), ('realtime_ssvep',(False,True,True)), ('both',(False,False,True))]:
+            page.signal_filter.setCurrentIndex(page.signal_filter.findData(selected))
+            self.assertEqual(self.window._dataset_signal, selected)
+            for tags, matches in zip([('raw_eeg',), ('realtime_ssvep',), ('raw_eeg','realtime_ssvep')], expected):
+                self.assertEqual(page._matches(replace(item,signal_types=tags), '', '', ''), matches)
+
+    def test_live_decisions_reach_task_via_desktop_gateway(self):
+        import json
+        import time
+        self.assertIsNone(self.gateway.read_live_ssvep())
+        form = self.window.pages['ssvep']
+        form.continuous.setChecked(True)
+        self._stub_start(form.config())
+        runtime = Path(self.temp.name)
+        self.gateway._acquisition._runtime_dir = runtime
+        try:
+            for state, hz, expected in [('target', 12, '12 Hz'),
+                                         ('no_target', '', self.window.tr('ssvep.no_target')),
+                                         ('unavailable', '', self.window.tr('ssvep.unavailable'))]:
+                row = dict(received_monotonic_s=time.monotonic(), state=state, frequency_hz=hz, end_sample=999)
+                (runtime / 'ssvep-live.json').write_text(json.dumps(row))
+                self.window._pump_live_samples()
+                self.assertIn(expected, self.window.pages['task'].ssvep_prediction.text())
+            from eeg_tools.live_ssvep import LiveSSVEP, Gate
+            import numpy as np
+            t = np.arange(1000) / 250
+            eeg = np.random.default_rng(42).normal(0, .1, (8, len(t)))
+            eeg[0, 500:] += np.sin(2 * np.pi * 12 * t[500:])
+            sink = LiveSSVEP(runtime, range(2, 10), 0, 1, Gate(), runtime / 'ssvep-live.json')
+            with sink.file:
+                sink.consume(np.vstack((np.arange(len(t)) % 256, t, eeg)),
+                             dict(start=0, stop=len(t), received_monotonic_s=time.monotonic() - 9))
+            actual = json.loads((runtime / 'ssvep-live.json').read_text())
+            self.assertEqual(actual['frequency_hz'], 12)
+            self.window._pump_live_samples()
+            self.assertIn(self.window.tr('ssvep.stale_input'), self.window.pages['task'].ssvep_prediction.text())
+            self.assertNotIn('12 Hz', self.window.pages['task'].ssvep_prediction.text())
+        finally:
+            self.gateway._acquisition._runtime_dir = None
+            self.gateway._active = self.gateway._metadata
+
+    def test_processing_restores_report_for_selected_recording(self):
+        from PySide6.QtWidgets import QDialog, QTextEdit
+        from apps.workstation_ui.ssvep_replay import ReplayPanel
+        from unittest.mock import patch
+
+        session = Path(self.temp.name) / 'recording'
+        output = session / 'derived' / 'continuous_complete'
+        output.mkdir(parents=True)
+        (session / 'session.json').write_text('{"session_id":"fixture"}')
+        (output / 'metrics.json').write_text('{"test":"fixture","metrics":{"baseline":{}}}')
+        (output / 'report.md').write_text('# Fixture report', encoding='utf-8')
+        partial = output.with_name('continuous_partial')
+        partial.mkdir()
+        (partial / 'report.md').write_text('Incomplete')
+        panel = ReplayPanel(self.window.tr, session, self.window.replay_controller)
+        self.assertTrue(panel.baseline_button.isEnabled())
+        self.assertEqual(self.window.replay_controller.state_for(session)['output_dir'], str(output))
+        with patch.object(self.window.replay_controller, 'compare') as compare:
+            panel.baseline_button.click()
+            compare.assert_called_once_with(session)
+            with patch('apps.workstation_ui.ssvep_replay.QFileDialog.getExistingDirectory', return_value='earlier'):
+                panel.run_button.click()
+            compare.assert_called_with(session, 'earlier')
+        self.assertIn(self.window.tr('ssvep.legacy_report'), panel.status.text())
+        panel.open_button.click()
+        dialog = panel.findChild(QDialog)
+        self.assertIn('Fixture report', dialog.findChild(QTextEdit).toPlainText())
+        dialog.close()
+        panel.deleteLater()
+
+    def test_processing_exports_without_a_report_and_restores_output_folder(self):
+        from apps.workstation_ui.ssvep_replay import ReplayPanel
+        from unittest.mock import patch
+
+        session = Path(self.temp.name) / 'recording-export'
+        output = session / 'derived' / 'continuous_export'
+        output.mkdir(parents=True)
+        (session / 'session.json').write_text('{"session_id":"fixture"}')
+        manifest = dict(kind='ssvep_signal_export', schema_version=1, session_id='fixture',
+                        predictions={'baseline': 'baseline_predictions.tsv'}, annotations=[])
+        (output / 'processing_manifest.json').write_text(json.dumps(manifest))
+        for filename in ('baseline_predictions.tsv', 'frozen_models.json', 'protocol.json'):
+            (output / filename).touch()
+        controller = self.window.replay_controller
+        panel = ReplayPanel(self.window.tr, session, controller)
+        self.assertFalse(panel.folder_button.isHidden())
+        self.assertTrue(panel.open_button.isHidden())
+        with patch.object(controller, '_launch') as launch:
+            panel.baseline_button.click()
+            self.assertIn('--process-only', launch.call_args.args[2])
+        with patch('apps.workstation_ui.ssvep_replay.QDesktopServices.openUrl') as open_folder:
+            panel.folder_button.click()
+            self.assertEqual(Path(open_folder.call_args.args[0].toLocalFile()), output)
+        panel.deleteLater()
 
     def test_ssvep_default_protocol_and_estimate_in_both_languages(self):
         from PySide6.QtWidgets import QLabel

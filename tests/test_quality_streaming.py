@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+import os
 import tempfile
 import threading
 import time
@@ -44,6 +45,29 @@ class StreamingTests(unittest.TestCase):
             with self.assertRaises(RuntimeError): r.append(self.data())
             r.close(); report=recover_blocks(r.directory)
             self.assertFalse(report['complete']); self.assertEqual(report['verified_samples'],250)
+    def test_windows_watermark_replace_retries_transient_access_denied(self):
+        with tempfile.TemporaryDirectory() as root:
+            recorder = self.recorder(root)
+            replace = os.replace
+            replacements = []
+
+            def replace_with_contention(source, target):
+                if target.name == 'watermarks.json':
+                    replacements.append(target)
+                    if len(replacements) == 1:
+                        error = PermissionError('reader temporarily holds watermark')
+                        error.winerror = 5
+                        raise error
+                return replace(source, target)
+
+            with patch('eeg_tools.streaming.os.replace', side_effect=replace_with_contention):
+                recorder.append(self.data())
+            recorder.close()
+            self.assertEqual(len(replacements), 2)
+            report = recover_blocks(recorder.directory)
+            self.assertTrue(report['complete'])
+            self.assertEqual(report['verified_samples'], 250)
+
     def test_truncated_journal_and_tamper(self):
         with tempfile.TemporaryDirectory() as root:
             r=self.recorder(root); r.append(self.data()); r.close()

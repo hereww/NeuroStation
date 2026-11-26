@@ -18,8 +18,10 @@ from .four_condition_page import FourConditionPage
 from .gateway import CaptureGateway, CaptureConfig, CaptureMode, Phase, Dataset
 from .i18n import Translator
 from .monitor import AcquisitionMonitorWindow
+from .ssvep_models import ModelsPage
 from .v9_offline import V9OfflineController
 from .quality_workspace import ChannelCheckPage, QualityWorkspaceController, QualityWorkspacePage
+from .ssvep_replay import EEGProcessingPage, ReplayController
 from neurostation_display import resolve_monitor_screen
 from .pages import (
     HomePage, DevicesPage, AppsPage, SSVEPPage, TaskPage,
@@ -100,7 +102,7 @@ class _ImportWorker(QObject):
 
 
 NAVIGATION = (
-    "home", "devices", "users", "apps", "quality_details", "datasets", "trash", "openbci",
+    "home", "devices", "users", "apps", "quality_details", "processing", "models", "datasets", "trash", "openbci",
     "integrations", "diagnostics",
 )
 
@@ -229,6 +231,9 @@ class MainWindow(QMainWindow):
         self.cancel_shortcut.activated.connect(self.cancel_task)
         self.current_page = "apps"
         self.draft_config = self.gateway.config
+        if persist_settings:
+            self.draft_config = replace(self.draft_config, realtime_model_id=str(
+                self.settings.value('capture/realtime_model_id', self.draft_config.realtime_model_id)))
         if initial_mode is not None:
             self.draft_config = replace(
                 self.draft_config,
@@ -261,6 +266,8 @@ class MainWindow(QMainWindow):
         self.quality_controller = QualityWorkspaceController(self)
         self.quality_controller.changed.connect(self._update_quality_banner)
         self.quality_controller.busy_changed.connect(lambda _busy: self._update_controls())
+        self.replay_controller = ReplayController(self)
+        self.replay_controller.busy_changed.connect(lambda _busy: self._update_controls())
         self.offline_controller = V9OfflineController(self)
         self.offline_controller.busy_changed.connect(lambda _busy: self._update_controls())
         self._channel_calibration_index: int | None = None
@@ -270,6 +277,7 @@ class MainWindow(QMainWindow):
         self._dataset_search = ""
         self._dataset_source = ""
         self._dataset_status = ""
+        self._dataset_signal = ""
         self.monitor_window: AcquisitionMonitorWindow | None = None
         self._monitor_suppressed = False
         self.pages: dict[str, QWidget] = {}
@@ -391,6 +399,12 @@ class MainWindow(QMainWindow):
         self._replace_page("quality_details", QualityWorkspacePage(
             self.tr, self.quality_controller, lambda: self.navigate("quality")))
         detail = SSVEPPage(self.tr, self.draft_config, self.navigate, self.gateway.users)
+        models = ModelsPage(self.tr)
+        self._replace_page('models', models)
+        models.apply_requested.connect(self._use_model)
+        models.imported.connect(lambda _key: detail.refresh_realtime_models(detail.realtime_model.currentData()))
+        models.busy_changed.connect(self._update_controls)
+        detail.realtime_model.currentIndexChanged.connect(self._remember_model)
         detail.start_requested.connect(self.start_ssvep)
         detail.serial_scan_requested.connect(self.scan_serial_ports)
         detail.create_user_requested.connect(self.create_user_from_capture)
@@ -484,6 +498,7 @@ class MainWindow(QMainWindow):
                 search_text=self._dataset_search,
                 source_value=self._dataset_source,
                 status_value=self._dataset_status,
+                signal_value=self._dataset_signal,
                 callbacks={
                     "rename": self.rename_dataset,
                     "delete": lambda dataset_id: self._offline_guarded_mutation(self.gateway.delete_dataset, dataset_id),
@@ -501,6 +516,7 @@ class MainWindow(QMainWindow):
                 search_text=self._dataset_search,
                 source_value=self._dataset_source,
                 status_value=self._dataset_status,
+                signal_value=self._dataset_signal,
                 callbacks={
                     "restore": lambda dataset_id: self._offline_guarded_mutation(self.gateway.restore_dataset, dataset_id),
                     "purge": lambda dataset_id: self._offline_guarded_mutation(self.gateway.purge_dataset, dataset_id),
@@ -509,6 +525,13 @@ class MainWindow(QMainWindow):
             )
             page.filter_changed.connect(self._dataset_filters_changed)
             self._replace_page(key, page)
+        elif key == 'models':
+            models = self.pages['models']
+            if models.process is None:
+                models.refresh(self.pages['ssvep'].realtime_model.currentData())
+        elif key == "processing":
+            self._replace_page(key, EEGProcessingPage(self.tr, self.gateway.datasets, self.replay_controller,
+                                                     self.configure_continuous_capture))
         elif key == "users":
             self._replace_page(key, self._build_users_page())
         elif key == "result":
@@ -516,7 +539,10 @@ class MainWindow(QMainWindow):
                 key = "apps"
             else:
                 page = DatasetSummaryPage if self._showing_dataset_summary else ResultPage
-                self._replace_page(key, page(self.tr, self.result, self.navigate, offline_controller=self.offline_controller, quality_callback=self.open_dataset_quality))
+                self._replace_page(key, page(
+                    self.tr, self.result, self.navigate, offline_controller=self.offline_controller,
+                    replay_controller=self.replay_controller, quality_callback=self.open_dataset_quality,
+                ))
         elif key == "diagnostics":
             self._refresh_diagnostics()
         self.current_page = key
@@ -532,7 +558,24 @@ class MainWindow(QMainWindow):
         self.navigation.blockSignals(False)
         self._update_controls()
 
-    def _dataset_filters_changed(self, search: str, source: str, status: str):
+    def _use_model(self, key):
+        if self._offline_capture_busy() or self._analysis_busy():
+            return
+        self.pages['ssvep'].refresh_realtime_models(key)
+        self._remember_model()
+        self.configure_continuous_capture()
+
+    def _remember_model(self):
+        if self.persist_settings:
+            self.settings.setValue('capture/realtime_model_id', self.pages['ssvep'].realtime_model.currentData())
+
+    def configure_continuous_capture(self):
+        if not self.gateway.snapshot.active:
+            self.pages["ssvep"].continuous.setChecked(True)
+        self.navigate("ssvep")
+
+    def _dataset_filters_changed(self, search: str, source: str, status: str, signal: str):
+        self._dataset_signal = signal
         self._dataset_search = search
         self._dataset_source = source
         self._dataset_status = status
@@ -606,7 +649,7 @@ class MainWindow(QMainWindow):
             self.timer.start()
 
     def start_ssvep(self, config: CaptureConfig, speed: float, *, _preflight_ready: bool = False):
-        if self._analysis_busy():
+        if self._analysis_busy() or self.pages["models"].process is not None:
             self.pages["ssvep"].error.setText(self.tr("v9.busy_mutation"))
             return
         if not _preflight_ready and (self.gateway.snapshot.active or self.preflight_thread is not None
@@ -1133,7 +1176,7 @@ class MainWindow(QMainWindow):
             self._pump_live_samples()
 
     def _analysis_busy(self):
-        return self.offline_controller.busy or self.quality_controller.busy
+        return self.offline_controller.busy or self.quality_controller.busy or self.replay_controller.busy
 
     def _offline_capture_busy(self):
         return (self.gateway.snapshot.active or self.preflight_thread is not None
@@ -1149,10 +1192,14 @@ class MainWindow(QMainWindow):
             self.mode_banner_label.setText(self.tr("quality.mode." + self.quality_controller.mode))
 
     def _update_controls(self):
-        self.offline_controller.set_capture_busy(self._offline_capture_busy() or self.quality_controller.busy)
-        self.quality_controller.set_capture_busy(self._offline_capture_busy() or self.offline_controller.busy)
+        capture_busy = self._offline_capture_busy()
+        self.offline_controller.set_capture_busy(capture_busy or self.replay_controller.busy or self.quality_controller.busy)
+        self.replay_controller.set_capture_busy(capture_busy or self.offline_controller.busy or self.quality_controller.busy)
+        self.quality_controller.set_capture_busy(capture_busy or self.offline_controller.busy or self.replay_controller.busy)
         offline_busy = self._analysis_busy()
-        self.language_selector.setEnabled(self.channel_calibration_thread is None)
+        models = self.pages['models']
+        models.set_capture_busy(capture_busy or offline_busy)
+        self.language_selector.setEnabled(self.channel_calibration_thread is None and models.process is None)
         for key in ("datasets", "trash"):
             page = self.pages.get(key)
             if page is not None:
@@ -1202,7 +1249,7 @@ class MainWindow(QMainWindow):
         can_check = (not snapshot.active and self.preflight_thread is None
                      and self.channel_calibration_thread is None and not offline_busy)
         form = self.pages["ssvep"]
-        form.start_button.setEnabled(can_check)
+        form.start_button.setEnabled(can_check and models.process is None)
         check_page = self.pages["quality"]
         check_page.check_button.setEnabled(can_check)
         report = self._channel_check_report
@@ -1279,6 +1326,25 @@ class MainWindow(QMainWindow):
     def _pump_live_samples(self):
         if CaptureMode(self.gateway.config.mode) is not CaptureMode.CYTON:
             return
+        if self.gateway.config.continuous_ssvep:
+            reader = getattr(self.gateway, "read_live_ssvep", None)
+            row = reader() if reader else None
+            text = self.tr("ssvep.waiting")
+            if row:
+                state = row["state"]
+                value = f"{row['frequency_hz']} Hz" if state == "target" else self.tr("ssvep." + state)
+                if row.get("quality") == "stale_input":
+                    value = self.tr("ssvep.stale_input")
+                text = self.tr("ssvep.decision", value=value, sample=row["end_sample"])
+            actual = row.get('model') if row else None
+            if isinstance(actual, dict) and all(isinstance(actual.get(k), str) for k in ('name', 'version', 'device')):
+                identity = f"{actual['name']} · {actual['version']} · {actual['device']}"
+            else:
+                identity = self.tr('models.requested', name=self.pages['ssvep'].realtime_model.currentText())
+            text = f'{identity}\n{text}'
+            self.pages["task"].ssvep_prediction.setText(text)
+            if self.monitor_window is not None:
+                self.monitor_window.ssvep_prediction.setText(text)
         samples = self._read_live_waveform()
         if samples is None:
             return
@@ -1343,7 +1409,7 @@ class MainWindow(QMainWindow):
             self.navigate("quality_details")
             event.ignore()
             return
-        if not self.offline_controller.close():
+        if not self.replay_controller.close() or not self.offline_controller.close():
             event.ignore()
             return
         self._record("ui", "workstation window closing")

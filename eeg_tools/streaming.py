@@ -24,7 +24,15 @@ def atomic_json(path, value):
     with temporary.open('w', encoding='utf-8') as f:
         json.dump(value, f, allow_nan=False, sort_keys=True)
         f.flush(); os.fsync(f.fileno())
-    os.replace(temporary, path)
+    # Windows readers can briefly block replacement if they omit delete sharing.
+    for delay in (0.005, 0.01, 0.02, 0.04, 0.08, None):
+        try:
+            os.replace(temporary, path)
+            return
+        except PermissionError as exc:
+            if delay is None or getattr(exc, 'winerror', None) not in (5, 32, 33):
+                raise
+            time.sleep(delay)
 
 
 DEFERRED_ASSESSMENT = object()
@@ -32,7 +40,7 @@ DEFERRED_ASSESSMENT = object()
 
 class BlockRecorder:
     def __init__(self, directory, *, session_id, channel_names, eeg_rows, package_row,
-                 timestamp_row, sample_rate=250, raw_handle=None, raw_writer=None, clock=time.monotonic, configuration_id=None):
+                 timestamp_row, sample_rate=250, raw_handle=None, raw_writer=None, clock=time.monotonic, configuration_id=None, retain_raw=True):
         self.directory = Path(directory)
         self.directory.mkdir(exist_ok=False)
         self.session_id, self.channels = session_id, tuple(channel_names)
@@ -41,7 +49,12 @@ class BlockRecorder:
         self.sample_rate, self.clock = sample_rate, clock
         self.configuration_id = configuration_id
         self.raw_handle, self.raw_writer = raw_handle, raw_writer
-        self.journal = (self.directory/'blocks.jsonl').open('x', encoding='utf-8')
+        self.retain_raw = retain_raw
+        if not retain_raw and (raw_handle is not None or raw_writer is not None):
+            raise ValueError("Raw writer supplied in results-only mode")
+        self.next_sample = 0
+        journal_name = 'blocks.jsonl' if retain_raw else 'intervals.jsonl'
+        self.journal = (self.directory/journal_name).open('x', encoding='utf-8')
         self.received = self.written = self.durable = self.assessed = 0
         self.generation, self.sequence = 0, 0
         self.last_packet = self.last_timestamp = None
@@ -65,7 +78,7 @@ class BlockRecorder:
 
     def acknowledge_assessment(self, record):
         with self.assessment_lock:
-            if not self.closed and self.assessed==record['start'] and record['stop']<=self.durable:
+            if not self.closed and self.assessed==record['start'] and record['stop']<=self.next_sample:
                 self.assessed=record['stop']
 
     def _boundary(self, packet, timestamp):
@@ -111,22 +124,24 @@ class BlockRecorder:
                 self.generation += 1
             block = raw[:, left:right].copy()
             meta = BlockMetadata(self.session_id, f'{self.session_id}:{self.generation}', self.generation,
-                                 self.written, self.written + block.shape[1], self.channels,
+                                 self.next_sample, self.next_sample + block.shape[1], self.channels,
                                  self.sample_rate, timestamp_source='brainflow_device_unverified', gaps=tuple(gaps[j])).to_dict()
             began = self.clock()
             try:
-                filename = f'{self.sequence:08d}.npy'
-                temporary = self.directory/(filename + '.tmp')
-                with temporary.open('xb') as f:
-                    np.save(f, block, allow_pickle=False); f.flush(); os.fsync(f.fileno())
-                os.replace(temporary, self.directory/filename)
-                if self.raw_writer is not None:
-                    for offset in range(block.shape[1]):
-                        self.raw_writer.writerow([self.written + offset, *[format(float(v), '.17g') for v in block[:, offset]]])
-                    self.raw_handle.flush()
-                self.written = meta['stop']
-                record = {**meta, 'sequence': self.sequence, 'file': filename,
-                          'sha256': sha256(self.directory/filename), 'previous_hash': self.previous_hash,
+                storage = {}
+                if self.retain_raw:
+                    filename = f'{self.sequence:08d}.npy'
+                    temporary = self.directory/(filename + '.tmp')
+                    with temporary.open('xb') as f:
+                        np.save(f, block, allow_pickle=False); f.flush(); os.fsync(f.fileno())
+                    os.replace(temporary, self.directory/filename)
+                    if self.raw_writer is not None:
+                        for offset in range(block.shape[1]):
+                            self.raw_writer.writerow([meta['start'] + offset, *[format(float(v), '.17g') for v in block[:, offset]]])
+                        self.raw_handle.flush()
+                    self.written = meta['stop']
+                    storage = {'file': filename, 'sha256': sha256(self.directory/filename)}
+                record = {**meta, **storage, 'sequence': self.sequence, 'previous_hash': self.previous_hash,
                           'received_monotonic_s': arrival, 'eeg_rows': list(self.eeg_rows),
                           'configuration_id': self.configuration_id,
                           'package_row': self.package_row, 'timestamp_row': self.timestamp_row}
@@ -137,6 +152,7 @@ class BlockRecorder:
                     os.fsync(self.raw_handle.fileno())
                 os.fsync(self.journal.fileno())
                 self.durable = self.written
+                self.next_sample = meta['stop']
                 self.previous_hash = record['record_hash']
                 self.sequence += 1
                 block.flags.writeable = False
@@ -246,13 +262,14 @@ class AsyncConsumer:
     assessed watermark at the first missing interval. The next processed block's
     start/stream contract resets causal state after a skipped interval.
     """
-    def __init__(self, recorder, consumer, max_pending=8):
+    def __init__(self, recorder, consumer, max_pending=8, *, purpose="quality"):
+        self.purpose = purpose
         if max_pending<1:raise ValueError('positive quality queue capacity required')
         self.recorder,self.consumer=recorder,consumer
         self.queue=queue.Queue(maxsize=max_pending)
         self.stop_event=threading.Event();self.active=None
         self.submitted=self.completed=self.dropped=0
-        self.thread=threading.Thread(target=self._run,name='NeuroStationOptionalQuality',daemon=True)
+        self.thread=threading.Thread(target=self._run,name=f'NeuroStation-{purpose}',daemon=True)
         self.thread.start()
 
     def __call__(self,block,record):
@@ -261,7 +278,7 @@ class AsyncConsumer:
             self.queue.put_nowait((block,record));self.submitted+=1
         except queue.Full:
             self.dropped+=1
-            self.recorder.assessment_error(record,'quality_queue_full: interval unassessed')
+            self.recorder.assessment_error(record,f'{self.purpose}_queue_full: interval unassessed')
         return DEFERRED_ASSESSMENT
 
     def _run(self):
@@ -271,7 +288,9 @@ class AsyncConsumer:
             self.active=record
             try:
                 self.consumer(block,record)
-                self.recorder.acknowledge_assessment(record);self.completed+=1
+                if self.purpose == "quality":
+                    self.recorder.acknowledge_assessment(record)
+                self.completed += 1
             except Exception as exc:
                 self.recorder.assessment_error(record,type(exc).__name__+': '+str(exc))
             finally:
@@ -281,7 +300,7 @@ class AsyncConsumer:
         self.stop_event.set();self.thread.join(timeout=timeout)
         stopped=not self.thread.is_alive()
         if not stopped:
-            self.recorder.assessment_error(self.active or {},'quality_shutdown_timeout: pending quality is unknown')
+            self.recorder.assessment_error(self.active or {},f'{self.purpose}_shutdown_timeout: pending work is unknown')
         return stopped
 
     @property

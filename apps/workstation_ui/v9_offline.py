@@ -113,6 +113,12 @@ class V9OfflineController(QObject):
                 raise FileNotFoundError("v9.python_missing")
             output = self.backend.new_output_dir(Path(key))
             command, cwd = self.backend.build_command(Path(key), output, device=device, python=interpreter)
+        except Exception as error:
+            return self._publish_error(key, error)
+        return self._launch(key, output, command, cwd, device)
+
+    def _launch(self, key, output, command, cwd, device):
+        try:
             if not command:
                 raise ValueError("v9.invalid_command")
             process = self._process_factory(self)

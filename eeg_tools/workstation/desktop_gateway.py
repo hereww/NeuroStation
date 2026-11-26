@@ -333,6 +333,7 @@ class MetadataGateway:
             channel_count=record.channel_count,
             sampling_rate_hz=record.sampling_rate_hz,
             files=record.files,
+            signal_types=record.signal_types,
             source_path=record.source_path,
             imported=record.imported,
             origin=record.origin,
@@ -619,6 +620,11 @@ class DesktopGateway:
         acquisition = getattr(self, "_acquisition", None)
         if acquisition is not None:
             acquisition.close()
+
+    def read_live_ssvep(self):
+        if self._active is self._acquisition:
+            return self._acquisition.read_live_ssvep()
+        return None
 
     def read_live_waveform(self, maximum_rows: int = 1000):
         if self._active is self._acquisition:

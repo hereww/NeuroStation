@@ -8,11 +8,12 @@ from eeg_tools.runtime_bindings import sha256
 
 
 class QualitySink:
-    def __init__(self, directory, eeg_rows, channels, sample_rate=250, live_path=None):
+    def __init__(self, directory, eeg_rows, channels, sample_rate=250, live_path=None, include_waveform=True):
         self.directory=Path(directory);self.eeg_rows=tuple(eeg_rows)
         self.engine=QualityEngine(channels,sample_rate)
         self.live_path=Path(live_path) if live_path else self.directory/'quality-live.json'
         self.handle=(self.directory/'quality-v2.jsonl').open('x',encoding='utf-8')
+        self.include_waveform = include_waveform
         self.manifests=set()
         self.latest=None;self.updates=0;self.counts={'pass':0,'fail':0,'unknown':0}
 
@@ -37,7 +38,7 @@ class QualitySink:
             self.manifests.add(self.engine.processing_id)
         compact={k:v for k,v in self.latest.items() if k not in ('raw_samples','display_samples','display_valid','psd')}
         self.handle.write(json.dumps(compact,allow_nan=False,sort_keys=True)+'\n');self.handle.flush()
-        atomic_json(self.live_path,self.latest)
+        atomic_json(self.live_path, self.latest if self.include_waveform else compact)
         self.updates+=1;self.counts[result['dimensions']['signal_quality']]+=1
 
     def close(self):

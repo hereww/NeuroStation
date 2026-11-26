@@ -119,6 +119,12 @@ def configure_storage_defaults() -> bool:
 def main() -> int:
     isolated_runtime = configure_storage_defaults()
     _configure_bundled_native_libraries()
+    if sys.argv[1:2] == ['--ssvep-model']:
+        from eeg_tools.ssvep_gpu import model_command
+        return model_command(sys.argv[2:])
+    if len(sys.argv) > 1 and sys.argv[1] == "--ssvep-replay":
+        from eeg_tools.offline_analysis import main as replay_main
+        return replay_main(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1] == "--realtime-commands":
         from apps.realtime_commands import main as realtime_main
         return realtime_main(sys.argv[2:])
@@ -162,6 +168,7 @@ def main() -> int:
         default="AUTO",
         help="Cyton serial port (default: AUTO)",
     )
+    parser.add_argument("--processing-page", action="store_true", help="Open EEG processing without starting acquisition")
     parser.add_argument("--quality-page", action="store_true", help="Open the Cyton channel check without starting acquisition")
     parser.add_argument("--quality-workflow-smoke", type=Path, help="Run the synthetic demo/replay/report GUI workflow into a fresh output folder, then exit")
     arguments = parser.parse_args()
@@ -220,6 +227,8 @@ def main() -> int:
     )
     if arguments.quality_page or arguments.quality_workflow_smoke:
         window.navigate("quality")
+    elif arguments.processing_page:
+        window.navigate("processing")
     window.show()
     if arguments.quality_workflow_smoke:
         from apps.workstation_ui.quality_smoke import run_quality_workflow_smoke

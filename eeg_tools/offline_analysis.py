@@ -258,14 +258,27 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("session_dir", type=Path)
     parser.add_argument("--output-dir", type=Path)
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--process-only", action="store_true", help="Export continuous decisions and optional presentation logs")
+    modes.add_argument("--continuous", action="store_true", help="Compare continuous baseline and personal replay")
+    parser.add_argument("--calibration-session", type=Path, help="Earlier session of the same participant")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     arguments = build_parser().parse_args(argv)
     try:
-        result = analyze_session(arguments.session_dir, arguments.output_dir)
-    except (OSError, ValueError, json.JSONDecodeError) as error:
+        if arguments.continuous or arguments.process_only:
+            if not arguments.output_dir:
+                raise ValueError("Continuous processing needs --output-dir")
+            from .ssvep_replay import compare_sessions, process_session
+            replay = process_session if arguments.process_only else compare_sessions
+            result = replay(arguments.session_dir, arguments.calibration_session, arguments.output_dir)
+        elif arguments.calibration_session:
+            raise ValueError("--calibration-session requires --process-only or --continuous")
+        else:
+            result = analyze_session(arguments.session_dir, arguments.output_dir)
+    except (OSError, ValueError, KeyError, TypeError) as error:
         print(json.dumps({"status": "error", "error": str(error)}, ensure_ascii=False))
         return 2
     print(json.dumps(result, ensure_ascii=False, indent=2))

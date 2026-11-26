@@ -19,6 +19,47 @@ from neurostation_contract import (
 )
 
 
+def _has_signal_row(path: Path, *, imported=False) -> bool:
+    """Read only a bounded prefix to distinguish actual samples from an empty export."""
+    try:
+        with path.open('rb') as source:
+            prefix = source.read(8192)
+        rows = prefix.decode('utf-8-sig', errors='replace').splitlines()
+        if not imported:
+            rows = rows[1:]
+        for row in rows:
+            if row.startswith('%'):
+                continue
+            fields = row.replace(',', '\t').split('\t')
+            if len(fields) > 1:
+                try:
+                    float(fields[0])
+                except ValueError:
+                    continue
+                return True
+    except OSError:
+        pass
+    return False
+
+
+def detect_signal_types(directory: Path, metadata: dict) -> tuple[str, ...]:
+    """Classify the saved session itself, independently of requested outputs and status."""
+    types = []
+    if _has_signal_row(directory / 'raw_brainflow.tsv'):
+        types.append('raw_eeg')
+    elif metadata.get('imported') or metadata.get('origin') == 'imported_openbci' or metadata.get('source') == 'imported_openbci':
+        for filename in DatasetRepository._record_file_names(metadata):
+            path = (directory / filename).resolve()
+            if (path.is_relative_to(directory.resolve())
+                    and (DatasetRepository._is_openbci_raw(path) or DatasetRepository._is_brainflow_raw(path))
+                    and _has_signal_row(path, imported=True)):
+                types.append('raw_eeg')
+                break
+    if _has_signal_row(directory / 'continuous_ssvep_predictions.tsv'):
+        types.append('realtime_ssvep')
+    return tuple(types)
+
+
 @dataclass(frozen=True)
 class DatasetRecord:
     session_id: str
@@ -49,6 +90,7 @@ class DatasetRecord:
     user_link_status: str = "unlinked"
     deleted_at: str = ""
     stimulus_condition: str = ""
+    signal_types: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -413,6 +455,7 @@ class DatasetRepository:
                 sampling_rate_hz=sampling_rate,
                 channel_count=int(value.get("channel_count", 8) or 8),
                 files=cls._record_file_names(value),
+                signal_types=detect_signal_types(session_path.parent, value),
                 source_path=source_path,
                 recorded_at=recorded_at,
                 imported=imported,
@@ -607,6 +650,7 @@ class DatasetRepository:
                 sampling_rate_hz=sampling_rate,
                 channel_count=channel_count,
                 files=file_names,
+                signal_types=("raw_eeg",),
                 source_path=str(source_directory.resolve()),
                 recorded_at=self._openbci_recorded_at(source_directory.name),
                 imported=True,

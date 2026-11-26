@@ -16,16 +16,18 @@ from neurostation_quality_report import render_report_html
 def _input_names(session):
     names = {p.name for p in session.iterdir() if p.is_file()
              and p.suffix in ('.json', '.jsonl', '.ndjson', '.tsv', '.csv')}
-    raw = session / 'raw_blocks'
-    if raw.is_dir():
-        names.update('raw_blocks/' + p.name for p in raw.iterdir() if p.is_file())
+    for folder in ('raw_blocks', 'signal_processing'):
+        directory = session / folder
+        if directory.is_dir():
+            names.update(folder + '/' + p.name for p in directory.iterdir() if p.is_file())
     return names
 
 
 def _signal_updates(session, cancelled=None, snapshot=None):
     """Summarize recorded updates, not trials or a fresh signal-quality verdict."""
     snapshot = snapshot if snapshot is not None else capture_snapshot(session, _input_names(session), cancelled=cancelled)
-    name = 'raw_blocks/quality-v2.jsonl'
+    folder = 'signal_processing' if 'signal_processing/quality-v2.jsonl' in snapshot else 'raw_blocks'
+    name = folder + '/quality-v2.jsonl'
     if name not in snapshot:
         return {'status': 'unavailable', 'all': 0, 'seal_evidence_match': None}
     counts = Counter(pass_=0, fail=0, unknown=0, unassessable=0)
@@ -50,9 +52,9 @@ def _signal_updates(session, cancelled=None, snapshot=None):
         except (ValueError, TypeError, KeyError, AttributeError):
             counts['unassessable'] += 1
     seal_match = None
-    if 'raw_blocks/seal.json' in snapshot:
+    if folder + '/seal.json' in snapshot:
         try:
-            seal = json.loads(read_snapshot(session, 'raw_blocks/seal.json', snapshot))
+            seal = json.loads(read_snapshot(session, folder + '/seal.json', snapshot))
             expected = seal.get('quality_evidence', {}).get('quality-v2.jsonl')
             seal_match = expected == snapshot[name] if expected else None
         except (ValueError, AttributeError):
@@ -68,7 +70,7 @@ def build_session_report(session_dir, output_dir=None, *, cancelled=None):
     check_cancelled(cancelled)
     session = Path(session_dir).resolve()
     output = (Path(output_dir) if output_dir else session / 'derived' / ('quality-report-v2-' + uuid.uuid4().hex[:12])).resolve()
-    if output == session or output == session / 'raw_blocks' or session / 'raw_blocks' in output.parents:
+    if output == session or any(output.is_relative_to(session / name) for name in ('raw_blocks', 'signal_processing')):
         raise ValueError('report must not replace source session or raw blocks')
     if output.exists():
         raise FileExistsError(str(output))
@@ -105,7 +107,7 @@ def build_session_report(session_dir, output_dir=None, *, cancelled=None):
               'data_origin': meta.get('data_origin', 'legacy_simulated' if meta.get('simulated') is True else 'not_declared'),
               'source_unchanged': True,  # Publication below is conditional on a full inventory/content recheck.
               'recording_status': meta.get('recording_status', meta.get('status', 'unknown')),
-              'raw_blocks': {k: v for k, v in recovered.items() if k != 'records'} if recovered else {'status': 'legacy_no_block_journal'},
+              'raw_blocks': {k: v for k, v in recovered.items() if k != 'records'} if recovered else {'status': 'not_requested' if meta.get('save_raw_eeg') is False else 'legacy_no_block_journal'},
               'trials': summarize_trials(ledger), 'trial_ledger': ledger,
               'planned_trial_count': meta.get('trial_count') if type(meta.get('trial_count')) is int else None,
               'signal_quality_updates': signal_updates,

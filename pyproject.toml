@@ -14,6 +14,7 @@ dependencies = ["PySide6>=6.7", "brainflow==5.22.2", "numpy>=2.0", "scipy>=1.14"
 files = [
   "workstation.py",
   "neurostation_contract.py",
+  "neurostation_models.py",
   "neurostation_protocol_errors.py",
   "neurostation_four_condition.py",
   "neurostation_condition_render.py",
@@ -55,3 +56,4 @@ files = [
 ]
 [project.optional-dependencies]
 ml = ["torch>=2.4"]
+ssvep-gpu = ["onnxruntime-directml==1.24.4; sys_platform == 'win32'"]

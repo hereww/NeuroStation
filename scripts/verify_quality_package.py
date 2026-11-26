@@ -17,7 +17,8 @@ def main():
          'PATH':os.environ['SystemRoot']+'/System32;'+os.environ['SystemRoot']}
     env.pop('NEUROSTATION_RUNTIME_CONFIG',None);env.pop('PYTHONPATH',None);env.pop('NEUROSTATION_QUALITY_ROOT',None)
     checks=[]
-    for name,args in [('workstation',['--smoke-test']),('realtime',['--realtime-commands','--smoke-test']),
+    for name,args in [('workstation',['--smoke-test']),('eeg_processing',['--processing-page','--smoke-test']),
+                      ('realtime',['--realtime-commands','--smoke-test']),
                       ('capture_help',['--realtime-capture-worker','--help']),('main_worker_help',['--acquisition-worker','--help']),
                       ('diagnostics',['--diagnostics']),
                       ('quality_workflow',['--quality-workflow-smoke',str(output/'quality-workflow')])]:
@@ -28,7 +29,8 @@ def main():
         except subprocess.TimeoutExpired:
             checks.append({'check':name,'arguments':args,'passed':False,'error':'owned subprocess exceeded its startup/workflow deadline'})
     report={'schema_version':1,'artifact':str(artifact),'checks':checks,'all_passed':all(c['passed'] for c in checks),
-            'hardware_started':False,'stimulus_started':False,'model_included':False,'torch_included':False,
+            'hardware_started':False,'stimulus_started':False,'model_included':False,
+            'ssvep_model_included': (artifact / '_internal/assets/ssvep_models/cca-v3.onnx').is_file(), 'torch_included':False,
             'fresh_windows_machine_validation':'not_run','smoke_path':env['PATH']}
     (output/'build-verification.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
     print(json.dumps(report,ensure_ascii=False,indent=2))

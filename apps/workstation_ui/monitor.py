@@ -55,6 +55,9 @@ class AcquisitionMonitorWindow(QMainWindow):
         layout.addLayout(header)
         self.status = label(tr("monitor.waiting"), "notice")
         layout.addWidget(self.status)
+        self.ssvep_prediction = label("", "notice")
+        self.ssvep_prediction.hide()
+        layout.addWidget(self.ssvep_prediction)
         summary_layout = QHBoxLayout()
         self.session = KeyValues([(tr(key), "—") for key in (
             "field.participant", "monitor.device", "monitor.rate", "monitor.channels", "monitor.preview_samples",
@@ -177,6 +180,7 @@ class AcquisitionMonitorWindow(QMainWindow):
         self.session.values[4].setText(f"{self.model.sample_count:,}")
 
     def update_snapshot(self, snapshot: TaskSnapshot, config: CaptureConfig, device: DeviceInfo) -> None:
+        self.ssvep_prediction.setVisible(snapshot.active and config.continuous_ssvep)
         self.waveform.set_active(snapshot.active)
         phase_key = (
             "task.preparing" if snapshot.phase is Phase.COUNTDOWN

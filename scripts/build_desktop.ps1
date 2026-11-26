@@ -38,6 +38,7 @@ $sourceItems = @(
     "configs",
     "eeg_tools",
     "neurostation_contract.py",
+    "neurostation_models.py",
     "neurostation_protocol_errors.py",
     "neurostation_four_condition.py",
     "neurostation_condition_render.py",
@@ -72,14 +73,14 @@ try {
     }
     $dependencyCheckExit = 0
     try {
-        & $buildPython -c "import PySide6, nuitka, brainflow, numpy, scipy; from importlib.metadata import version; assert version('Nuitka') == '4.2.1'" 2>$null
+        & $buildPython -c "import PySide6, nuitka, brainflow, numpy, scipy; from importlib.metadata import version; assert version('Nuitka') == '4.2.1' and version('onnxruntime-directml') == '1.24.4'" 2>$null
         $dependencyCheckExit = $LASTEXITCODE
     }
     catch {
         $dependencyCheckExit = 1
     }
     if ($dependencyCheckExit -ne 0) {
-        & $buildPython -m pip install "PySide6>=6.7" "Nuitka==4.2.1" "brainflow==5.22.2" "numpy>=2.0" "scipy>=1.14"
+        & $buildPython -m pip install "PySide6>=6.7" "Nuitka==4.2.1" "brainflow==5.22.2" "numpy>=2.0" "scipy>=1.14" "onnxruntime-directml==1.24.4"
         if ($LASTEXITCODE -ne 0) {
             throw "Unable to install desktop build dependencies."
         }

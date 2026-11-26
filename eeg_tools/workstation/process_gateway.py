@@ -36,6 +36,7 @@ from neurostation_contract import (
 from .dataset import DatasetRepository
 from eeg_tools.session_files import write_json, write_manifest
 from .ssvep import SSVEPProtocol
+from .dataset import detect_signal_types
 from eeg_tools.waveform import channel_labels_from_path
 
 
@@ -159,6 +160,8 @@ class AcquisitionProcessGateway:
         The monitor is a separate process so importing/inferencing with PyTorch
         can never block the Qt event loop or the acquisition worker.
         """
+        if not config.save_raw_eeg:
+            return None
         config_path = ROOT / "configs" / "learned_denoiser_v1.json"
         if not config_path.is_file():
             return None
@@ -282,6 +285,12 @@ class AcquisitionProcessGateway:
                 "--acknowledge-flicker-risk",
             ]
         )
+        if not config.save_raw_eeg:
+            command.append("--no-raw-eeg")
+        if config.continuous_ssvep:
+            command.extend(["--continuous-ssvep", "--realtime-model-id", config.realtime_model_id])
+            if config.continuous_ssvep_model:
+                command.extend(["--continuous-ssvep-model", str(config.continuous_ssvep_model.resolve())])
         if config.allow_draft_hardware_config:
             command.extend(["--allow-draft-protocol", "--allow-draft-channel-config"])
         if self._preflight_file is not None and self._preflight_file.is_file():
@@ -522,6 +531,22 @@ class AcquisitionProcessGateway:
         if self._snapshot.phase is Phase.FAILED and self._snapshot.result is None:
             self._stop_learned_monitor()
         return self._snapshot
+
+    def read_live_ssvep(self):
+        if self._runtime_dir is None or not self.config.continuous_ssvep:
+            return None
+        try:
+            row = json.loads((self._runtime_dir / "ssvep-live.json").read_text(encoding="utf-8"))
+            if (isinstance(row, dict) and isinstance(row.get("end_sample"), int)
+                    and row.get("state") in ("target", "no_target", "unavailable")
+                    and (row["state"] != "target" or row.get("frequency_hz") in (10, 12, 15, 20))):
+                received = row.get("received_monotonic_s")
+                if not isinstance(received, (float, int)) or not 0 <= time.monotonic() - received <= 1.5:
+                    return {"state": "unavailable", "end_sample": row["end_sample"], "quality": "stale_input", "model": row.get("model")}
+                return row
+        except (OSError, TypeError, ValueError, KeyError):
+            pass
+        return None
 
     def read_live_waveform(self, maximum_rows: int = 1000) -> dict[str, Any] | None:
         """Read only newly flushed samples from the worker's live preview file."""
@@ -787,6 +812,7 @@ class AcquisitionProcessGateway:
             samples_per_channel=int(session.get("recorded_samples_per_channel", 0)),
             event_count=int(session.get("event_count", 0)),
             path=output.resolve(),
+            signal_types=detect_signal_types(output, session),
             created_at=created_at,
             eye_side=str(session.get("eye_side") or ""),
             stimulus_condition=str(session.get("stimulus_condition") or ""),
